@@ -133,7 +133,7 @@ gastos: [{
   vidaUtilMeses                                      // solo tipo 'capex'
 }]
 
-// Fase D — costeo (§10)
+// Fase D1 — preparaciones (§10.2) — ✅ IMPLEMENTADO, schemaVersion 4
 preparaciones: [{
   id, nombre,
   modo,              // 'porcentaje' | 'directo'
@@ -144,24 +144,28 @@ preparaciones: [{
     porcentaje,      // modo porcentaje — fracción del base (1.0 = 100 %)
     gramos           // modo directo
   }]
-  // derivados en runtime: gramosTotal, costoTotal, costoPorGramo
+  // derivados en runtime (nunca persistidos): gramosTotal, costoTotal, costoPorGramo
 }]
 
+// Fase D2 — pendiente
 costosFijos: [{ id, nombre, monto, periodicidad /*'mensual'|'quincenal'|'anual'*/, activo }]
 
+// Fase D3 — pendiente
 zonasDomicilio: [{ id, nombre, tiempoAprox, precio, barrios: [] }]
 
+// Fase D2 — pendiente
 parametros: {
   costosFijosPct,      // 0.30 — global, confirmado
   unidadesMetaMes      // para el prorrateo real de costos fijos (§10.5)
 }
 // NO hay margenPct: el margen es derivado, no parámetro. Ver §10.4.
 
-// productos gana:
+// productos — ✅ IMPLEMENTADO: ingredientes[{materiaId,gramos}] reemplazado
+// por componentes[] (unifica materia y preparaciones):
 productos: [{
   ...,
-  componentes: [{ tipo /*'materia'|'preparacion'*/, refId, gramos }],
-  costosFijosPct       // opcional, override del global
+  componentes: [{ tipo /*'materia'|'preparacion'*/, refId, gramos }]
+  // costosFijosPct (override del global) — Fase D2, pendiente
   // precio ya existe y es la ENTRADA; ganancia y margen se derivan
 }]
 ```
@@ -169,9 +173,10 @@ productos: [{
 ### 3.3 Reglas del modelo
 
 - **Los ítems de venta son snapshots** (`nombre`, `precio`, `costo` al momento de vender). Es correcto y **no se debe romper**: el histórico no puede alterarse cuando cambian los precios.
-- **`productos[].costo` no es un snapshot legítimo**, es un caché que nunca se invalida. Se elimina en la fase B (P0-2) y se sustituye por cálculo en vivo.
-- **Un ítem de venta es producto XOR topping**, distinguido por qué ID trae. Toda lógica que recorra `venta.items` debe manejar ambos casos — hoy `calcInventoryNeeds()` solo maneja `productoId` (P1-1).
-- **Falta `schemaVersion`.** Las migraciones se hacen por detección de campos ausentes (P1-3). Con las colecciones nuevas esto se vuelve insostenible: hay que versionar.
+- **`productos[].costo` ya no existe como campo persistido** (P0-2, resuelto) — se calcula siempre en vivo con `getCostoProducto()`, que ahora resuelve componentes mixtos (materia directa o preparación, recursivo).
+- **Un ítem de venta es producto XOR topping**, distinguido por qué ID trae. Toda lógica que recorre `venta.items` maneja ambos casos (P1-1, resuelto).
+- **`schemaVersion` existe y está en 4** (P1-3, resuelto). Migraciones explícitas y no destructivas en `migrateState()`, con tests que cubren estado parcial/corrupto/null.
+- **"Usar N gramos de una preparación" es proporcional al lote, no una receta reescalada.** Ver la aclaración en §10.2.
 
 ---
 
@@ -266,8 +271,8 @@ Todos en alcance. Los IDs son estables — úsalos para referirte a ellos entre 
 | **A** | Consolidar en GitHub (§8) | — | Bajo | ✅ Hecho — [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (privado) |
 | **B** | Arreglar P0-1…P0-4, P1-1…P1-5, P2-1…P2-9 | A | Medio | ✅ Hecho y verificado en navegador. Detalle en `IMPLEMENTATION_STATUS.md` |
 | **C** | Módulo de gastos (§9) | B | Medio | ✅ Hecho y verificado en navegador. Detalle en `IMPLEMENTATION_STATUS.md` |
-| **D1** | Preparaciones intermedias + costeo por porcentaje panadero (§10.2, §10.3) | B, P1-3 | **Alto** | 📋 Siguiente |
-| **D2** | Costos fijos, margen, precio objetivo (§10.4, §10.5) | D1, C | Medio | 📋 Pendiente |
+| **D1** | Preparaciones intermedias + costeo por porcentaje panadero (§10.2, §10.3) | B, P1-3 | **Alto** | ✅ Hecho y verificado en navegador. Detalle en `IMPLEMENTATION_STATUS.md` |
+| **D2** | Costos fijos, margen, precio objetivo (§10.4, §10.5) | D1, C | Medio | 📋 Siguiente |
 | **D3** | Domicilios por zona (§10.6) | D1 | Bajo | 📋 Pendiente |
 | **D4** | Migrar los datos del spreadsheet, con los errores corregidos (§11) | D1-D3 | Medio | 📋 Pendiente |
 | **E** | Backend en Google Sheets (§12) | D | Alto | 📋 Pendiente |
@@ -418,9 +423,13 @@ Todo esto sale de `COSTOS WAFFLES.xlsx`, 22 hojas: 1 de precios base, 15 de prod
 | `DOMICILIOS` | 3 zonas por tiempo de recorrido: $4.000 / $6.000 / $8.000, con listado de barrios y zonas fuera de cobertura |
 | `Hoja1` | Waffle de caramelo salado — hoja de producto sin renombrar |
 
-### 10.2 Preparaciones intermedias — el concepto que falta en la app
+### 10.2 Preparaciones intermedias — el concepto que faltaba en la app
 
-Es el cambio más importante. Hoy la app modela `materia prima → producto`. El spreadsheet modela **`materia prima → preparación → producto`**, y las preparaciones se reutilizan entre productos.
+> ✅ **Implementado y verificado el 11 de agosto de 2026.** Motor en `js/core.js` (`savePreparacion`, `getPreparacionCosto`, `getPreparacionComposicionPorGramo`, `expandGramosAMateria`, `wouldCreateCiclo`), 22 tests nuevos en `tests/core.test.js` — incluyendo la masa de New York reproducida con los costos reales de `BASE PRECIOS` y verificada exacta contra la hoja ($7.269,15, $12,4591/g, 583,44 g). UI: 4ª pestaña "Preparaciones" dentro de Insumos, y el modal de producto ahora acepta materia prima **o** preparación por componente. `productos[].ingredientes` se renombró a `productos[].componentes` (`schemaVersion` 3→4, migración no destructiva). Detalle completo en `IMPLEMENTATION_STATUS.md`.
+>
+> **Una precisión sobre qué significa "usar N gramos de una preparación":** son N gramos tomados proporcionalmente del lote completo que rinde la preparación, no una receta reescalada a N gramos del ingrediente base. Con la masa de 583,44 g de rendimiento, un waffle que usa 190 g consume 190/583,44 = 32,57 % de cada ingrediente del lote — así se calculó y verificó el ejemplo real.
+
+Es el cambio más importante. Antes la app modelaba `materia prima → producto`. El spreadsheet modela **`materia prima → preparación → producto`**, y las preparaciones se reutilizan entre productos.
 
 Ejemplo real, hoja `WAFLE NEW YORK SIN GLUTEN`:
 
@@ -799,13 +808,17 @@ Ninguna bloquea el arranque; todas tienen recomendación y pueden decidirse sobr
 | 1 | Documento estructurado y completo | ✅ Este archivo |
 | 2 | GitHub + backend en spreadsheet | ✅ Repo creado y en producción — [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (privado). Backend en Sheets: 📋 Fase E, no iniciada |
 | 3 | Reporte de ventas y gastos | ✅ Implementado y verificado (§9, Fase C) |
-| 4 | Fórmulas de costos fijos, costo por producto y ganancias | ✅ Extraídas, verificadas y con todas las decisiones tomadas (§10) + errores documentados (§11). El **motor de costeo con preparaciones** (Fase D1-D4) es la siguiente pieza — no implementado todavía |
+| 4 | Fórmulas de costos fijos, costo por producto y ganancias | ✅ Motor de preparaciones y costeo por porcentaje panadero implementado y verificado (§10.2-§10.3, Fase D1). Costos fijos/margen/precio objetivo (§10.4-§10.5): 📋 Fase D2, siguiente |
 
 ### Estado real del proyecto (11 de agosto de 2026)
 
-Fases **A, B y C completas**, verificadas con 49 tests automatizados (`node tests/core.test.js`) y con pruebas manuales de flujo completo en navegador (no solo unitarias). Todos los bugs P0/P1/P2 del handoff original corregidos. Ver `IMPLEMENTATION_STATUS.md` para el detalle bug por bug, incluyendo dos bugs reales encontrados *durante* la verificación (no estaban en el diagnóstico original) y ya corregidos:
+Fases **A, B, C y D1 completas**, verificadas con 71 tests automatizados (`node tests/core.test.js`) y con pruebas manuales de flujo completo en navegador (no solo unitarias). Todos los bugs P0/P1/P2 del handoff original corregidos. Ver `IMPLEMENTATION_STATUS.md` para el detalle bug por bug, incluyendo los bugs reales encontrados *durante* la verificación (no estaban en el diagnóstico original) y ya corregidos:
 
 - Revertir una venta con stock insuficiente sobrepasaba el stock original (P0-1).
 - Guardar un gasto no refrescaba la cascada de utilidad en la pestaña "Resumen" hasta cambiar de pestaña.
+- El costo por gramo de una preparación se mostraba redondeado a entero (`$12/g` en vez de `$12,4591/g`) — significativo porque un producto usa cientos de gramos.
+- Agregar una fila de empaque al producto no recalculaba el costo hasta interactuar con esa fila.
 
-**Siguiente:** Fase D1 (preparaciones intermedias + porcentaje panadero) — el cambio arquitectónico más grande del plan, ver §10.2.
+El motor de preparaciones se verificó contra el ejemplo real del spreadsheet (masa de waffle New York: 583,44 g, $7.269,15, $12,4591/g — exacto), incluyendo anidamiento de preparaciones, detección de ciclos directos e indirectos, y descuento/reversión de stock real de materia prima a través de una preparación al vender.
+
+**Siguiente:** Fase D2 (costos fijos, margen, precio objetivo — §10.4-§10.5). Las decisiones ya están tomadas en el handoff (recargo 30% global, precio como entrada); es la pieza que junta costeo (D1) + gastos (C) en la cascada final de rentabilidad por producto.

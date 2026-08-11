@@ -449,7 +449,7 @@ console.log('\n== Cascada de utilidad (HANDOFF §9.1, §9.5) ==');
 
 test('una compra de inventario NO resta de la utilidad bruta ni neta (ya está en el costo de ventas)', () => {
   const s = stateConGastos();
-  s.productos.push({ id: 'p1', nombre: 'Waffle', precio: 20000, ingredientes: [{ materiaId: 'm1', gramos: 100 }], empaquesUsados: [], empaqueManual: 0 });
+  s.productos.push({ id: 'p1', nombre: 'Waffle', precio: 20000, componentes: [{ tipo: 'materia', refId: 'm1', gramos: 100 }], empaquesUsados: [], empaqueManual: 0 });
   C.applyVenta(s, [{ productoId: 'p1', qty: 1, toppings: [] }], [], {});
   // ingresos 20000, costo = 100*10=1000, utilidad bruta = 19000
   C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 24000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 2000 });
@@ -460,7 +460,7 @@ test('una compra de inventario NO resta de la utilidad bruta ni neta (ya está e
 
 test('un gasto operativo SÍ resta de la utilidad neta pero no de la bruta', () => {
   const s = stateConGastos();
-  s.productos.push({ id: 'p1', nombre: 'Waffle', precio: 20000, ingredientes: [{ materiaId: 'm1', gramos: 100 }], empaquesUsados: [], empaqueManual: 0 });
+  s.productos.push({ id: 'p1', nombre: 'Waffle', precio: 20000, componentes: [{ tipo: 'materia', refId: 'm1', gramos: 100 }], empaquesUsados: [], empaqueManual: 0 });
   C.applyVenta(s, [{ productoId: 'p1', qty: 1, toppings: [] }], [], {});
   C.registrarGasto(s, { tipo: 'operativo', categoria: 'Publicidad', monto: 5000 });
   const c = C.getCascadaUtilidad(s, 'mes');
@@ -470,7 +470,7 @@ test('un gasto operativo SÍ resta de la utilidad neta pero no de la bruta', () 
 
 test('flujo de caja SÍ resta compras de inventario, operativos y capex', () => {
   const s = stateConGastos();
-  s.productos.push({ id: 'p1', nombre: 'Waffle', precio: 20000, ingredientes: [{ materiaId: 'm1', gramos: 100 }], empaquesUsados: [], empaqueManual: 0 });
+  s.productos.push({ id: 'p1', nombre: 'Waffle', precio: 20000, componentes: [{ tipo: 'materia', refId: 'm1', gramos: 100 }], empaquesUsados: [], empaqueManual: 0 });
   C.applyVenta(s, [{ productoId: 'p1', qty: 1, toppings: [] }], [], {});
   C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 24000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 2000 });
   C.registrarGasto(s, { tipo: 'operativo', categoria: 'Publicidad', monto: 5000 });
@@ -488,6 +488,307 @@ test('gastosOperativosPorCategoria agrupa correctamente para el desglose de repo
   const c = C.getCascadaUtilidad(s, 'mes');
   assert.strictEqual(c.gastosOperativosPorCategoria['Publicidad'], 8000);
   assert.strictEqual(c.gastosOperativosPorCategoria['Arriendo'], 800000);
+});
+
+console.log('\n== Preparaciones — porcentaje panadero (HANDOFF §10.2) ==');
+
+// Reproduce la masa real de "WAFLE NEW YORK SIN GLUTEN" del spreadsheet,
+// con los costos reales de BASE PRECIOS. Verificado a mano contra la hoja:
+// 583,44 g totales, $7.269,15, $12,4591/g.
+function stateMasaNewYork() {
+  return C.migrateState({
+    materia: [
+      { id: 'harina', nombre: 'Harina de arroz', cantidad: 100000, costo: 5.8, minimo: 0 },
+      { id: 'almidon', nombre: 'Almidón agrio', cantidad: 100000, costo: 10.75, minimo: 0 },
+      { id: 'azucar', nombre: 'Azúcar', cantidad: 100000, costo: 3.95, minimo: 0 },
+      { id: 'huevo', nombre: 'Huevos', cantidad: 100000, costo: 10.2, minimo: 0 },
+      { id: 'mantequilla', nombre: 'Mantequilla', cantidad: 100000, costo: 24, minimo: 0 },
+      { id: 'polvo', nombre: 'Polvo de hornear', cantidad: 100000, costo: 13.5, minimo: 0 },
+      { id: 'leche', nombre: 'Leche líquida', cantidad: 100000, costo: 4.49, minimo: 0 },
+      { id: 'sal', nombre: 'Sal', cantidad: 100000, costo: 3.2, minimo: 0 },
+      { id: 'quesocrema', nombre: 'Queso crema', cantidad: 100000, costo: 20.25, minimo: 0 }
+    ],
+    preparaciones: [{
+      id: 'masa-ny', nombre: 'Masa de waffles (New York)', modo: 'porcentaje', baseGramos: 100,
+      componentes: [
+        { tipo: 'materia', refId: 'harina', porcentaje: 1.0 },
+        { tipo: 'materia', refId: 'almidon', porcentaje: 0.15 },
+        { tipo: 'materia', refId: 'azucar', porcentaje: 0.2 },
+        { tipo: 'materia', refId: 'huevo', porcentaje: 0.5 },   // claras
+        { tipo: 'materia', refId: 'huevo', porcentaje: 0.36 },  // yemas (mismo insumo, dos líneas — así está en la hoja)
+        { tipo: 'materia', refId: 'mantequilla', porcentaje: 0.4 },
+        { tipo: 'materia', refId: 'polvo', porcentaje: 0.0134 },
+        { tipo: 'materia', refId: 'leche', porcentaje: 1.21 },
+        { tipo: 'materia', refId: 'sal', porcentaje: 0.001 },
+        { tipo: 'materia', refId: 'quesocrema', porcentaje: 2.0 }
+      ]
+    }]
+  });
+}
+
+test('masa New York: 583,44 g totales (suma de porcentajes 5,8344 × 100g base)', () => {
+  const s = stateMasaNewYork();
+  const c = C.getPreparacionCosto(s, 'masa-ny');
+  assert.ok(Math.abs(c.gramosTotal - 583.44) < 0.01);
+});
+
+test('masa New York: costo total $7.269,15 (verificado contra la hoja real)', () => {
+  const s = stateMasaNewYork();
+  const c = C.getPreparacionCosto(s, 'masa-ny');
+  assert.ok(Math.abs(c.costoTotal - 7269.15) < 0.5);
+});
+
+test('masa New York: costo por gramo $12,4591 (verificado contra la hoja real)', () => {
+  const s = stateMasaNewYork();
+  const c = C.getPreparacionCosto(s, 'masa-ny');
+  assert.ok(Math.abs(c.costoPorGramo - 12.4591) < 0.001);
+});
+
+console.log('\n== Preparaciones — modo directo ==');
+
+test('modo directo suma gramos explícitos sin porcentaje panadero', () => {
+  const s = C.migrateState({
+    materia: [
+      { id: 'moras', nombre: 'Moras', cantidad: 10000, costo: 13, minimo: 0 },
+      { id: 'fresas', nombre: 'Fresas', cantidad: 10000, costo: 13, minimo: 0 },
+      { id: 'azucar', nombre: 'Azúcar', cantidad: 10000, costo: 3.95, minimo: 0 }
+    ],
+    preparaciones: [{
+      id: 'salsa', nombre: 'Salsa de frutos rojos', modo: 'directo', baseGramos: 0,
+      componentes: [
+        { tipo: 'materia', refId: 'moras', gramos: 500 },
+        { tipo: 'materia', refId: 'fresas', gramos: 250 },
+        { tipo: 'materia', refId: 'azucar', gramos: 225 }
+      ]
+    }]
+  });
+  const c = C.getPreparacionCosto(s, 'salsa');
+  assert.strictEqual(c.gramosTotal, 975);
+  assert.ok(Math.abs(c.costoTotal - 10638.75) < 0.01); // verificado contra la hoja
+  assert.ok(Math.abs(c.costoPorGramo - 10.9115) < 0.001);
+});
+
+console.log('\n== Preparaciones anidadas (una preparación usa otra) ==');
+
+function stateAnidada() {
+  return C.migrateState({
+    materia: [
+      { id: 'chocolate', nombre: 'Chocolate', cantidad: 100000, costo: 10, minimo: 0 },
+      { id: 'crema', nombre: 'Crema de leche', cantidad: 100000, costo: 4, minimo: 0 },
+      { id: 'azucar', nombre: 'Azúcar', cantidad: 100000, costo: 2, minimo: 0 }
+    ],
+    preparaciones: [
+      {
+        id: 'ganache', nombre: 'Ganache', modo: 'porcentaje', baseGramos: 200,
+        componentes: [
+          { tipo: 'materia', refId: 'chocolate', porcentaje: 1.0 },
+          { tipo: 'materia', refId: 'crema', porcentaje: 0.2 }
+        ]
+      },
+      {
+        id: 'relleno', nombre: 'Relleno completo', modo: 'directo',
+        componentes: [
+          { tipo: 'preparacion', refId: 'ganache', gramos: 100 },
+          { tipo: 'materia', refId: 'azucar', gramos: 20 }
+        ]
+      }
+    ]
+  });
+}
+
+test('preparación base (ganache): 240 g, $9,00/g', () => {
+  const s = stateAnidada();
+  const c = C.getPreparacionCosto(s, 'ganache');
+  assert.strictEqual(c.gramosTotal, 240);
+  assert.ok(Math.abs(c.costoPorGramo - 9.0) < 0.0001);
+});
+
+test('preparación anidada (relleno usa ganache): composición se expande a materia cruda', () => {
+  const s = stateAnidada();
+  const comp = C.getPreparacionComposicionPorGramo(s, 'relleno');
+  // 100g de ganache dentro de 120g totales de relleno: choc=83.333g, crema=16.667g, azúcar=20g directo
+  assert.ok(Math.abs(comp.chocolate - 83.3333 / 120) < 0.0001);
+  assert.ok(Math.abs(comp.crema - 16.6667 / 120) < 0.0001);
+  assert.ok(Math.abs(comp.azucar - 20 / 120) < 0.0001);
+  const suma = comp.chocolate + comp.crema + comp.azucar;
+  assert.ok(Math.abs(suma - 1) < 0.0001, 'la composición por gramo debe sumar 1 (se explica el 100% de cada gramo)');
+});
+
+test('preparación anidada (relleno): costo por gramo se deriva de la expansión, no de una fórmula aparte', () => {
+  const s = stateAnidada();
+  const c = C.getPreparacionCosto(s, 'relleno');
+  assert.strictEqual(c.gramosTotal, 120);
+  // costoTotal = 100*9.0 (ganache) + 20*2 (azúcar) = 940 ; /120 = 7.8333
+  assert.ok(Math.abs(c.costoTotal - 940) < 0.01);
+  assert.ok(Math.abs(c.costoPorGramo - 7.8333) < 0.001);
+});
+
+console.log('\n== Detección de ciclos (HANDOFF §10.2, §21) ==');
+
+test('rechaza que una preparación se use a sí misma como componente', () => {
+  const s = stateAnidada();
+  const ciclo = C.wouldCreateCiclo(s, 'ganache', [{ tipo: 'preparacion', refId: 'ganache', porcentaje: 1 }]);
+  assert.strictEqual(ciclo, true);
+});
+
+test('rechaza un ciclo indirecto (A usa B, B usa A)', () => {
+  const s = stateAnidada();
+  // 'relleno' ya usa 'ganache'. Intentar que 'ganache' pase a usar 'relleno' cierra el ciclo.
+  const ciclo = C.wouldCreateCiclo(s, 'ganache', [{ tipo: 'preparacion', refId: 'relleno', porcentaje: 1 }]);
+  assert.strictEqual(ciclo, true);
+});
+
+test('rechaza un ciclo de tres niveles (A usa B, B usa C, C usa A)', () => {
+  const s = C.migrateState({
+    materia: [{ id: 'm1', nombre: 'X', cantidad: 1000, costo: 1, minimo: 0 }],
+    preparaciones: [
+      { id: 'a', nombre: 'A', modo: 'directo', componentes: [{ tipo: 'preparacion', refId: 'b', gramos: 10 }] },
+      { id: 'b', nombre: 'B', modo: 'directo', componentes: [{ tipo: 'preparacion', refId: 'c', gramos: 10 }] },
+      { id: 'c', nombre: 'C', modo: 'directo', componentes: [{ tipo: 'materia', refId: 'm1', gramos: 10 }] }
+    ]
+  });
+  // 'c' pasaría a usar 'a' -> a->b->c->a, ciclo de tres niveles
+  const ciclo = C.wouldCreateCiclo(s, 'c', [{ tipo: 'preparacion', refId: 'a', gramos: 5 }]);
+  assert.strictEqual(ciclo, true);
+});
+
+test('no marca ciclo cuando dos preparaciones distintas comparten una sub-preparación (diamante, válido)', () => {
+  const s = stateAnidada();
+  // Otra preparación nueva que también usa 'ganache' — no es un ciclo, es reutilización legítima.
+  const ciclo = C.wouldCreateCiclo(s, 'otra-nueva', [{ tipo: 'preparacion', refId: 'ganache', gramos: 5 }]);
+  assert.strictEqual(ciclo, false);
+});
+
+test('savePreparacion rechaza guardar si crearía un ciclo', () => {
+  const s = stateAnidada();
+  assert.throws(() => {
+    C.savePreparacion(s, { id: 'ganache', nombre: 'Ganache', modo: 'porcentaje', baseGramos: 200, componentes: [{ tipo: 'preparacion', refId: 'relleno', porcentaje: 1 }] });
+  }, /ciclo/i);
+});
+
+test('savePreparacion rechaza nombre vacío', () => {
+  const s = stateAnidada();
+  assert.throws(() => C.savePreparacion(s, { nombre: '  ', modo: 'directo', componentes: [] }));
+});
+
+test('savePreparacion crea y luego actualiza correctamente', () => {
+  const s = stateAnidada();
+  const nueva = C.savePreparacion(s, { nombre: 'Crumble', modo: 'directo', componentes: [{ tipo: 'materia', refId: 'azucar', gramos: 50 }] });
+  assert.strictEqual(s.preparaciones.length, 3);
+  C.savePreparacion(s, { id: nueva.id, nombre: 'Crumble editado', modo: 'directo', componentes: [{ tipo: 'materia', refId: 'azucar', gramos: 80 }] });
+  assert.strictEqual(s.preparaciones.length, 3); // no duplica, actualiza
+  assert.strictEqual(s.preparaciones.find(p => p.id === nueva.id).nombre, 'Crumble editado');
+});
+
+console.log('\n== Producto con componentes mixtos (materia directa + preparación) ==');
+
+function stateProductoConPreparacion() {
+  const s = stateAnidada();
+  s.empaques = [{ id: 'e1', nombre: 'Caja', unidad: 'unidad', cantidad: 100, costo: 500, minimo: 0 }];
+  s.productos = [{
+    id: 'p1', nombre: 'Waffle con ganache', precio: 15000,
+    componentes: [
+      { tipo: 'preparacion', refId: 'relleno', gramos: 120 },
+      { tipo: 'materia', refId: 'azucar', gramos: 10 } // un poco de azúcar directa además del relleno
+    ],
+    empaquesUsados: [{ empaqueId: 'e1', cantidad: 1 }],
+    empaqueManual: 0
+  }];
+  return s;
+}
+
+test('getCostoProducto suma preparación (costo por gramo) + materia directa + empaque', () => {
+  const s = stateProductoConPreparacion();
+  const costo = C.getCostoProducto(s.productos[0], s);
+  // relleno: 120g * 7.8333/g = 940 ; azúcar directa 10*2=20 ; empaque 500
+  assert.ok(Math.abs(costo - (940 + 20 + 500)) < 0.01);
+});
+
+console.log('\n== Venta que consume una preparación descuenta materia real (no la preparación) ==');
+
+test('applyVenta descuenta la materia cruda expandida, no un stock de "preparación"', () => {
+  const s = stateProductoConPreparacion();
+  const antes = {
+    chocolate: s.materia.find(m => m.id === 'chocolate').cantidad,
+    crema: s.materia.find(m => m.id === 'crema').cantidad,
+    azucar: s.materia.find(m => m.id === 'azucar').cantidad
+  };
+  const venta = C.applyVenta(s, [{ productoId: 'p1', qty: 1, toppings: [] }], [], {});
+  const despues = {
+    chocolate: s.materia.find(m => m.id === 'chocolate').cantidad,
+    crema: s.materia.find(m => m.id === 'crema').cantidad,
+    azucar: s.materia.find(m => m.id === 'azucar').cantidad
+  };
+  // componente preparación (120g de relleno) -> 83.333g choc, 16.667g crema, 20g azúcar (del relleno)
+  // + 10g azúcar directa del producto = 30g azúcar en total
+  assert.ok(Math.abs((antes.chocolate - despues.chocolate) - 83.3333) < 0.01);
+  assert.ok(Math.abs((antes.crema - despues.crema) - 16.6667) < 0.01);
+  assert.ok(Math.abs((antes.azucar - despues.azucar) - 30) < 0.01);
+  assert.ok(Math.abs(venta.consumoReal.materia.chocolate - 83.3333) < 0.01);
+});
+
+test('revertVenta a través de una preparación devuelve exactamente la materia cruda descontada', () => {
+  const s = stateProductoConPreparacion();
+  const antes = {
+    chocolate: s.materia.find(m => m.id === 'chocolate').cantidad,
+    crema: s.materia.find(m => m.id === 'crema').cantidad,
+    azucar: s.materia.find(m => m.id === 'azucar').cantidad
+  };
+  const venta = C.applyVenta(s, [{ productoId: 'p1', qty: 2, toppings: [] }], [], {});
+  C.revertVenta(s, venta);
+  const despues = {
+    chocolate: s.materia.find(m => m.id === 'chocolate').cantidad,
+    crema: s.materia.find(m => m.id === 'crema').cantidad,
+    azucar: s.materia.find(m => m.id === 'azucar').cantidad
+  };
+  assert.ok(Math.abs(antes.chocolate - despues.chocolate) < 0.0001);
+  assert.ok(Math.abs(antes.crema - despues.crema) < 0.0001);
+  assert.ok(Math.abs(antes.azucar - despues.azucar) < 0.0001);
+});
+
+test('computeSaleConsumption y checkStockShortage detectan faltante de materia usada solo vía preparación', () => {
+  const s = stateProductoConPreparacion();
+  s.materia.find(m => m.id === 'chocolate').cantidad = 50; // hacen falta 83.333g
+  const consumo = C.computeSaleConsumption([{ productoId: 'p1', qty: 1, toppings: [] }], [], s);
+  const faltantes = C.checkStockShortage(consumo, s);
+  const fChoc = faltantes.find(f => f.id === 'chocolate');
+  assert.ok(fChoc, 'debe detectar el faltante de chocolate aunque solo se use dentro de una preparación');
+  assert.ok(Math.abs(fChoc.faltante - 33.3333) < 0.01);
+});
+
+test('calcInventoryNeeds proyecta consumo de materia usada solo vía preparación', () => {
+  const s = stateProductoConPreparacion();
+  s.ventas.push({
+    id: 'v1', fecha: new Date().toISOString(),
+    items: [{ productoId: 'p1', nombre: 'Waffle con ganache', qty: 1, precio: 15000, costo: 1460 }],
+    total: 15000, ganancia: 13540
+  });
+  const needs = C.calcInventoryNeeds(s, 7);
+  const chocNeed = needs.find(n => n.id === 'chocolate');
+  assert.ok(chocNeed.consumo > 0, 'el consumo de chocolate debe reflejarse aunque solo se use vía una preparación');
+});
+
+console.log('\n== Dependencias con preparaciones (P1-4 extendido) ==');
+
+test('findProductosUsandoPreparacion detecta el producto que la referencia', () => {
+  const s = stateProductoConPreparacion();
+  const usados = C.findProductosUsandoPreparacion(s, 'relleno');
+  assert.strictEqual(usados.length, 1);
+  assert.strictEqual(usados[0].id, 'p1');
+});
+
+test('findPreparacionesUsandoPreparacion detecta relleno usando ganache', () => {
+  const s = stateAnidada();
+  const usados = C.findPreparacionesUsandoPreparacion(s, 'ganache');
+  assert.strictEqual(usados.length, 1);
+  assert.strictEqual(usados[0].id, 'relleno');
+});
+
+test('findPreparacionesUsandoMateria detecta ganache usando chocolate', () => {
+  const s = stateAnidada();
+  const usados = C.findPreparacionesUsandoMateria(s, 'chocolate');
+  assert.strictEqual(usados.length, 1);
+  assert.strictEqual(usados[0].id, 'ganache');
 });
 
 console.log('\n== Resumen ==');

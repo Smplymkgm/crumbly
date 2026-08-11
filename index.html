@@ -196,6 +196,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);
         <button class="tab-btn active" id="tab-btn-materia" onclick="setInsumosTab('materia',this)">Materia prima</button>
         <button class="tab-btn" id="tab-btn-empaque" onclick="setInsumosTab('empaque',this)">Empaque</button>
         <button class="tab-btn" id="tab-btn-toppings" onclick="setInsumosTab('toppings',this)">Toppings</button>
+        <button class="tab-btn" id="tab-btn-preparaciones" onclick="setInsumosTab('preparaciones',this)">Preparaciones</button>
       </div>
       <div id="insumos-materia-view">
         <button class="btn btn-add" onclick="openModalMateria()">+ Agregar ingrediente</button>
@@ -213,6 +214,13 @@ body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);
         <button class="btn btn-add" onclick="openModalTopping()">+ Agregar topping</button>
         <div class="card" style="margin-top:12px">
           <div id="toppings-list"><p class="empty">No hay toppings registrados</p></div>
+        </div>
+      </div>
+      <div id="insumos-preparaciones-view" style="display:none">
+        <button class="btn btn-add" onclick="openModalPreparacion()">+ Agregar preparación</button>
+        <p class="item-sub" style="margin:8px 0">Una preparación es una sub-receta (masa, salsa, crumble...) que se arma con materia prima o con otras preparaciones, y se reutiliza en varios productos.</p>
+        <div class="card">
+          <div id="preparaciones-list"><p class="empty">No hay preparaciones registradas</p></div>
         </div>
       </div>
     </div>
@@ -515,6 +523,48 @@ body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);
   </div>
 </div>
 
+<!-- MODAL PREPARACIÓN -->
+<div class="modal-overlay" id="modal-preparacion">
+  <div class="modal">
+    <button class="close-modal" onclick="closeModal('modal-preparacion')">✕</button>
+    <div class="modal-title" id="modal-preparacion-title">Nueva preparación</div>
+    <div class="modal-field">
+      <label>Nombre</label>
+      <input type="text" id="prep-nombre" placeholder="Ej: Masa de waffles, Salsa de frutos rojos">
+    </div>
+    <div class="modal-field">
+      <label>Modo de cálculo</label>
+      <select id="prep-modo" onchange="onPrepModoChange()">
+        <option value="porcentaje">Porcentaje panadero (relativo a un ingrediente base)</option>
+        <option value="directo">Gramos directos por componente</option>
+      </select>
+    </div>
+    <div class="modal-field" id="prep-base-wrap">
+      <label>Gramos del ingrediente base (100%)</label>
+      <input type="number" id="prep-base-gramos" placeholder="100" min="0" step="0.01" oninput="calcPrepCosto()">
+      <p class="item-sub" style="margin-top:4px">Cada componente de abajo se calcula como % de este valor. El componente que sea el 100% también va en la lista, con porcentaje 1.</p>
+    </div>
+    <div style="margin-bottom:8px">
+      <label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;font-weight:500;display:block">Componentes</label>
+    </div>
+    <div id="prep-componentes-wrap"></div>
+    <button class="add-ing-btn" onclick="addPrepComponenteRow()">+ Agregar componente</button>
+    <div class="total-row" style="margin-bottom:10px">
+      <span>Gramos totales</span>
+      <strong id="prep-gramos-calc">0 g</strong>
+    </div>
+    <div class="total-row" style="margin-bottom:10px">
+      <span>Costo por gramo</span>
+      <strong id="prep-costo-calc" style="color:var(--success)">$0</strong>
+    </div>
+    <input type="hidden" id="prep-edit-id">
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal('modal-preparacion')">Cancelar</button>
+      <button class="btn-save" onclick="savePreparacionUI()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL PRODUCTO -->
 <div class="modal-overlay" id="modal-producto">
   <div class="modal">
@@ -529,10 +579,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);
       <input type="number" id="p-precio" placeholder="5000" min="0" oninput="calcProdCost()">
     </div>
     <div style="margin-bottom:8px">
-      <label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;font-weight:500;display:block">Ingredientes (gramos por unidad)</label>
+      <label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;font-weight:500;display:block">Componentes (materia prima o preparaciones, gramos por unidad)</label>
     </div>
     <div id="prod-ings-wrap"></div>
-    <button class="add-ing-btn" onclick="addIngRow()">+ Agregar ingrediente</button>
+    <button class="add-ing-btn" onclick="addIngRow()">+ Agregar componente</button>
     <div style="margin-bottom:8px">
       <label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;font-weight:500;display:block">Empaque usado (cantidad por unidad)</label>
     </div>
@@ -792,12 +842,18 @@ function saveMateria() {
 }
 function deleteMateria(id) {
   // P1-4: no borrar en silencio un insumo que recetas ya referencian —
-  // quedarían con un materiaId huérfano y el costo bajaría sin explicación
-  // la próxima vez que se reedite el producto.
-  const usados = CrumblyCore.findProductosUsandoMateria(state, id);
-  if (usados.length) {
-    alert('No se puede eliminar: lo usan ' + usados.length + ' producto(s) — ' +
-      usados.map(p => p.nombre).join(', ') + '.\n\nQuita el ingrediente de esas recetas primero.');
+  // quedarían con un refId huérfano y el costo bajaría sin explicación la
+  // próxima vez que se reedite el producto o la preparación. Se revisan
+  // ambos: uso directo en productos y uso dentro de preparaciones (una
+  // materia puede no estar en ningún producto directamente y aun así ser
+  // indispensable porque una preparación la usa).
+  const usadosProductos = CrumblyCore.findProductosUsandoMateria(state, id);
+  const usadasPreparaciones = CrumblyCore.findPreparacionesUsandoMateria(state, id);
+  if (usadosProductos.length || usadasPreparaciones.length) {
+    const partes = [];
+    if (usadosProductos.length) partes.push(usadosProductos.length + ' producto(s) — ' + usadosProductos.map(p => p.nombre).join(', '));
+    if (usadasPreparaciones.length) partes.push(usadasPreparaciones.length + ' preparación(es) — ' + usadasPreparaciones.map(p => p.nombre).join(', '));
+    alert('No se puede eliminar: lo usan ' + partes.join(' y ') + '.\n\nQuítalo de esas recetas primero.');
     return;
   }
   if (!confirm('¿Eliminar este ingrediente?')) return;
@@ -828,9 +884,12 @@ function setInsumosTab(tab, el) {
   document.getElementById('tab-btn-materia').classList.toggle('active', tab === 'materia');
   document.getElementById('tab-btn-empaque').classList.toggle('active', tab === 'empaque');
   document.getElementById('tab-btn-toppings').classList.toggle('active', tab === 'toppings');
+  document.getElementById('tab-btn-preparaciones').classList.toggle('active', tab === 'preparaciones');
   document.getElementById('insumos-materia-view').style.display = tab === 'materia' ? 'block' : 'none';
   document.getElementById('insumos-empaque-view').style.display = tab === 'empaque' ? 'block' : 'none';
   document.getElementById('insumos-toppings-view').style.display = tab === 'toppings' ? 'block' : 'none';
+  document.getElementById('insumos-preparaciones-view').style.display = tab === 'preparaciones' ? 'block' : 'none';
+  if (tab === 'preparaciones') renderPreparaciones();
 }
 
 /* ─── TOPPINGS ─── */
@@ -962,6 +1021,182 @@ function renderEmpaque() {
     </div>`).join('');
 }
 
+/* ─── PREPARACIONES (HANDOFF §10.2) ───
+   Sub-recetas (masa, salsas, crumble...) armadas con materia prima o con
+   otras preparaciones, reutilizables entre productos. Todo el cálculo
+   (porcentaje panadero, anidamiento, detección de ciclos) vive en
+   CrumblyCore — aquí solo se arma el formulario y se muestra el resultado. */
+let prepComponenteRows = [];
+let prepComponenteRowCount = 0;
+
+function openModalPreparacion(id) {
+  prepComponenteRows = [];
+  document.getElementById('prep-componentes-wrap').innerHTML = '';
+  if (id) {
+    const prep = state.preparaciones.find(x => x.id === id);
+    document.getElementById('modal-preparacion-title').textContent = 'Editar preparación';
+    document.getElementById('prep-nombre').value = prep.nombre;
+    document.getElementById('prep-modo').value = prep.modo;
+    document.getElementById('prep-base-gramos').value = prep.baseGramos || '';
+    document.getElementById('prep-edit-id').value = id;
+    prep.componentes.forEach(c => addPrepComponenteRow(c.tipo, c.refId, prep.modo === 'directo' ? c.gramos : c.porcentaje));
+  } else {
+    document.getElementById('modal-preparacion-title').textContent = 'Nueva preparación';
+    document.getElementById('prep-nombre').value = '';
+    document.getElementById('prep-modo').value = 'porcentaje';
+    document.getElementById('prep-base-gramos').value = '';
+    document.getElementById('prep-edit-id').value = '';
+    addPrepComponenteRow();
+  }
+  onPrepModoChange();
+  document.getElementById('modal-preparacion').classList.add('open');
+}
+function onPrepModoChange() {
+  const modo = document.getElementById('prep-modo').value;
+  document.getElementById('prep-base-wrap').style.display = modo === 'porcentaje' ? 'block' : 'none';
+  document.querySelectorAll('#prep-componentes-wrap .prep-comp-valor').forEach(inp => {
+    inp.placeholder = modo === 'porcentaje' ? '% (ej: 0.2)' : 'gramos';
+  });
+  calcPrepCosto();
+}
+function populatePrepComponenteRefSelect(rowId, selectedId) {
+  const row = document.getElementById(rowId);
+  if (!row) return;
+  const tipo = row.querySelector('.prep-comp-tipo').value;
+  const editId = document.getElementById('prep-edit-id').value;
+  const sel = row.querySelector('.prep-comp-ref');
+  const list = tipo === 'materia' ? state.materia : state.preparaciones.filter(p => p.id !== editId);
+  sel.innerHTML = list.length
+    ? list.map(x => `<option value="${x.id}" ${x.id === selectedId ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('')
+    : '<option value="">-- No hay --</option>';
+}
+function addPrepComponenteRow(tipo, refId, valor) {
+  tipo = tipo || 'materia';
+  const rowId = 'pcr' + (++prepComponenteRowCount);
+  prepComponenteRows.push(rowId);
+  const modo = document.getElementById('prep-modo').value;
+  const placeholder = modo === 'porcentaje' ? '% (ej: 0.2)' : 'gramos';
+  const html = `<div class="ing-row" id="${rowId}">
+    <select class="prep-comp-tipo" style="flex:1" onchange="onPrepComponenteTipoChange('${rowId}')">
+      <option value="materia" ${tipo === 'materia' ? 'selected' : ''}>Materia</option>
+      <option value="preparacion" ${tipo === 'preparacion' ? 'selected' : ''}>Preparación</option>
+    </select>
+    <select class="prep-comp-ref" onchange="calcPrepCosto()"></select>
+    <input type="number" class="prep-comp-valor" placeholder="${placeholder}" value="${valor || ''}" min="0" step="0.0001" oninput="calcPrepCosto()">
+    <button onclick="removePrepComponenteRow('${rowId}')">✕</button>
+  </div>`;
+  document.getElementById('prep-componentes-wrap').insertAdjacentHTML('beforeend', html);
+  populatePrepComponenteRefSelect(rowId, refId);
+  calcPrepCosto();
+}
+function onPrepComponenteTipoChange(rowId) {
+  populatePrepComponenteRefSelect(rowId, null);
+  calcPrepCosto();
+}
+function removePrepComponenteRow(rowId) {
+  document.getElementById(rowId)?.remove();
+  prepComponenteRows = prepComponenteRows.filter(x => x !== rowId);
+  calcPrepCosto();
+}
+function getPrepComponenteRowData() {
+  const modo = document.getElementById('prep-modo').value;
+  return prepComponenteRows.map(rowId => {
+    const row = document.getElementById(rowId);
+    if (!row) return null;
+    const tipo = row.querySelector('.prep-comp-tipo').value;
+    const refId = row.querySelector('.prep-comp-ref').value;
+    const valor = parseFloat(row.querySelector('.prep-comp-valor').value) || 0;
+    const c = { tipo: tipo, refId: refId };
+    if (modo === 'directo') c.gramos = valor; else c.porcentaje = valor;
+    return c;
+  }).filter(c => c && c.refId && ((c.gramos || 0) > 0 || (c.porcentaje || 0) > 0));
+}
+function calcPrepCosto() {
+  const modo = document.getElementById('prep-modo').value;
+  const baseGramos = parseFloat(document.getElementById('prep-base-gramos').value) || 0;
+  const id = document.getElementById('prep-edit-id').value || '__preview__';
+  const candidate = { id: id, nombre: '(preview)', modo: modo, baseGramos: baseGramos, componentes: getPrepComponenteRowData() };
+  // Vista previa: se sustituye/agrega esta preparación en una copia superficial
+  // del estado para reutilizar el mismo motor de cálculo que el resto de la
+  // app — nunca se duplica la fórmula de costeo (HANDOFF §20).
+  const preview = Object.assign({}, state, {
+    preparaciones: state.preparaciones.some(p => p.id === id)
+      ? state.preparaciones.map(p => p.id === id ? candidate : p)
+      : state.preparaciones.concat([candidate])
+  });
+  try {
+    const costo = CrumblyCore.getPreparacionCosto(preview, id);
+    document.getElementById('prep-gramos-calc').textContent = costo.gramosTotal.toFixed(2) + ' g';
+    document.getElementById('prep-costo-calc').textContent = '$' + costo.costoPorGramo.toFixed(4) + '/g';
+    document.getElementById('prep-costo-calc').style.color = 'var(--success)';
+  } catch (e) {
+    document.getElementById('prep-gramos-calc').textContent = '—';
+    document.getElementById('prep-costo-calc').textContent = e.message;
+    document.getElementById('prep-costo-calc').style.color = 'var(--danger)';
+  }
+}
+function savePreparacionUI() {
+  const editId = document.getElementById('prep-edit-id').value;
+  const input = {
+    id: editId || undefined,
+    nombre: document.getElementById('prep-nombre').value.trim(),
+    modo: document.getElementById('prep-modo').value,
+    baseGramos: parseFloat(document.getElementById('prep-base-gramos').value) || 0,
+    componentes: getPrepComponenteRowData()
+  };
+  if (!input.componentes.length) { showToast('Agrega al menos un componente'); return; }
+  try {
+    CrumblyCore.savePreparacion(state, input);
+  } catch (e) {
+    showToast(e.message);
+    return;
+  }
+  saveState();
+  closeModal('modal-preparacion');
+  renderPreparaciones();
+  renderProductos(); // el costo de productos que usan esta preparación pudo cambiar
+  renderDashboard();
+  showToast('Preparación guardada ✓');
+}
+function deletePreparacion(id) {
+  const usadaPorProductos = CrumblyCore.findProductosUsandoPreparacion(state, id);
+  const usadaPorPreparaciones = CrumblyCore.findPreparacionesUsandoPreparacion(state, id);
+  if (usadaPorProductos.length || usadaPorPreparaciones.length) {
+    const partes = [];
+    if (usadaPorProductos.length) partes.push(usadaPorProductos.length + ' producto(s) — ' + usadaPorProductos.map(p => p.nombre).join(', '));
+    if (usadaPorPreparaciones.length) partes.push(usadaPorPreparaciones.length + ' preparación(es) — ' + usadaPorPreparaciones.map(p => p.nombre).join(', '));
+    alert('No se puede eliminar: la usan ' + partes.join(' y ') + '.\n\nQuítala de esas recetas primero.');
+    return;
+  }
+  if (!confirm('¿Eliminar esta preparación?')) return;
+  state.preparaciones = state.preparaciones.filter(x => x.id !== id);
+  saveState();
+  renderPreparaciones();
+  showToast('Preparación eliminada');
+}
+function renderPreparaciones() {
+  const el = document.getElementById('preparaciones-list');
+  if (!el) return;
+  if (!state.preparaciones.length) { el.innerHTML = '<p class="empty">No hay preparaciones registradas</p>'; return; }
+  el.innerHTML = state.preparaciones.map(prep => {
+    let costo, error = null;
+    try { costo = CrumblyCore.getPreparacionCosto(state, prep.id); }
+    catch (e) { error = e.message; costo = { gramosTotal: 0, costoPorGramo: 0 }; }
+    const modoLabel = prep.modo === 'directo' ? 'Directo' : 'Porcentaje panadero';
+    return `<div class="list-item">
+      <div style="flex:1;min-width:0">
+        <div class="item-name">${esc(prep.nombre)}</div>
+        <div class="item-sub">${modoLabel} · ${costo.gramosTotal.toFixed(0)}g totales</div>
+        <div class="item-sub" style="${error ? 'color:var(--danger)' : ''}">${error ? error : '$' + costo.costoPorGramo.toFixed(4) + '/g'}</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+        <button class="btn-icon" onclick="openModalPreparacion('${prep.id}')" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        <button class="btn-icon danger" onclick="deletePreparacion('${prep.id}')" title="Eliminar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
 /* ─── PRODUCTOS ─── */
 let ingRows = [];
 let empRows = [];
@@ -977,7 +1212,7 @@ function openModalProducto(id) {
     document.getElementById('p-precio').value = p.precio;
     document.getElementById('p-empaque-manual').value = p.empaqueManual || '';
     document.getElementById('p-edit-id').value = id;
-    p.ingredientes.forEach(i => addIngRow(i.materiaId, i.gramos));
+    p.componentes.forEach(c => addIngRow(c.tipo, c.refId, c.gramos));
     (p.empaquesUsados || []).forEach(e => addEmpRow(e.empaqueId, e.cantidad));
   } else {
     document.getElementById('modal-prod-title').textContent = 'Nuevo producto';
@@ -1000,6 +1235,7 @@ function addEmpRow(empaqueId = '', cantidad = '') {
     <button onclick="removeEmpRow('${rowId}')">✕</button>
   </div>`;
   document.getElementById('prod-emp-wrap').insertAdjacentHTML('beforeend', html);
+  calcProdCost(); // antes solo recalculaba al cambiar el select/input de la fila
 }
 function removeEmpRow(rowId) {
   document.getElementById(rowId)?.remove();
@@ -1015,16 +1251,40 @@ function getEmpRowData() {
     return { empaqueId: sel.value, cantidad: parseFloat(inp.value) || 0 };
   }).filter(x => x && x.empaqueId && x.cantidad > 0);
 }
-function addIngRow(materiaId = '', gramos = '') {
+// Cada fila de "componente" del producto puede ser materia prima directa O
+// una preparación (masa, salsa...) — HANDOFF §10.2/§10.3. El selector de
+// tipo determina qué lista pobla el segundo <select>, igual que en el
+// formulario de preparaciones.
+function addIngRow(tipo, refId, gramos) {
+  tipo = tipo || 'materia';
   const rowId = 'ir' + (++ingRowCount);
   ingRows.push(rowId);
-  const opts = state.materia.map(m => `<option value="${m.id}" ${m.id === materiaId ? 'selected' : ''}>${esc(m.nombre)}</option>`).join('');
   const html = `<div class="ing-row" id="${rowId}">
-    <select onchange="calcProdCost()"><option value="">-- Ingrediente --</option>${opts}</select>
-    <input type="number" placeholder="gramos" value="${gramos}" min="0" step="0.1" oninput="calcProdCost()">
+    <select class="prod-comp-tipo" style="flex:1" onchange="onProdComponenteTipoChange('${rowId}')">
+      <option value="materia" ${tipo === 'materia' ? 'selected' : ''}>Materia</option>
+      <option value="preparacion" ${tipo === 'preparacion' ? 'selected' : ''}>Preparación</option>
+    </select>
+    <select class="prod-comp-ref" onchange="calcProdCost()"></select>
+    <input type="number" class="prod-comp-gramos" placeholder="gramos" value="${gramos || ''}" min="0" step="0.1" oninput="calcProdCost()">
     <button onclick="removeIngRow('${rowId}')">✕</button>
   </div>`;
   document.getElementById('prod-ings-wrap').insertAdjacentHTML('beforeend', html);
+  populateProdComponenteRefSelect(rowId, refId);
+  calcProdCost();
+}
+function populateProdComponenteRefSelect(rowId, selectedId) {
+  const row = document.getElementById(rowId);
+  if (!row) return;
+  const tipo = row.querySelector('.prod-comp-tipo').value;
+  const sel = row.querySelector('.prod-comp-ref');
+  const list = tipo === 'materia' ? state.materia : state.preparaciones;
+  sel.innerHTML = list.length
+    ? list.map(x => `<option value="${x.id}" ${x.id === selectedId ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('')
+    : '<option value="">-- No hay --</option>';
+}
+function onProdComponenteTipoChange(rowId) {
+  populateProdComponenteRefSelect(rowId, null);
+  calcProdCost();
 }
 function removeIngRow(rowId) {
   document.getElementById(rowId)?.remove();
@@ -1035,17 +1295,23 @@ function getIngRowData() {
   return ingRows.map(rowId => {
     const row = document.getElementById(rowId);
     if (!row) return null;
-    const sel = row.querySelector('select');
-    const inp = row.querySelector('input');
-    return { materiaId: sel.value, gramos: parseFloat(inp.value) || 0 };
-  }).filter(x => x && x.materiaId && x.gramos > 0);
+    const tipo = row.querySelector('.prod-comp-tipo').value;
+    const refId = row.querySelector('.prod-comp-ref').value;
+    const gramos = parseFloat(row.querySelector('.prod-comp-gramos').value) || 0;
+    return { tipo: tipo, refId: refId, gramos: gramos };
+  }).filter(x => x && x.refId && x.gramos > 0);
 }
 function calcProdCost() {
-  const ings = getIngRowData();
+  const componentes = getIngRowData();
   let costo = 0;
-  ings.forEach(i => {
-    const m = state.materia.find(x => x.id === i.materiaId);
-    if (m) costo += m.costo * i.gramos;
+  componentes.forEach(c => {
+    if (c.tipo === 'preparacion') {
+      try { costo += CrumblyCore.getPreparacionCosto(state, c.refId).costoPorGramo * c.gramos; }
+      catch (e) { /* ciclo u otro error — se ignora en la vista previa, savePreparacion ya lo bloqueó al guardar */ }
+    } else {
+      const m = state.materia.find(x => x.id === c.refId);
+      if (m) costo += m.costo * c.gramos;
+    }
   });
   const emps = getEmpRowData();
   emps.forEach(e => {
@@ -1065,19 +1331,20 @@ function saveProducto() {
   const precio = parseFloat(document.getElementById('p-precio').value) || 0;
   const empaqueManual = parseFloat(document.getElementById('p-empaque-manual').value) || 0;
   const editId = document.getElementById('p-edit-id').value;
-  const ingredientes = getIngRowData();
+  const componentes = getIngRowData();
   const empaquesUsados = getEmpRowData();
   if (!nombre) { showToast('Ingresa el nombre del producto'); return; }
   if (!precio) { showToast('Ingresa el precio de venta'); return; }
   // P0-2: ya NO se guarda "costo" como snapshot congelado. El costo del
   // producto se calcula siempre en vivo con CrumblyCore.getCostoProducto,
-  // así que si cambia el precio de un ingrediente el margen se actualiza
-  // solo, sin tener que reabrir y regrabar cada producto.
+  // así que si cambia el precio de un ingrediente (o de una preparación que
+  // use) el margen se actualiza solo, sin tener que reabrir y regrabar
+  // cada producto.
   if (editId) {
     const idx = state.productos.findIndex(x => x.id === editId);
-    state.productos[idx] = { ...state.productos[idx], nombre, precio, ingredientes, empaquesUsados, empaqueManual };
+    state.productos[idx] = { ...state.productos[idx], nombre, precio, componentes, empaquesUsados, empaqueManual };
   } else {
-    state.productos.push({ id: uid(), nombre, precio, ingredientes, empaquesUsados, empaqueManual });
+    state.productos.push({ id: uid(), nombre, precio, componentes, empaquesUsados, empaqueManual });
   }
   saveState(); closeModal('modal-producto'); renderProductos();
   showToast('Producto guardado ✓');
@@ -1802,7 +2069,7 @@ function resetearDatos() {
 }
 
 function refreshAll() {
-  renderMateria(); renderEmpaque(); renderTopping(); renderProductos(); renderDashboard(); renderVentasHistorial(); renderReportes();
+  renderMateria(); renderEmpaque(); renderTopping(); renderPreparaciones(); renderProductos(); renderDashboard(); renderVentasHistorial(); renderReportes();
 }
 
 loadState();

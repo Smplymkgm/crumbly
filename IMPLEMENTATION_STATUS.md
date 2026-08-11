@@ -4,7 +4,7 @@
 
 ## Fase actual
 
-**Fases A, B y C completas y verificadas.** Repo en GitHub: [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (privado). Fases D (costeo/preparaciones) y E (backend): no iniciadas — siguiente en el roadmap del `HANDOFF.md`.
+**Fases A, B, C y D1 completas y verificadas.** Repo en GitHub: [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (privado). Fases D2-D4 (costos fijos, domicilios, migración del spreadsheet) y E (backend): no iniciadas — siguiente en el roadmap del `HANDOFF.md`.
 
 ## Qué se hizo
 
@@ -70,22 +70,45 @@ Implementado en `js/core.js` (`registrarGasto`, `eliminarGasto`, `costoPromedioP
 
 **Fix:** ambas funciones ahora llaman `renderCascadaUtilidad()` explícitamente. Verificado en navegador: registrar un gasto operativo y uno de capex actualiza la tarjeta de inmediato, sin cambiar de pestaña.
 
+### Fase D1 — Preparaciones intermedias (HANDOFF §10.2-§10.3)
+
+El cambio arquitectónico más grande del plan: antes la app modelaba `materia prima → producto`; ahora modela `materia prima → preparación → producto`, con preparaciones reutilizables y anidables. Motor en `js/core.js`, UI en `index.html` (4ª pestaña "Preparaciones" dentro de Insumos, modal de producto con componentes mixtos).
+
+| Pieza | Estado | Verificación |
+|---|---|---|
+| Porcentaje panadero (`gramos = baseGramos × porcentaje`) | ✅ DONE | Masa de waffle New York reproducida con los 9 insumos y costos reales del handoff: **583,44 g, $7.269,15, $12,4591/g — exacto contra la hoja**, verificado tanto en `tests/core.test.js` como en el navegador (formulario real, `savePreparacionUI`). |
+| Modo directo (gramos explícitos, sin porcentaje) | ✅ DONE | Salsa de frutos rojos (moras+fresas+azúcar): 975 g, $10.638,75, $10,9115/g — exacto contra la hoja. |
+| Preparaciones anidadas (una preparación usa otra) | ✅ DONE | Caso sintético de dos niveles verificado a mano (ganache 240g/$9,00 dentro de relleno 120g/$7,8333); la composición por gramo suma exactamente 1 (se explica el 100% de cada gramo). |
+| Detección de ciclos (directos e indirectos) | ✅ DONE | Auto-referencia, ciclo A↔B, ciclo de 3 niveles A→B→C→A, y el caso "diamante" (dos preparaciones distintas comparten una sub-preparación) correctamente NO marcado como ciclo. Probado también desde el formulario real: `savePreparacionUI()` rechaza con el modal abierto, sin corromper el estado. |
+| `getCostoProducto` con componentes mixtos | ✅ DONE | Producto = preparación + materia directa + empaque, verificado exacto. |
+| Venta descuenta materia real a través de una preparación | ✅ DONE | Vender 1 unidad de un producto que usa 190g de una preparación de 583,44g descontó cada materia prima cruda en la proporción correcta (190/583,44 = 32,57% del lote) — verificado con los 9 insumos reales, diferencia 0 contra el cálculo de referencia. |
+| `revertVenta` a través de una preparación | ✅ DONE | Reversión exacta, mismo patrón `consumoReal` que P0-1 — no depende de la receta actual. |
+| `calcInventoryNeeds`/`checkStockShortage` ven materia usada solo vía preparación | ✅ DONE | Un insumo usado exclusivamente dentro de una preparación (nunca referenciado directo por el producto) sí aparece en faltantes y en proyección de compras. |
+| Migración `ingredientes` → `componentes` (schemaVersion 3→4) | ✅ DONE | No destructiva — probada con un estado v3 crudo (con `ingredientes`, sin `preparaciones`); migra limpio y el costo calculado coincide. |
+| Bloqueo de borrado extendido a preparaciones | ✅ DONE | No se puede borrar una preparación usada por un producto o por otra preparación; no se puede borrar una materia usada por una preparación (aunque ningún producto la referencie directo). Los 4 casos probados en el navegador con el mensaje real que ve el usuario. |
+
+### Bugs reales encontrados durante la verificación en navegador (Fase D1)
+
+1. **Costo por gramo de preparación mostrado redondeado a entero.** `calcPrepCosto()` y `renderPreparaciones()` usaban `fmt()` (formato de moneda, pensado para montos totales) sobre un costo por gramo — `$12.4591` se mostraba como `$12`. Con productos que usan cientos de gramos, ese redondeo equivale a varios pesos de error real. Fix: mostrar con 4 decimales (`toFixed(4)`), igual que ya hacía la lista de materia prima con `toFixed(3)`.
+2. **`addEmpRow()` no recalculaba el costo del producto al agregar la fila.** A diferencia de `addIngRow()` (que sí recalcula), agregar una fila de empaque dejaba el costo mostrado desactualizado hasta que el usuario tocaba el select o el input de esa fila. Bug preexistente a D1 (no introducido por este cambio), detectado porque el script de verificación seteaba valores por JS sin disparar `change`. Fix: `addEmpRow()` ahora llama `calcProdCost()` al insertar la fila.
+
+Ninguno de los dos afectaba los cálculos guardados — ambos eran de visualización/refresco. Los números persistidos (`state`) siempre fueron correctos; se confirmó comparando contra `CrumblyCore.getPreparacionCosto()`/`getCostoProducto()` llamados directamente.
+
 ## Tests
 
 ```
 node tests/core.test.js
 ```
 
-**49/49 pasan.** Cobertura Fase B (33 tests): conversión de períodos (semana en lunes), formato de moneda, escape de HTML, costeo de producto en vivo, validación de stock, necesidades de inventario (3 tipos de insumo, ventana móvil), migración de esquema (no destructiva, tolera estado parcial/corrupto/null), aplicar/revertir venta (caso normal, stock insuficiente, toppings clampeados, venta legada sin `consumoReal`), dependencias al eliminar insumos. Cobertura Fase C (16 tests nuevos): costo promedio ponderado, clasificación de gastos por tipo, reversión con snapshot exacto, depreciación de capex, cascada de utilidad (bruta/neta/flujo de caja), agrupación por categoría.
+**71/71 pasan.** Cobertura Fase B (33 tests): conversión de períodos (semana en lunes), formato de moneda, escape de HTML, costeo de producto en vivo, validación de stock, necesidades de inventario (3 tipos de insumo, ventana móvil), migración de esquema (no destructiva, tolera estado parcial/corrupto/null), aplicar/revertir venta (caso normal, stock insuficiente, toppings clampeados, venta legada sin `consumoReal`), dependencias al eliminar insumos. Cobertura Fase C (16 tests): costo promedio ponderado, clasificación de gastos por tipo, reversión con snapshot exacto, depreciación de capex, cascada de utilidad, agrupación por categoría. Cobertura Fase D1 (22 tests nuevos): porcentaje panadero con números reales del handoff, modo directo, anidamiento, ciclos (4 variantes), producto con componentes mixtos, venta/reversión a través de una preparación, dependencias extendidas.
 
-No hay suite de UI automatizada — la verificación de pantallas se hizo manualmente en el navegador (ver tablas de arriba) porque el proyecto no tiene un test runner de browser configurado. Si se quiere esa cobertura permanente, es trabajo nuevo, no incluido aquí.
+No hay suite de UI automatizada — la verificación de pantallas se hizo manualmente en el navegador (ver tablas de arriba, incluyendo uso de los formularios/modales reales, no solo llamadas directas a `core.js`) porque el proyecto no tiene un test runner de browser configurado. Si se quiere esa cobertura permanente, es trabajo nuevo, no incluido aquí.
 
 ## Siguiente en el roadmap
 
-1. **Fase D1 — Preparaciones intermedias**: el cambio arquitectónico grande (masa, salsas, porcentaje panadero, detección de ciclos). Bloquea D2-D4.
-2. **Fase D2 — Costos fijos, margen, precio objetivo** (recargo 30% global, precio como entrada — decisiones ya tomadas en `HANDOFF.md` §10.4).
-3. **Fase D3 — Domicilios por zona.**
-4. **Fase D4 — Migrar los datos del spreadsheet**, con las correcciones de `HANDOFF.md` §11 (ya no hay decisiones pendientes que la bloqueen).
-5. **Fase E — Backend en Google Sheets.**
+1. **Fase D2 — Costos fijos, margen, precio objetivo** (`HANDOFF.md` §10.4-§10.5): recargo 30% global, precio como entrada, markup vs. margen contable mostrados por separado, y la comparación "recargo recuperado vs. costos fijos reales" que cruza costeo (D1) con gastos (C) — decisiones ya tomadas en el handoff.
+2. **Fase D3 — Domicilios por zona.**
+3. **Fase D4 — Migrar los datos del spreadsheet**, con las correcciones de `HANDOFF.md` §11 (ya no hay decisiones pendientes que la bloqueen).
+4. **Fase E — Backend en Google Sheets.**
 
-No se ha empezado ninguna de estas — el roadmap del handoff las ordena así a propósito (D depende de B+C, ya completas; ver nota en `HANDOFF.md` §7).
+El roadmap del handoff las ordena así a propósito (D2 depende de D1 + C, ambas ya completas; ver nota en `HANDOFF.md` §7).

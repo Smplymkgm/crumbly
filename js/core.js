@@ -16,7 +16,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var SCHEMA_VERSION = 3;
+  var SCHEMA_VERSION = 4;
 
   // ─── Formato ───────────────────────────────────────────────
 
@@ -96,6 +96,7 @@
       materia: [],
       empaques: [],
       toppings: [],
+      preparaciones: [],
       productos: [],
       ventas: [],
       gastos: [],
@@ -118,20 +119,35 @@
       productos: Array.isArray(raw.productos) ? raw.productos : [],
       ventas: Array.isArray(raw.ventas) ? raw.ventas : [],
       gastos: Array.isArray(raw.gastos) ? raw.gastos : [], // v2 -> v3
+      preparaciones: Array.isArray(raw.preparaciones) ? raw.preparaciones : [], // v3 -> v4
       config: (raw.config && typeof raw.config === 'object') ? raw.config : {}
     };
     if (s.config.email === undefined) s.config.email = '';
 
     // v1 → v2: productos ganan empaquesUsados[] / empaqueManual (heredado
     // del costo manual de empaque de la versión anterior a toppings/empaque).
+    // v3 → v4: productos ganan componentes[] (unifica materia + preparaciones,
+    // reemplaza ingredientes[{materiaId,gramos}] por componentes[{tipo,refId,gramos}]
+    // — ver HANDOFF §10.2). Los ingredientes existentes se migran con tipo:'materia'.
     s.productos = s.productos.map(function (p) {
       var out = Object.assign({}, p);
-      if (!Array.isArray(out.ingredientes)) out.ingredientes = [];
+      if (!Array.isArray(out.componentes)) {
+        out.componentes = (Array.isArray(out.ingredientes) ? out.ingredientes : []).map(function (i) {
+          return { tipo: 'materia', refId: i.materiaId, gramos: i.gramos };
+        });
+      }
+      delete out.ingredientes;
       if (!Array.isArray(out.empaquesUsados)) out.empaquesUsados = [];
       if (out.empaqueManual === undefined) out.empaqueManual = out.empaque || 0;
       // productos[].costo ya NO se persiste como snapshot (P0-2) — si viene
       // de un estado viejo se ignora; se recalcula siempre en vivo.
       delete out.costo;
+      return out;
+    });
+
+    s.preparaciones = s.preparaciones.map(function (prep) {
+      var out = Object.assign({ modo: 'porcentaje', baseGramos: 0 }, prep);
+      if (!Array.isArray(out.componentes)) out.componentes = [];
       return out;
     });
 
@@ -149,14 +165,165 @@
     return s;
   }
 
+  // ─── Preparaciones intermedias (HANDOFF §10.2) ─────────────
+  //
+  // Modelo: materia prima → preparación → producto, con reutilización entre
+  // productos y anidamiento entre preparaciones (una masa puede usar otra
+  // preparación como componente). Todo se resuelve con UNA sola función
+  // recursiva — getPreparacionComposicionPorGramo — que expande cualquier
+  // preparación, sin importar cuán anidada esté, a "cuántos gramos de cada
+  // materia prima CRUDA hacen falta por cada gramo de esta preparación".
+  // Costeo, consumo de stock al vender y proyección de compras se derivan
+  // todos de esa misma expansión — nunca se duplica la fórmula.
+  //
+  // Porcentaje panadero: gramos(i) = baseGramos × porcentaje(i). Modo
+  // 'directo': gramos(i) viene dado directamente, sin básculas relativas.
+
+  function getPreparacion(state, prepId) {
+    return (state.preparaciones || []).find(function (x) { return x.id === prepId; });
+  }
+
+  function gramosDeComponentePreparacion(prep, c) {
+    return prep.modo === 'directo'
+      ? (Number(c.gramos) || 0)
+      : (Number(prep.baseGramos) || 0) * (Number(c.porcentaje) || 0);
+  }
+
+  // Gramos de materia CRUDA por cada gramo de la preparación `prepId`,
+  // expandiendo recursivamente cualquier sub-preparación. `_stack` rastrea
+  // la cadena de preparaciones en resolución para cortar con un error claro
+  // ante un ciclo (A usa B, B usa A) en vez de recursión infinita.
+  function getPreparacionComposicionPorGramo(state, prepId, _stack) {
+    _stack = _stack || [];
+    if (_stack.indexOf(prepId) !== -1) {
+      throw new Error('Ciclo detectado en preparaciones: ' + _stack.concat(prepId).join(' → '));
+    }
+    var prep = getPreparacion(state, prepId);
+    if (!prep) return {};
+    var stack2 = _stack.concat(prepId);
+    var gramosTotal = 0;
+    var acumMateria = {};
+    (prep.componentes || []).forEach(function (c) {
+      var gramos = gramosDeComponentePreparacion(prep, c);
+      gramosTotal += gramos;
+      if (c.tipo === 'materia') {
+        acumMateria[c.refId] = (acumMateria[c.refId] || 0) + gramos;
+      } else if (c.tipo === 'preparacion') {
+        var sub = getPreparacionComposicionPorGramo(state, c.refId, stack2);
+        Object.keys(sub).forEach(function (mid) {
+          acumMateria[mid] = (acumMateria[mid] || 0) + sub[mid] * gramos;
+        });
+      }
+    });
+    var porGramo = {};
+    if (gramosTotal > 0) {
+      Object.keys(acumMateria).forEach(function (mid) { porGramo[mid] = acumMateria[mid] / gramosTotal; });
+    }
+    return porGramo;
+  }
+
+  // Costo por gramo de una preparación — se deriva de la composición
+  // expandida a materia cruda, no de una fórmula separada (ver nota arriba).
+  function getPreparacionCosto(state, prepId) {
+    var composicion = getPreparacionComposicionPorGramo(state, prepId); // lanza si hay ciclo
+    var costoPorGramo = 0;
+    Object.keys(composicion).forEach(function (mid) {
+      var m = (state.materia || []).find(function (x) { return x.id === mid; });
+      if (m) costoPorGramo += composicion[mid] * (Number(m.costo) || 0);
+    });
+    var prep = getPreparacion(state, prepId);
+    var gramosTotal = 0;
+    if (prep) {
+      (prep.componentes || []).forEach(function (c) { gramosTotal += gramosDeComponentePreparacion(prep, c); });
+    }
+    return { costoPorGramo: costoPorGramo, gramosTotal: gramosTotal, costoTotal: costoPorGramo * gramosTotal };
+  }
+
+  // Expande `gramos` de un componente (de un producto o de otra
+  // preparación) a gramos de materia cruda. tipo 'materia' es el caso base;
+  // tipo 'preparacion' recurre a la composición ya expandida.
+  function expandGramosAMateria(state, tipo, refId, gramos) {
+    var out = {};
+    if (tipo === 'materia') {
+      out[refId] = (out[refId] || 0) + (Number(gramos) || 0);
+    } else if (tipo === 'preparacion') {
+      var porGramo = getPreparacionComposicionPorGramo(state, refId);
+      Object.keys(porGramo).forEach(function (mid) {
+        out[mid] = (out[mid] || 0) + porGramo[mid] * (Number(gramos) || 0);
+      });
+    }
+    return out;
+  }
+
+  // ¿Guardar `componentes` en la preparación `prepId` (nueva o existente)
+  // crearía un ciclo? Chequeo estructural sobre el grafo de preparaciones,
+  // independiente del cálculo de costo — se corre ANTES de persistir.
+  function preparacionDependeDe(state, prepId, targetId, _visited) {
+    _visited = _visited || {};
+    if (_visited[prepId]) return false;
+    _visited[prepId] = true;
+    var prep = getPreparacion(state, prepId);
+    if (!prep) return false;
+    return (prep.componentes || []).some(function (c) {
+      if (c.tipo !== 'preparacion') return false;
+      if (c.refId === targetId) return true;
+      return preparacionDependeDe(state, c.refId, targetId, _visited);
+    });
+  }
+  function wouldCreateCiclo(state, prepId, componentes) {
+    return (componentes || []).some(function (c) {
+      if (c.tipo !== 'preparacion') return false;
+      if (c.refId === prepId) return true; // auto-referencia directa
+      return preparacionDependeDe(state, c.refId, prepId);
+    });
+  }
+
+  function savePreparacion(state, input) {
+    var nombre = (input.nombre || '').trim();
+    if (!nombre) throw new Error('El nombre de la preparación es obligatorio');
+    var modo = input.modo === 'directo' ? 'directo' : 'porcentaje';
+    var componentes = (input.componentes || []).map(function (c) {
+      return { tipo: c.tipo, refId: c.refId, porcentaje: Number(c.porcentaje) || 0, gramos: Number(c.gramos) || 0 };
+    });
+    var id = input.id || (Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
+    if (wouldCreateCiclo(state, id, componentes)) {
+      throw new Error('Esta combinación crea un ciclo entre preparaciones (una depende de otra que depende de ella).');
+    }
+    var prep = { id: id, nombre: nombre, modo: modo, baseGramos: Number(input.baseGramos) || 0, componentes: componentes };
+    var idx = state.preparaciones.findIndex(function (x) { return x.id === id; });
+    if (idx === -1) state.preparaciones.push(prep); else state.preparaciones[idx] = prep;
+    return prep;
+  }
+
+  function findProductosUsandoPreparacion(state, prepId) {
+    return (state.productos || []).filter(function (p) {
+      return (p.componentes || []).some(function (c) { return c.tipo === 'preparacion' && c.refId === prepId; });
+    });
+  }
+  function findPreparacionesUsandoPreparacion(state, prepId) {
+    return (state.preparaciones || []).filter(function (prep) {
+      return (prep.componentes || []).some(function (c) { return c.tipo === 'preparacion' && c.refId === prepId; });
+    });
+  }
+  function findPreparacionesUsandoMateria(state, materiaId) {
+    return (state.preparaciones || []).filter(function (prep) {
+      return (prep.componentes || []).some(function (c) { return c.tipo === 'materia' && c.refId === materiaId; });
+    });
+  }
+
   // ─── Costeo de producto (P0-2: siempre en vivo, nunca cacheado) ───
 
   function getCostoProducto(producto, state) {
     if (!producto) return 0;
     var costo = Number(producto.empaqueManual) || 0;
-    (producto.ingredientes || []).forEach(function (i) {
-      var m = (state.materia || []).find(function (x) { return x.id === i.materiaId; });
-      if (m) costo += (Number(m.costo) || 0) * (Number(i.gramos) || 0);
+    (producto.componentes || []).forEach(function (c) {
+      var gramos = Number(c.gramos) || 0;
+      if (c.tipo === 'preparacion') {
+        costo += gramos * getPreparacionCosto(state, c.refId).costoPorGramo;
+      } else {
+        var m = (state.materia || []).find(function (x) { return x.id === c.refId; });
+        if (m) costo += gramos * (Number(m.costo) || 0);
+      }
     });
     (producto.empaquesUsados || []).forEach(function (e) {
       var m = (state.empaques || []).find(function (x) { return x.id === e.empaqueId; });
@@ -190,8 +357,12 @@
       var qty = Number(line.qty) || 0;
       var p = (state.productos || []).find(function (x) { return x.id === line.productoId; });
       if (p && qty > 0) {
-        (p.ingredientes || []).forEach(function (i) {
-          add('materia', i.materiaId, (Number(i.gramos) || 0) * qty);
+        // Cada componente (materia directa o preparación) se expande hasta
+        // materia cruda antes de sumarlo — así una receta con preparaciones
+        // anidadas valida contra el stock real, no contra un intermedio.
+        (p.componentes || []).forEach(function (c) {
+          var expandido = expandGramosAMateria(state, c.tipo, c.refId, (Number(c.gramos) || 0) * qty);
+          Object.keys(expandido).forEach(function (mid) { add('materia', mid, expandido[mid]); });
         });
         (p.empaquesUsados || []).forEach(function (e) {
           add('empaques', e.empaqueId, (Number(e.cantidad) || 0) * qty);
@@ -253,8 +424,9 @@
         if (item.productoId) {
           var p = (state.productos || []).find(function (x) { return x.id === item.productoId; });
           if (p) {
-            (p.ingredientes || []).forEach(function (i) {
-              add('materia', i.materiaId, (Number(i.gramos) || 0) * item.qty);
+            (p.componentes || []).forEach(function (c) {
+              var expandido = expandGramosAMateria(state, c.tipo, c.refId, (Number(c.gramos) || 0) * item.qty);
+              Object.keys(expandido).forEach(function (mid) { add('materia', mid, expandido[mid]); });
             });
             (p.empaquesUsados || []).forEach(function (e) {
               add('empaques', e.empaqueId, (Number(e.cantidad) || 0) * item.qty);
@@ -336,8 +508,9 @@
           items.push({ productoId: p.id, nombre: p.nombre, qty: qty, precio: p.precio, costo: costo });
           total += p.precio * qty;
           ganancia += (p.precio - costo) * qty;
-          (p.ingredientes || []).forEach(function (ing) {
-            deduct('materia', state.materia, ing.materiaId, (Number(ing.gramos) || 0) * qty);
+          (p.componentes || []).forEach(function (c) {
+            var expandido = expandGramosAMateria(state, c.tipo, c.refId, (Number(c.gramos) || 0) * qty);
+            Object.keys(expandido).forEach(function (mid) { deduct('materia', state.materia, mid, expandido[mid]); });
           });
           (p.empaquesUsados || []).forEach(function (e) {
             deduct('empaques', state.empaques, e.empaqueId, (Number(e.cantidad) || 0) * qty);
@@ -404,9 +577,12 @@
         if (item.productoId) {
           var p = (state.productos || []).find(function (x) { return x.id === item.productoId; });
           if (p) {
-            (p.ingredientes || []).forEach(function (ing) {
-              var m = (state.materia || []).find(function (x) { return x.id === ing.materiaId; });
-              if (m) m.cantidad += (Number(ing.gramos) || 0) * item.qty;
+            (p.componentes || []).forEach(function (c) {
+              var expandido = expandGramosAMateria(state, c.tipo, c.refId, (Number(c.gramos) || 0) * item.qty);
+              Object.keys(expandido).forEach(function (mid) {
+                var m = (state.materia || []).find(function (x) { return x.id === mid; });
+                if (m) m.cantidad += expandido[mid];
+              });
             });
             (p.empaquesUsados || []).forEach(function (e) {
               var m = (state.empaques || []).find(function (x) { return x.id === e.empaqueId; });
@@ -602,9 +778,15 @@
 
   // ─── Dependencias (P1-4: no romper recetas al borrar un insumo) ───
 
+  // Solo detecta uso DIRECTO en la receta de un producto (tipo:'materia').
+  // Si la materia solo se usa dentro de una preparación, el producto no
+  // aparece aquí — pero esa preparación sí aparece en
+  // findPreparacionesUsandoMateria, y borrar la preparación está bloqueado
+  // mientras algún producto la use (findProductosUsandoPreparacion). La
+  // cadena de protección se sostiene sin necesidad de expandir aquí.
   function findProductosUsandoMateria(state, materiaId) {
     return (state.productos || []).filter(function (p) {
-      return (p.ingredientes || []).some(function (i) { return i.materiaId === materiaId; });
+      return (p.componentes || []).some(function (c) { return c.tipo === 'materia' && c.refId === materiaId; });
     });
   }
 
@@ -643,6 +825,15 @@
     getDepreciacionMensualTotal: getDepreciacionMensualTotal,
     getDepreciacionPeriodo: getDepreciacionPeriodo,
     agruparGastosPorCategoria: agruparGastosPorCategoria,
-    getCascadaUtilidad: getCascadaUtilidad
+    getCascadaUtilidad: getCascadaUtilidad,
+    getPreparacion: getPreparacion,
+    getPreparacionComposicionPorGramo: getPreparacionComposicionPorGramo,
+    getPreparacionCosto: getPreparacionCosto,
+    expandGramosAMateria: expandGramosAMateria,
+    wouldCreateCiclo: wouldCreateCiclo,
+    savePreparacion: savePreparacion,
+    findProductosUsandoPreparacion: findProductosUsandoPreparacion,
+    findPreparacionesUsandoPreparacion: findPreparacionesUsandoPreparacion,
+    findPreparacionesUsandoMateria: findPreparacionesUsandoMateria
   };
 });
