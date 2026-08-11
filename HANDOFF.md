@@ -122,11 +122,14 @@ Colecciones nuevas, en el orden en que se introducen:
 ```js
 // Fase B — sin cambios de esquema, solo se elimina productos[].costo (P0-2)
 
-// Fase C — gastos (§9)
+// Fase C — gastos (§9) — ✅ IMPLEMENTADO, schemaVersion 3
 gastos: [{
   id, fecha, tipo /*'inventario'|'operativo'|'capex'*/, categoria,
   descripcion, monto, proveedor,
   insumoTipo, insumoId, cantidad, actualizoCosto,   // solo tipo 'inventario'
+  costoAntes, cantidadAntes,                         // snapshot pre-compra — permite
+                                                       // revertir el gasto con precisión,
+                                                       // mismo patrón que consumoReal en ventas
   vidaUtilMeses                                      // solo tipo 'capex'
 }]
 
@@ -258,17 +261,17 @@ Todos en alcance. Los IDs son estables — úsalos para referirte a ellos entre 
 
 ## §7. Roadmap
 
-| Fase | Qué | Depende de | Esfuerzo |
-|---|---|---|---|
-| **A** | Consolidar en GitHub (§8) | — | Bajo |
-| **B** | Arreglar P0-1…P0-3, P1-3, P1-5 | A | Medio |
-| **C** | Módulo de gastos (§9) | B | Medio |
-| **D1** | Preparaciones intermedias + costeo por porcentaje panadero (§10.2, §10.3) | B, P1-3 | **Alto** |
-| **D2** | Costos fijos, margen, precio objetivo (§10.4, §10.5) | D1, C | Medio |
-| **D3** | Domicilios por zona (§10.6) | D1 | Bajo |
-| **D4** | Migrar los datos del spreadsheet, con los errores corregidos (§11) | D1-D3 | Medio |
-| **E** | Backend en Google Sheets (§12) | D | Alto |
-| **F** | Resto de P1 y P2 | — | Bajo cada uno |
+| Fase | Qué | Depende de | Esfuerzo | Estado |
+|---|---|---|---|---|
+| **A** | Consolidar en GitHub (§8) | — | Bajo | ✅ Hecho — [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (privado) |
+| **B** | Arreglar P0-1…P0-4, P1-1…P1-5, P2-1…P2-9 | A | Medio | ✅ Hecho y verificado en navegador. Detalle en `IMPLEMENTATION_STATUS.md` |
+| **C** | Módulo de gastos (§9) | B | Medio | ✅ Hecho y verificado en navegador. Detalle en `IMPLEMENTATION_STATUS.md` |
+| **D1** | Preparaciones intermedias + costeo por porcentaje panadero (§10.2, §10.3) | B, P1-3 | **Alto** | 📋 Siguiente |
+| **D2** | Costos fijos, margen, precio objetivo (§10.4, §10.5) | D1, C | Medio | 📋 Pendiente |
+| **D3** | Domicilios por zona (§10.6) | D1 | Bajo | 📋 Pendiente |
+| **D4** | Migrar los datos del spreadsheet, con los errores corregidos (§11) | D1-D3 | Medio | 📋 Pendiente |
+| **E** | Backend en Google Sheets (§12) | D | Alto | 📋 Pendiente |
+| **F** | Resto de P1 y P2 | — | Bajo cada uno | ✅ Absorbido dentro de la Fase B |
 
 **Nota de orden:** D1 es la pieza que sostiene todo lo demás del costeo — sin preparaciones no se puede representar ni una sola de tus recetas reales. P1-3 (versionado de esquema) hay que hacerlo **antes** de D1, porque D1 agrega cuatro colecciones nuevas y sin migraciones explícitas cada cambio arriesga los datos existentes.
 
@@ -324,6 +327,8 @@ Con repo público, la contraseña queda a la vista de cualquiera — y ya está 
 ---
 
 ## §9. Fase C — Módulo de gastos
+
+> ✅ **Implementado y verificado el 11 de agosto de 2026.** Lógica en `js/core.js` (`registrarGasto`, `eliminarGasto`, `getCascadaUtilidad`, `costoPromedioPonderado`, `getDepreciacionPeriodo`), 16 tests en `tests/core.test.js`, UI en la pestaña "Gastos" dentro de Reportes. Detalle completo en `IMPLEMENTATION_STATUS.md`. El texto de abajo queda como especificación de referencia — coincide con lo construido.
 
 ### 9.1 El problema contable, primero
 
@@ -792,6 +797,15 @@ Ninguna bloquea el arranque; todas tienen recomendación y pueden decidirse sobr
 | # | Petición | Estado |
 |---|---|---|
 | 1 | Documento estructurado y completo | ✅ Este archivo |
-| 2 | GitHub + backend en spreadsheet | 📋 Especificado (§8, §12) — falta confirmar Google Sheets |
-| 3 | Reporte de ventas y gastos | 📋 Especificado (§9) — listo para implementar |
-| 4 | Fórmulas de costos fijos, costo por producto y ganancias | ✅ Extraídas, verificadas y con todas las decisiones tomadas (§10) + errores documentados (§11) |
+| 2 | GitHub + backend en spreadsheet | ✅ Repo creado y en producción — [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (privado). Backend en Sheets: 📋 Fase E, no iniciada |
+| 3 | Reporte de ventas y gastos | ✅ Implementado y verificado (§9, Fase C) |
+| 4 | Fórmulas de costos fijos, costo por producto y ganancias | ✅ Extraídas, verificadas y con todas las decisiones tomadas (§10) + errores documentados (§11). El **motor de costeo con preparaciones** (Fase D1-D4) es la siguiente pieza — no implementado todavía |
+
+### Estado real del proyecto (11 de agosto de 2026)
+
+Fases **A, B y C completas**, verificadas con 49 tests automatizados (`node tests/core.test.js`) y con pruebas manuales de flujo completo en navegador (no solo unitarias). Todos los bugs P0/P1/P2 del handoff original corregidos. Ver `IMPLEMENTATION_STATUS.md` para el detalle bug por bug, incluyendo dos bugs reales encontrados *durante* la verificación (no estaban en el diagnóstico original) y ya corregidos:
+
+- Revertir una venta con stock insuficiente sobrepasaba el stock original (P0-1).
+- Guardar un gasto no refrescaba la cascada de utilidad en la pestaña "Resumen" hasta cambiar de pestaña.
+
+**Siguiente:** Fase D1 (preparaciones intermedias + porcentaje panadero) — el cambio arquitectónico más grande del plan, ver §10.2.

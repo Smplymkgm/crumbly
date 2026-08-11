@@ -4,7 +4,7 @@
 
 ## Fase actual
 
-**Fase B completa y verificada.** Fase A completa a nivel local (repo, estructura, tests) — **falta tu confirmación explícita para crear el repo remoto y hacer push** (ver §"Pendiente de confirmación" abajo). Fases C, D, E: no iniciadas — siguiente en el roadmap del `HANDOFF.md`.
+**Fases A, B y C completas y verificadas.** Repo en GitHub: [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (privado). Fases D (costeo/preparaciones) y E (backend): no iniciadas — siguiente en el roadmap del `HANDOFF.md`.
 
 ## Qué se hizo
 
@@ -13,7 +13,7 @@
 - Estructura de carpetas: `js/`, `tests/`, `docs/`, `backend/`.
 - `js/core.js`: toda la lógica de negocio (períodos, costeo, validación de stock, aplicar/revertir venta, necesidades de inventario, migración de esquema) extraída a un módulo sin DOM, cargable en browser y en Node.
 - `README.md`, `.gitignore`.
-- `git init` + commit local. **NO se creó repo remoto ni se hizo push** — es una acción visible/compartida que requiere tu confirmación explícita (ver abajo).
+- `git init` + commit local, luego **confirmado por ti**: repo remoto privado creado y con push — [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly).
 
 ### Fase B — Bugs críticos e importantes
 
@@ -50,26 +50,42 @@ Al implementar P0-1, la primera versión revertía el stock usando la receta act
 
 **Fix:** `applyVenta()` ahora guarda `venta.consumoReal` — el descuento *real* (post-clamp) por insumo — y `revertVenta()` usa ese registro en vez de recalcular desde la receta. Para ventas antiguas sin ese campo (antes de este cambio), cae de vuelta a la receta actual, documentado como aproximado. Test que reproduce exactamente este caso: `tests/core.test.js` → *"BUG REAL encontrado en pruebas de navegador..."*.
 
+### Fase C — Módulo de gastos (HANDOFF §9)
+
+Implementado en `js/core.js` (`registrarGasto`, `eliminarGasto`, `costoPromedioPonderado`, `getGastosByPeriod`, `getDepreciacionMensualTotal`/`getDepreciacionPeriodo`, `getCascadaUtilidad`) y en la UI (`index.html`: modal de gasto con campos condicionales por tipo, pestaña "Gastos" dentro de Reportes, tarjeta de utilidad neta en el dashboard, desglose en el PDF de ventas, `exportGastosCSV`).
+
+| Pieza | Estado | Verificación |
+|---|---|---|
+| Clasificación inventario/operativo/capex | ✅ DONE | Compra de inventario no resta de la utilidad (ya está en costo de ventas), sí de la caja, sí aumenta stock. Operativo resta de ambas. Capex se deprecia, no resta de golpe. Probado en navegador y en tests. |
+| Compra de inventario actualiza costo y stock | ✅ DONE | Costo promedio ponderado (`costoPromedioPonderado`) — ejemplo del handoff verificado exacto: 1000g@$10 + 2000g@$12 = $11,333/g. Probado en navegador: costo y stock del insumo se actualizan al guardar el gasto. |
+| `eliminarGasto` revierte con precisión | ✅ DONE | Usa snapshot `costoAntes`/`cantidadAntes` (mismo patrón que `consumoReal` en ventas) — no recalcula, no adivina. Probado en navegador con dos compras encima. |
+| Depreciación de capex | ✅ DONE | `monto / vidaUtilMeses`, prorrateada al período de reportes; un activo ya depreciado deja de aportar. Ejemplo del handoff verificado (waflera $1.200.000 a 36 meses → $33.333/mes). |
+| Cascada utilidad bruta → neta → flujo de caja | ✅ DONE | Card "Utilidad neta y flujo de caja" en Reportes, tarjeta en el dashboard, sección en el PDF. Verificado que una compra de inventario no reduce la utilidad (bruta ni neta) pero sí el flujo de caja. |
+| Pestaña "Gastos" dentro de Reportes (no 6ª pestaña de nav) | ✅ DONE | Decisión ya tomada en el handoff — implementada tal cual. |
+| `exportGastosCSV` | ✅ DONE | Probado en navegador, no lanza error. |
+
+### Bug real encontrado durante la verificación en navegador (Fase C)
+
+`saveGasto()` y `eliminarGasto()` refrescaban la lista de gastos y el dashboard, pero **no la tarjeta de cascada de utilidad en la pestaña "Resumen"** — quedaba mostrando `-$0` en gastos operativos y depreciación hasta que el usuario cambiaba de pestaña y volvía. Los números eran correctos (verificado llamando `getCascadaUtilidad` directamente), el problema era solo que la UI no se refrescaba sola.
+
+**Fix:** ambas funciones ahora llaman `renderCascadaUtilidad()` explícitamente. Verificado en navegador: registrar un gasto operativo y uno de capex actualiza la tarjeta de inmediato, sin cambiar de pestaña.
+
 ## Tests
 
 ```
 node tests/core.test.js
 ```
 
-**33/33 pasan.** Cobertura: conversión de períodos (semana en lunes), formato de moneda, escape de HTML, costeo de producto en vivo, validación de stock, necesidades de inventario (3 tipos de insumo, ventana móvil), migración de esquema (no destructiva, tolera estado parcial/corrupto/null), aplicar/revertir venta (caso normal, stock insuficiente, toppings clampeados, venta legada sin `consumoReal`), dependencias al eliminar insumos.
+**49/49 pasan.** Cobertura Fase B (33 tests): conversión de períodos (semana en lunes), formato de moneda, escape de HTML, costeo de producto en vivo, validación de stock, necesidades de inventario (3 tipos de insumo, ventana móvil), migración de esquema (no destructiva, tolera estado parcial/corrupto/null), aplicar/revertir venta (caso normal, stock insuficiente, toppings clampeados, venta legada sin `consumoReal`), dependencias al eliminar insumos. Cobertura Fase C (16 tests nuevos): costo promedio ponderado, clasificación de gastos por tipo, reversión con snapshot exacto, depreciación de capex, cascada de utilidad (bruta/neta/flujo de caja), agrupación por categoría.
 
-No hay suite de UI automatizada — la verificación de pantallas se hizo manualmente en el navegador (ver tabla de arriba) porque el proyecto no tiene un test runner de browser configurado. Si se quiere esa cobertura permanente, es trabajo nuevo, no incluido aquí.
-
-## Pendiente de confirmación (no autónomo por diseño)
-
-- **Crear el repo remoto en GitHub y hacer push.** Es una acción que publica código y depende de tu cuenta/autenticación (`gh auth`). El comando queda listo en `HANDOFF.md` §8.2 — dime "dale" y lo ejecuto, o hazlo tú.
-- **Repo público o privado.** Recomendación del handoff: privado. Sin tu confirmación, no se ha creado ninguno.
+No hay suite de UI automatizada — la verificación de pantallas se hizo manualmente en el navegador (ver tablas de arriba) porque el proyecto no tiene un test runner de browser configurado. Si se quiere esa cobertura permanente, es trabajo nuevo, no incluido aquí.
 
 ## Siguiente en el roadmap
 
-1. **Fase C — Módulo de gastos** (`HANDOFF.md` §9): inventario/operativo/capex, cascada de utilidad bruta → neta → flujo de caja.
-2. **Fase D1 — Preparaciones intermedias**: el cambio arquitectónico grande (masa, salsas, porcentaje panadero, detección de ciclos).
-3. **Fase D2-D4 — Costeo completo y migración del spreadsheet** con las correcciones de `HANDOFF.md` §11.
-4. **Fase E — Backend en Google Sheets.**
+1. **Fase D1 — Preparaciones intermedias**: el cambio arquitectónico grande (masa, salsas, porcentaje panadero, detección de ciclos). Bloquea D2-D4.
+2. **Fase D2 — Costos fijos, margen, precio objetivo** (recargo 30% global, precio como entrada — decisiones ya tomadas en `HANDOFF.md` §10.4).
+3. **Fase D3 — Domicilios por zona.**
+4. **Fase D4 — Migrar los datos del spreadsheet**, con las correcciones de `HANDOFF.md` §11 (ya no hay decisiones pendientes que la bloqueen).
+5. **Fase E — Backend en Google Sheets.**
 
-No se ha empezado ninguna de estas — el roadmap del handoff las ordena así a propósito (D depende de B+C; ver nota en `HANDOFF.md` §7).
+No se ha empezado ninguna de estas — el roadmap del handoff las ordena así a propósito (D depende de B+C, ya completas; ver nota en `HANDOFF.md` §7).

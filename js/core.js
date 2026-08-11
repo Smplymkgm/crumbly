@@ -16,7 +16,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var SCHEMA_VERSION = 2;
+  var SCHEMA_VERSION = 3;
 
   // ─── Formato ───────────────────────────────────────────────
 
@@ -98,6 +98,7 @@
       toppings: [],
       productos: [],
       ventas: [],
+      gastos: [],
       config: { email: '' }
     };
   }
@@ -116,6 +117,7 @@
       toppings: Array.isArray(raw.toppings) ? raw.toppings : [],
       productos: Array.isArray(raw.productos) ? raw.productos : [],
       ventas: Array.isArray(raw.ventas) ? raw.ventas : [],
+      gastos: Array.isArray(raw.gastos) ? raw.gastos : [], // v2 -> v3
       config: (raw.config && typeof raw.config === 'object') ? raw.config : {}
     };
     if (s.config.email === undefined) s.config.email = '';
@@ -420,6 +422,184 @@
     state.ventas = state.ventas.filter(function (v) { return v.id !== venta.id; });
   }
 
+  // ─── Gastos (HANDOFF §9) ────────────────────────────────────
+
+  var GASTO_CATEGORIAS = {
+    inventario: ['Materia prima', 'Empaque', 'Toppings'],
+    operativo: ['Publicidad', 'Arriendo', 'Servicios', 'Transporte', 'Nómina', 'Aseo', 'Otros'],
+    capex: ['Equipos de cocina', 'Mobiliario', 'Tecnología', 'Adecuaciones']
+  };
+
+  // Costo promedio ponderado: al comprar más stock a un precio distinto,
+  // el costo unitario del insumo se recalcula ponderando por cantidad —
+  // no se reemplaza sin más (decisión del handoff, ejemplo verificado:
+  // 1000g a $10 + 2000g a $12 -> $11,333/g).
+  function costoPromedioPonderado(costoActual, cantidadActual, costoCompra, cantidadCompra) {
+    var cantAntes = Number(cantidadActual) || 0;
+    var cantCompra = Number(cantidadCompra) || 0;
+    if (cantAntes + cantCompra <= 0) return Number(costoCompra) || 0;
+    if (cantAntes <= 0) return Number(costoCompra) || 0;
+    return ((cantAntes * (Number(costoActual) || 0)) + (cantCompra * (Number(costoCompra) || 0))) / (cantAntes + cantCompra);
+  }
+
+  function getInsumoList(state, insumoTipo) {
+    if (insumoTipo === 'materia') return state.materia;
+    if (insumoTipo === 'empaques') return state.empaques;
+    if (insumoTipo === 'toppings') return state.toppings;
+    return null;
+  }
+
+  // Registra un gasto y, si es de tipo 'inventario', aplica su efecto sobre
+  // el insumo: aumenta el stock y actualiza el costo unitario (promedio
+  // ponderado). Guarda un snapshot (costoAntes/cantidadAntes) para poder
+  // revertirlo con precisión más adelante — mismo patrón que
+  // applyVenta/revertVenta con consumoReal (P0-1), por la misma razón: sin
+  // el snapshot, deshacer un gasto tendría que adivinar el estado previo.
+  //
+  // input: { fecha, tipo, categoria, descripcion, monto, proveedor,
+  //          insumoTipo, insumoId, cantidad,      // solo tipo 'inventario'
+  //          vidaUtilMeses }                       // solo tipo 'capex'
+  function registrarGasto(state, input) {
+    var monto = Number(input.monto) || 0;
+    if (monto <= 0) throw new Error('El monto del gasto debe ser mayor a 0');
+    if (!input.tipo || !GASTO_CATEGORIAS[input.tipo]) throw new Error('Tipo de gasto inválido');
+
+    var gasto = {
+      id: input.id || (Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
+      fecha: input.fecha || new Date().toISOString(),
+      tipo: input.tipo,
+      categoria: input.categoria || '',
+      descripcion: input.descripcion || '',
+      monto: monto,
+      proveedor: input.proveedor || ''
+    };
+
+    if (input.tipo === 'inventario') {
+      var cantidad = Number(input.cantidad) || 0;
+      if (cantidad <= 0) throw new Error('La cantidad comprada debe ser mayor a 0');
+      var list = getInsumoList(state, input.insumoTipo);
+      if (!list) throw new Error('Tipo de insumo inválido');
+      var insumo = list.find(function (x) { return x.id === input.insumoId; });
+      if (!insumo) throw new Error('Insumo no encontrado');
+
+      gasto.insumoTipo = input.insumoTipo;
+      gasto.insumoId = input.insumoId;
+      gasto.cantidad = cantidad;
+      gasto.costoAntes = insumo.costo;
+      gasto.cantidadAntes = insumo.cantidad;
+
+      var costoCompraUnitario = monto / cantidad;
+      insumo.costo = costoPromedioPonderado(insumo.costo, insumo.cantidad, costoCompraUnitario, cantidad);
+      insumo.cantidad = (Number(insumo.cantidad) || 0) + cantidad;
+      gasto.actualizoCosto = true;
+    } else if (input.tipo === 'capex') {
+      var vidaUtilMeses = Number(input.vidaUtilMeses) || 0;
+      if (vidaUtilMeses <= 0) throw new Error('La vida útil (meses) debe ser mayor a 0');
+      gasto.vidaUtilMeses = vidaUtilMeses;
+    }
+
+    state.gastos.push(gasto);
+    return gasto;
+  }
+
+  // Revierte un gasto: si era de inventario, devuelve el insumo exactamente
+  // a su costo/cantidad de antes de la compra (usa el snapshot, no
+  // recalcula) — evita el mismo problema de "revertir con la fórmula en
+  // vez del dato real" que P0-1 encontró en las ventas.
+  function eliminarGasto(state, id) {
+    var gasto = state.gastos.find(function (g) { return g.id === id; });
+    if (!gasto) return;
+    if (gasto.tipo === 'inventario' && gasto.insumoTipo && gasto.insumoId) {
+      var list = getInsumoList(state, gasto.insumoTipo);
+      var insumo = list && list.find(function (x) { return x.id === gasto.insumoId; });
+      if (insumo && gasto.costoAntes !== undefined && gasto.cantidadAntes !== undefined) {
+        insumo.costo = gasto.costoAntes;
+        insumo.cantidad = gasto.cantidadAntes;
+      }
+    }
+    state.gastos = state.gastos.filter(function (g) { return g.id !== id; });
+  }
+
+  function getGastosByPeriod(gastos, period, ref) {
+    var start = getDateStart(period, ref);
+    return (gastos || []).filter(function (g) { return new Date(g.fecha) >= start; });
+  }
+
+  function meses30(desde, hasta) {
+    return (hasta.getTime() - desde.getTime()) / (1000 * 60 * 60 * 24 * 30);
+  }
+
+  // Depreciación mensual total de todo capex vigente (dentro de su vida
+  // útil) a la fecha `ref`. Un mes se aproxima a 30 días — suficiente para
+  // este propósito, no hace falta contar calendario exacto.
+  function getDepreciacionMensualTotal(state, ref) {
+    var now = ref ? new Date(ref) : new Date();
+    return (state.gastos || [])
+      .filter(function (g) { return g.tipo === 'capex' && g.vidaUtilMeses > 0 && new Date(g.fecha) <= now; })
+      .reduce(function (sum, g) {
+        var transcurridos = meses30(new Date(g.fecha), now);
+        if (transcurridos >= g.vidaUtilMeses) return sum; // ya totalmente depreciado
+        return sum + (g.monto / g.vidaUtilMeses);
+      }, 0);
+  }
+
+  // Depreciación prorrateada al período de reportes seleccionado (día
+  // /semana/mes/año), a partir de la depreciación mensual total.
+  function getDepreciacionPeriodo(state, period, ref) {
+    var mensual = getDepreciacionMensualTotal(state, ref);
+    var factor = { dia: 1 / 30, semana: 7 / 30, mes: 1, anio: 12 }[period];
+    if (factor === undefined) factor = 1;
+    return mensual * factor;
+  }
+
+  function agruparGastosPorCategoria(gastos) {
+    var out = {};
+    (gastos || []).forEach(function (g) {
+      var key = g.categoria || '(sin categoría)';
+      out[key] = (out[key] || 0) + g.monto;
+    });
+    return out;
+  }
+
+  // La cascada completa del período: utilidad bruta (ventas - costo de
+  // ventas), utilidad neta (bruta - operativos - depreciación) y flujo de
+  // caja (ingresos - todo lo que salió de la caja: compras de inventario +
+  // operativos + capex). Ver HANDOFF §9.1 — las compras de inventario NO
+  // restan de la utilidad porque su costo ya está contado dentro del costo
+  // de ventas; restarlas de nuevo aquí sería contarlas dos veces.
+  function getCascadaUtilidad(state, period, ref) {
+    var ventas = getVentasByPeriod(state.ventas, period, ref);
+    var ingresos = ventas.reduce(function (a, v) { return a + v.total; }, 0);
+    var gananciaVentas = ventas.reduce(function (a, v) { return a + v.ganancia; }, 0);
+    var costoVentas = ingresos - gananciaVentas;
+    var utilidadBruta = gananciaVentas;
+
+    var gastosPeriodo = getGastosByPeriod(state.gastos, period, ref);
+    var operativos = gastosPeriodo.filter(function (g) { return g.tipo === 'operativo'; });
+    var totalOperativos = operativos.reduce(function (a, g) { return a + g.monto; }, 0);
+    var depreciacion = getDepreciacionPeriodo(state, period, ref);
+    var utilidadNeta = utilidadBruta - totalOperativos - depreciacion;
+
+    var comprasInventario = gastosPeriodo.filter(function (g) { return g.tipo === 'inventario'; }).reduce(function (a, g) { return a + g.monto; }, 0);
+    var capexPeriodo = gastosPeriodo.filter(function (g) { return g.tipo === 'capex'; }).reduce(function (a, g) { return a + g.monto; }, 0);
+    var flujoCaja = ingresos - comprasInventario - totalOperativos - capexPeriodo;
+
+    return {
+      ingresos: ingresos,
+      costoVentas: costoVentas,
+      utilidadBruta: utilidadBruta,
+      margenBrutoPct: ingresos > 0 ? (utilidadBruta / ingresos * 100) : 0,
+      gastosOperativosPorCategoria: agruparGastosPorCategoria(operativos),
+      totalOperativos: totalOperativos,
+      depreciacion: depreciacion,
+      utilidadNeta: utilidadNeta,
+      margenNetoPct: ingresos > 0 ? (utilidadNeta / ingresos * 100) : 0,
+      comprasInventario: comprasInventario,
+      capexPeriodo: capexPeriodo,
+      flujoCaja: flujoCaja
+    };
+  }
+
   // ─── Dependencias (P1-4: no romper recetas al borrar un insumo) ───
 
   function findProductosUsandoMateria(state, materiaId) {
@@ -454,6 +634,15 @@
     getConsumptionRolling: getConsumptionRolling,
     calcInventoryNeeds: calcInventoryNeeds,
     findProductosUsandoMateria: findProductosUsandoMateria,
-    findProductosUsandoEmpaque: findProductosUsandoEmpaque
+    findProductosUsandoEmpaque: findProductosUsandoEmpaque,
+    GASTO_CATEGORIAS: GASTO_CATEGORIAS,
+    costoPromedioPonderado: costoPromedioPonderado,
+    registrarGasto: registrarGasto,
+    eliminarGasto: eliminarGasto,
+    getGastosByPeriod: getGastosByPeriod,
+    getDepreciacionMensualTotal: getDepreciacionMensualTotal,
+    getDepreciacionPeriodo: getDepreciacionPeriodo,
+    agruparGastosPorCategoria: agruparGastosPorCategoria,
+    getCascadaUtilidad: getCascadaUtilidad
   };
 });

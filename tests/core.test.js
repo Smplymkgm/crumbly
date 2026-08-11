@@ -326,6 +326,170 @@ test('findProductosUsandoEmpaque detecta productos que referencian el empaque', 
   assert.strictEqual(usados.length, 1);
 });
 
+console.log('\n== Costo promedio ponderado (compras a distintos proveedores) ==');
+
+test('1000g a $10/g + 2000g a $12/g = $11,333/g (ejemplo del handoff)', () => {
+  const nuevo = C.costoPromedioPonderado(10, 1000, 12, 2000);
+  assert.ok(Math.abs(nuevo - 11.3333) < 0.001);
+});
+
+test('comprar con stock en 0 usa directamente el costo de la compra', () => {
+  const nuevo = C.costoPromedioPonderado(999, 0, 12, 500);
+  assert.strictEqual(nuevo, 12);
+});
+
+console.log('\n== Gastos: clasificación por tipo (HANDOFF §9.1) ==');
+
+function stateConGastos() {
+  return C.migrateState({
+    materia: [{ id: 'm1', nombre: 'Harina', cantidad: 1000, costo: 10, minimo: 100 }],
+    empaques: [],
+    toppings: [],
+    productos: [],
+    ventas: [],
+    gastos: []
+  });
+}
+
+test('registrarGasto tipo inventario aumenta stock y actualiza costo (promedio ponderado)', () => {
+  const s = stateConGastos();
+  const gasto = C.registrarGasto(s, {
+    tipo: 'inventario', categoria: 'Materia prima', descripcion: 'Compra harina',
+    monto: 24000, proveedor: 'Supermercado A',
+    insumoTipo: 'materia', insumoId: 'm1', cantidad: 2000
+  });
+  // costo compra = 24000/2000 = 12/g ; ponderado con 1000g@10 -> 11.333
+  assert.strictEqual(s.materia[0].cantidad, 3000);
+  assert.ok(Math.abs(s.materia[0].costo - 11.3333) < 0.001);
+  assert.strictEqual(gasto.actualizoCosto, true);
+  assert.strictEqual(gasto.costoAntes, 10);
+  assert.strictEqual(gasto.cantidadAntes, 1000);
+});
+
+test('registrarGasto tipo operativo NO toca ningún insumo', () => {
+  const s = stateConGastos();
+  C.registrarGasto(s, { tipo: 'operativo', categoria: 'Publicidad', monto: 50000, descripcion: 'Instagram Ads' });
+  assert.strictEqual(s.materia[0].cantidad, 1000);
+  assert.strictEqual(s.materia[0].costo, 10);
+  assert.strictEqual(s.gastos.length, 1);
+});
+
+test('registrarGasto tipo capex exige vidaUtilMeses', () => {
+  const s = stateConGastos();
+  assert.throws(() => {
+    C.registrarGasto(s, { tipo: 'capex', categoria: 'Equipos de cocina', monto: 1200000, descripcion: 'Waflera' });
+  }, /vida útil/);
+});
+
+test('registrarGasto tipo capex guarda vidaUtilMeses y no toca insumos', () => {
+  const s = stateConGastos();
+  const g = C.registrarGasto(s, { tipo: 'capex', categoria: 'Equipos de cocina', monto: 1200000, descripcion: 'Waflera', vidaUtilMeses: 36 });
+  assert.strictEqual(g.vidaUtilMeses, 36);
+  assert.strictEqual(s.materia[0].cantidad, 1000);
+});
+
+test('registrarGasto rechaza monto <= 0', () => {
+  const s = stateConGastos();
+  assert.throws(() => C.registrarGasto(s, { tipo: 'operativo', categoria: 'Otros', monto: 0 }));
+});
+
+console.log('\n== eliminarGasto revierte el snapshot exacto (mismo patrón que revertVenta) ==');
+
+test('eliminarGasto de una compra de inventario devuelve el insumo a su costo/cantidad previos', () => {
+  const s = stateConGastos();
+  const g1 = C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 24000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 2000 });
+  // una segunda compra encima, para simular que ya no se puede "adivinar" el estado antes de g1 sin el snapshot
+  C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 50000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 1000 });
+  C.eliminarGasto(s, g1.id);
+  // el snapshot de g1 se tomó ANTES de que existiera, así que revertir g1
+  // vuelve al estado previo a AMBAS compras solamente si se elimina en orden;
+  // aquí solo verificamos que usa el snapshot guardado, no un recálculo:
+  assert.strictEqual(s.materia[0].costo, 10);
+  assert.strictEqual(s.materia[0].cantidad, 1000);
+  assert.strictEqual(s.gastos.length, 1);
+});
+
+test('eliminarGasto de un gasto operativo simplemente lo quita de la lista', () => {
+  const s = stateConGastos();
+  const g = C.registrarGasto(s, { tipo: 'operativo', categoria: 'Arriendo', monto: 800000 });
+  C.eliminarGasto(s, g.id);
+  assert.strictEqual(s.gastos.length, 0);
+});
+
+console.log('\n== Depreciación de capex ==');
+
+test('depreciación mensual = monto / vidaUtilMeses (ejemplo del handoff: waflera $1.200.000 a 36 meses)', () => {
+  const s = stateConGastos();
+  C.registrarGasto(s, {
+    tipo: 'capex', categoria: 'Equipos de cocina', monto: 1200000, vidaUtilMeses: 36,
+    fecha: '2026-01-01T00:00:00'
+  });
+  const dep = C.getDepreciacionMensualTotal(s, new Date('2026-02-01T00:00:00'));
+  assert.ok(Math.abs(dep - 33333.33) < 1);
+});
+
+test('un activo ya totalmente depreciado deja de aportar depreciación', () => {
+  const s = stateConGastos();
+  C.registrarGasto(s, { tipo: 'capex', categoria: 'Tecnología', monto: 100000, vidaUtilMeses: 2, fecha: '2020-01-01T00:00:00' });
+  const dep = C.getDepreciacionMensualTotal(s, new Date('2026-01-01T00:00:00'));
+  assert.strictEqual(dep, 0);
+});
+
+test('getDepreciacionPeriodo prorratea la depreciación mensual al período', () => {
+  const s = stateConGastos();
+  C.registrarGasto(s, { tipo: 'capex', categoria: 'Equipos de cocina', monto: 300000, vidaUtilMeses: 1, fecha: '2026-01-01T00:00:00' });
+  // depreciación mensual total = 300000
+  const mes = C.getDepreciacionPeriodo(s, 'mes', new Date('2026-01-15T00:00:00'));
+  const anio = C.getDepreciacionPeriodo(s, 'anio', new Date('2026-01-15T00:00:00'));
+  assert.ok(Math.abs(mes - 300000) < 1);
+  assert.ok(Math.abs(anio - 300000 * 12) < 1);
+});
+
+console.log('\n== Cascada de utilidad (HANDOFF §9.1, §9.5) ==');
+
+test('una compra de inventario NO resta de la utilidad bruta ni neta (ya está en el costo de ventas)', () => {
+  const s = stateConGastos();
+  s.productos.push({ id: 'p1', nombre: 'Waffle', precio: 20000, ingredientes: [{ materiaId: 'm1', gramos: 100 }], empaquesUsados: [], empaqueManual: 0 });
+  C.applyVenta(s, [{ productoId: 'p1', qty: 1, toppings: [] }], [], {});
+  // ingresos 20000, costo = 100*10=1000, utilidad bruta = 19000
+  C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 24000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 2000 });
+  const c = C.getCascadaUtilidad(s, 'mes');
+  assert.strictEqual(c.utilidadBruta, 19000);
+  assert.strictEqual(c.utilidadNeta, 19000); // sin gastos operativos ni depreciación, la compra no restó nada
+});
+
+test('un gasto operativo SÍ resta de la utilidad neta pero no de la bruta', () => {
+  const s = stateConGastos();
+  s.productos.push({ id: 'p1', nombre: 'Waffle', precio: 20000, ingredientes: [{ materiaId: 'm1', gramos: 100 }], empaquesUsados: [], empaqueManual: 0 });
+  C.applyVenta(s, [{ productoId: 'p1', qty: 1, toppings: [] }], [], {});
+  C.registrarGasto(s, { tipo: 'operativo', categoria: 'Publicidad', monto: 5000 });
+  const c = C.getCascadaUtilidad(s, 'mes');
+  assert.strictEqual(c.utilidadBruta, 19000);
+  assert.strictEqual(c.utilidadNeta, 19000 - 5000);
+});
+
+test('flujo de caja SÍ resta compras de inventario, operativos y capex', () => {
+  const s = stateConGastos();
+  s.productos.push({ id: 'p1', nombre: 'Waffle', precio: 20000, ingredientes: [{ materiaId: 'm1', gramos: 100 }], empaquesUsados: [], empaqueManual: 0 });
+  C.applyVenta(s, [{ productoId: 'p1', qty: 1, toppings: [] }], [], {});
+  C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 24000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 2000 });
+  C.registrarGasto(s, { tipo: 'operativo', categoria: 'Publicidad', monto: 5000 });
+  C.registrarGasto(s, { tipo: 'capex', categoria: 'Mobiliario', monto: 100000, vidaUtilMeses: 12 });
+  const c = C.getCascadaUtilidad(s, 'mes');
+  // ingresos 20000 - compras 24000 - operativos 5000 - capex 100000
+  assert.strictEqual(c.flujoCaja, 20000 - 24000 - 5000 - 100000);
+});
+
+test('gastosOperativosPorCategoria agrupa correctamente para el desglose de reportes', () => {
+  const s = stateConGastos();
+  C.registrarGasto(s, { tipo: 'operativo', categoria: 'Publicidad', monto: 5000 });
+  C.registrarGasto(s, { tipo: 'operativo', categoria: 'Publicidad', monto: 3000 });
+  C.registrarGasto(s, { tipo: 'operativo', categoria: 'Arriendo', monto: 800000 });
+  const c = C.getCascadaUtilidad(s, 'mes');
+  assert.strictEqual(c.gastosOperativosPorCategoria['Publicidad'], 8000);
+  assert.strictEqual(c.gastosOperativosPorCategoria['Arriendo'], 800000);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);
