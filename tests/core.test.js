@@ -791,6 +791,138 @@ test('findPreparacionesUsandoMateria detecta ganache usando chocolate', () => {
   assert.strictEqual(usados[0].id, 'ganache');
 });
 
+console.log('\n== Costo final, markup y margen (HANDOFF §10.4) ==');
+
+// Reproduce el ejemplo real del handoff (waffle New York, con E1/E2
+// corregidos y el empaque nuevo): costo variable $9.822,81, +30% de
+// costos fijos, precio $22.000 -> ganancia $9.230,35, markup 72,3%,
+// margen 42,0%.
+function stateRentabilidad() {
+  return C.migrateState({
+    materia: [{ id: 'm1', nombre: 'Insumo consolidado', cantidad: 1000, costo: 9822.81, minimo: 0 }],
+    productos: [{ id: 'p1', nombre: 'Waffle New York', precio: 22000, componentes: [{ tipo: 'materia', refId: 'm1', gramos: 1 }], empaquesUsados: [], empaqueManual: 0 }]
+  });
+}
+
+test('parametros.costosFijosPct por defecto es 0.30 (decisión del handoff)', () => {
+  const s = C.emptyState();
+  assert.strictEqual(s.parametros.costosFijosPct, 0.30);
+});
+
+test('getRentabilidadProducto reproduce el ejemplo real del handoff', () => {
+  const s = stateRentabilidad();
+  const r = C.getRentabilidadProducto(s.productos[0], s);
+  assert.ok(Math.abs(r.costoVariable - 9822.81) < 0.01);
+  assert.ok(Math.abs(r.costoFinal - 12769.653) < 0.01);
+  assert.ok(Math.abs(r.ganancia - 9230.347) < 0.01);
+  assert.ok(Math.abs(r.markupPct - 0.72297) < 0.001);
+  assert.ok(Math.abs(r.margenPct - 0.41956) < 0.001);
+});
+
+test('markup y margen son cifras distintas sobre bases distintas (no confundirlas)', () => {
+  const s = stateRentabilidad();
+  const r = C.getRentabilidadProducto(s.productos[0], s);
+  assert.notStrictEqual(Math.round(r.markupPct * 1000), Math.round(r.margenPct * 1000));
+});
+
+test('el precio de venta es la ENTRADA — cambiar el costo del insumo no lo toca, solo el margen', () => {
+  const s = stateRentabilidad();
+  const precioAntes = s.productos[0].precio;
+  s.materia[0].costo = 20000; // el insumo subió mucho de precio
+  const r = C.getRentabilidadProducto(s.productos[0], s);
+  assert.strictEqual(s.productos[0].precio, precioAntes); // el precio NO cambia solo
+  assert.ok(r.ganancia < 0, 'con ese costo el margen debería volverse negativo, visible para que el usuario decida');
+});
+
+test('override de costosFijosPct por producto tiene prioridad sobre el global', () => {
+  const s = stateRentabilidad();
+  s.productos[0].costosFijosPct = 0.50;
+  const r = C.getRentabilidadProducto(s.productos[0], s);
+  assert.strictEqual(r.costosFijosPct, 0.50);
+  assert.ok(Math.abs(r.costoFinal - 9822.81 * 1.5) < 0.01);
+});
+
+test('sin override, usa el global de parametros.costosFijosPct', () => {
+  const s = stateRentabilidad();
+  s.parametros.costosFijosPct = 0.20;
+  const r = C.getRentabilidadProducto(s.productos[0], s);
+  assert.strictEqual(r.costosFijosPct, 0.20);
+});
+
+console.log('\n== Precio objetivo (calculadora auxiliar, HANDOFF §10.4) ==');
+
+test('getPrecioObjetivo calcula el precio para un markup deseado, sin tocar producto.precio', () => {
+  const s = stateRentabilidad();
+  const precioOriginal = s.productos[0].precio;
+  const objetivo = C.getPrecioObjetivo(s.productos[0], s, 0.70); // 70% de markup deseado
+  // costoFinal = 12769.653 ; objetivo = costoFinal * 1.70
+  assert.ok(Math.abs(objetivo - 12769.653 * 1.70) < 0.1);
+  assert.strictEqual(s.productos[0].precio, precioOriginal, 'la calculadora nunca debe escribir producto.precio');
+});
+
+console.log('\n== Cobertura de costos fijos (HANDOFF §10.5) ==');
+
+test('recargo recuperado se deriva de costoVentas del período × costosFijosPct global', () => {
+  const s = C.migrateState({
+    materia: [{ id: 'm1', nombre: 'X', cantidad: 100000, costo: 10, minimo: 0 }],
+    productos: [{ id: 'p1', nombre: 'Y', precio: 20, componentes: [{ tipo: 'materia', refId: 'm1', gramos: 1 }], empaquesUsados: [], empaqueManual: 0 }]
+  });
+  C.applyVenta(s, [{ productoId: 'p1', qty: 100, toppings: [] }], [], {}); // costoVentas = 100*10 = 1000
+  const cob = C.getCoberturaCostosFijos(s, 'mes');
+  assert.ok(Math.abs(cob.recargoRecuperado - 300) < 0.01); // 1000 * 0.30
+});
+
+test('cobertura compara el recargo recuperado contra los costos fijos REALES ya registrados en Fase C', () => {
+  const s = C.migrateState({
+    materia: [{ id: 'm1', nombre: 'X', cantidad: 100000, costo: 10, minimo: 0 }],
+    productos: [{ id: 'p1', nombre: 'Y', precio: 20, componentes: [{ tipo: 'materia', refId: 'm1', gramos: 1 }], empaquesUsados: [], empaqueManual: 0 }]
+  });
+  C.applyVenta(s, [{ productoId: 'p1', qty: 100, toppings: [] }], [], {}); // costoVentas=1000, recargo=300
+  C.registrarGasto(s, { tipo: 'operativo', categoria: 'Arriendo', monto: 500 }); // costos fijos reales = 500
+  const cob = C.getCoberturaCostosFijos(s, 'mes');
+  assert.ok(Math.abs(cob.costosFijosReales - 500) < 0.01);
+  assert.ok(Math.abs(cob.coberturaPct - 60) < 0.1); // 300/500 = 60%
+  assert.ok(Math.abs(cob.faltante - 200) < 0.01); // 500-300
+});
+
+test('pctSugerido es el recargo que habría cubierto exacto los costos fijos reales', () => {
+  const s = C.migrateState({
+    materia: [{ id: 'm1', nombre: 'X', cantidad: 100000, costo: 10, minimo: 0 }],
+    productos: [{ id: 'p1', nombre: 'Y', precio: 20, componentes: [{ tipo: 'materia', refId: 'm1', gramos: 1 }], empaquesUsados: [], empaqueManual: 0 }]
+  });
+  C.applyVenta(s, [{ productoId: 'p1', qty: 100, toppings: [] }], [], {}); // costoVentas=1000
+  C.registrarGasto(s, { tipo: 'operativo', categoria: 'Arriendo', monto: 500 });
+  const cob = C.getCoberturaCostosFijos(s, 'mes');
+  // si se hubiera cobrado pctSugerido en vez del 30%, el recargo habría sido exactamente 500
+  assert.ok(Math.abs(cob.pctSugerido * 1000 - 500) < 0.01);
+});
+
+test('sin costos fijos reales registrados, coberturaPct es null (no un número engañoso)', () => {
+  const s = C.migrateState({
+    materia: [{ id: 'm1', nombre: 'X', cantidad: 100000, costo: 10, minimo: 0 }],
+    productos: [{ id: 'p1', nombre: 'Y', precio: 20, componentes: [{ tipo: 'materia', refId: 'm1', gramos: 1 }], empaquesUsados: [], empaqueManual: 0 }]
+  });
+  C.applyVenta(s, [{ productoId: 'p1', qty: 10, toppings: [] }], [], {});
+  const cob = C.getCoberturaCostosFijos(s, 'mes');
+  assert.strictEqual(cob.coberturaPct, null);
+});
+
+console.log('\n== D2 no altera la contabilidad real de Fase B/C (regresión) ==');
+
+test('venta.items[].costo sigue siendo costo variable puro, sin el recargo de costos fijos', () => {
+  const s = stateRentabilidad();
+  const venta = C.applyVenta(s, [{ productoId: 'p1', qty: 1, toppings: [] }], [], {});
+  assert.ok(Math.abs(venta.items[0].costo - 9822.81) < 0.01, 'el costo snapshot de la venta no debe incluir el recargo de costos fijos (es COGS real, no precio)');
+});
+
+test('getCascadaUtilidad (Fase C) no cambia por la existencia de costosFijosPct', () => {
+  const s = stateRentabilidad();
+  C.applyVenta(s, [{ productoId: 'p1', qty: 1, toppings: [] }], [], {});
+  const c = C.getCascadaUtilidad(s, 'mes');
+  // utilidadBruta debe seguir siendo ingresos-costoVariable, NO ingresos-costoFinal
+  assert.ok(Math.abs(c.utilidadBruta - (22000 - 9822.81)) < 0.01);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);

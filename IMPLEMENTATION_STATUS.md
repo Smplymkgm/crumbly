@@ -4,7 +4,7 @@
 
 ## Fase actual
 
-**Fases A, B, C y D1 completas y verificadas.** Repo en GitHub: [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (privado). Fases D2-D4 (costos fijos, domicilios, migración del spreadsheet) y E (backend): no iniciadas — siguiente en el roadmap del `HANDOFF.md`.
+**Fases A, B, C, D1 y D2 completas y verificadas.** Repo en GitHub: [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (privado). Fases D3-D4 (domicilios, migración del spreadsheet) y E (backend): no iniciadas — siguiente en el roadmap del `HANDOFF.md`.
 
 ## Qué se hizo
 
@@ -94,21 +94,40 @@ El cambio arquitectónico más grande del plan: antes la app modelaba `materia p
 
 Ninguno de los dos afectaba los cálculos guardados — ambos eran de visualización/refresco. Los números persistidos (`state`) siempre fueron correctos; se confirmó comparando contra `CrumblyCore.getPreparacionCosto()`/`getCostoProducto()` llamados directamente.
 
+### Fase D2 — Costo final, markup, margen y cobertura (HANDOFF §10.4-§10.5)
+
+Costo final = costo variable × (1 + % costos fijos). El precio de venta sigue siendo la ENTRADA (no cambia solo); ganancia, markup y margen se derivan. Motor en `js/core.js` (`getRentabilidadProducto`, `getPrecioObjetivo`, `getCoberturaCostosFijos`), UI en `index.html` (ficha de producto con desglose completo, card "Parámetros de costeo" y "Cobertura del recargo" en Reportes).
+
+| Pieza | Estado | Verificación |
+|---|---|---|
+| Costo final con recargo global (30%) | ✅ DONE | Waffle New York reproducido exacto vía el modal real: costo variable $9.822,81 → costo final $12.769,65 (redondeo de display a $12.770). |
+| Markup sobre costo vs. margen sobre precio, separados | ✅ DONE | 72,3% / 42,0% — exacto contra la tabla del handoff. Etiquetados distinto en la UI (§10.4: "no confundirlas"). |
+| El precio de venta no cambia solo | ✅ DONE | Subir el costo de un insumo de $9.822,81 a $15.000 dejó el precio en $22.000 sin tocar; la ganancia bajó de forma visible ($9.230 → $2.500) para que el usuario decida. Probado en navegador. |
+| Override de `%` por producto | ✅ DONE | Producto con 50% en vez del 30% global: costo final y markup recalculados correctamente (49,3%), guardado y persistido. |
+| Calculadora de precio objetivo | ✅ DONE | "70% de markup" → sugiere $25.048 sobre un costo final con override 50%; confirmado que `producto.precio` no se modificó solo. |
+| Cobertura del recargo vs. costos fijos reales | ✅ DONE | Con $520.000 de gastos operativos reales y 30% de recargo sobre $98.228 de costoVentas: cobertura 6%, mensaje "te faltó 94%, el recargo debería estar cerca del 529%" — verificado con la aritmética exacta, en dos escenarios (superávit y déficit). |
+| Cambiar el `%` global recalcula en vivo | ✅ DONE | Cambiar de 30% a 50% en la card de Reportes actualizó la cobertura inmediatamente sin recargar. |
+| Migración `schemaVersion` 4→5 (`parametros`) | ✅ DONE | Estado v4 sin `parametros` migra agregando `costosFijosPct: 0.30`, no destructivo. |
+| **Regresión: el recargo no se filtra a la contabilidad real** | ✅ DONE | Test explícito + verificación en navegador: `venta.items[].costo` sigue siendo costo variable puro (no costo final), y `getCascadaUtilidad` (utilidad bruta de Fase C) no cambia por la existencia del recargo. El recargo es una herramienta de precios, no un cambio de COGS. |
+
+**Decisión tomada:** `costosFijos[]` (colección de costos fijos recurrentes planificada originalmente) no se implementó — es redundante con los gastos operativos de Fase C, que ya cubren "costos fijos reales del período". Ver `HANDOFF.md` §3.2 para el razonamiento completo. Tampoco se implementó `parametros.unidadesMetaMes`: pertenecía a un enfoque de prorrateo por volumen que la fórmula final (recargo como % del costo variable) no usa.
+
+No se encontraron bugs nuevos durante la verificación en navegador de esta fase (a diferencia de B, C y D1, que sí destaparon uno cada una).
+
 ## Tests
 
 ```
 node tests/core.test.js
 ```
 
-**71/71 pasan.** Cobertura Fase B (33 tests): conversión de períodos (semana en lunes), formato de moneda, escape de HTML, costeo de producto en vivo, validación de stock, necesidades de inventario (3 tipos de insumo, ventana móvil), migración de esquema (no destructiva, tolera estado parcial/corrupto/null), aplicar/revertir venta (caso normal, stock insuficiente, toppings clampeados, venta legada sin `consumoReal`), dependencias al eliminar insumos. Cobertura Fase C (16 tests): costo promedio ponderado, clasificación de gastos por tipo, reversión con snapshot exacto, depreciación de capex, cascada de utilidad, agrupación por categoría. Cobertura Fase D1 (22 tests nuevos): porcentaje panadero con números reales del handoff, modo directo, anidamiento, ciclos (4 variantes), producto con componentes mixtos, venta/reversión a través de una preparación, dependencias extendidas.
+**84/84 pasan.** Cobertura Fase B (33 tests): conversión de períodos (semana en lunes), formato de moneda, escape de HTML, costeo de producto en vivo, validación de stock, necesidades de inventario (3 tipos de insumo, ventana móvil), migración de esquema (no destructiva, tolera estado parcial/corrupto/null), aplicar/revertir venta (caso normal, stock insuficiente, toppings clampeados, venta legada sin `consumoReal`), dependencias al eliminar insumos. Cobertura Fase C (16 tests): costo promedio ponderado, clasificación de gastos por tipo, reversión con snapshot exacto, depreciación de capex, cascada de utilidad, agrupación por categoría. Cobertura Fase D1 (22 tests): porcentaje panadero con números reales del handoff, modo directo, anidamiento, ciclos (4 variantes), producto con componentes mixtos, venta/reversión a través de una preparación, dependencias extendidas. Cobertura Fase D2 (13 tests nuevos): costo final/markup/margen con el ejemplo real del handoff, override por producto, calculadora de precio objetivo, cobertura de costos fijos (recuperación, déficit, caso sin datos), y dos tests de regresión confirmando que Fase B/C no cambiaron.
 
 No hay suite de UI automatizada — la verificación de pantallas se hizo manualmente en el navegador (ver tablas de arriba, incluyendo uso de los formularios/modales reales, no solo llamadas directas a `core.js`) porque el proyecto no tiene un test runner de browser configurado. Si se quiere esa cobertura permanente, es trabajo nuevo, no incluido aquí.
 
 ## Siguiente en el roadmap
 
-1. **Fase D2 — Costos fijos, margen, precio objetivo** (`HANDOFF.md` §10.4-§10.5): recargo 30% global, precio como entrada, markup vs. margen contable mostrados por separado, y la comparación "recargo recuperado vs. costos fijos reales" que cruza costeo (D1) con gastos (C) — decisiones ya tomadas en el handoff.
-2. **Fase D3 — Domicilios por zona.**
-3. **Fase D4 — Migrar los datos del spreadsheet**, con las correcciones de `HANDOFF.md` §11 (ya no hay decisiones pendientes que la bloqueen).
-4. **Fase E — Backend en Google Sheets.**
+1. **Fase D3 — Domicilios por zona** (`HANDOFF.md` §10.6): la más pequeña de las que quedan — catálogo de zonas + línea opcional en la venta. Pendiente decidir si el domicilio es ingreso con costo asociado o un pasante (§13, pendiente #1 del handoff).
+2. **Fase D4 — Migrar los datos del spreadsheet**, con las correcciones de `HANDOFF.md` §11 y las 4 decisiones de costeo ya tomadas (recargo 30%, masa de harina de arroz, empaques diferenciados $2.550/$1.650). Ya no hay nada que la bloquee.
+3. **Fase E — Backend en Google Sheets.**
 
 El roadmap del handoff las ordena así a propósito (D2 depende de D1 + C, ambas ya completas; ver nota en `HANDOFF.md` §7).

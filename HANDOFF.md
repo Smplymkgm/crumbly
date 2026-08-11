@@ -147,25 +147,34 @@ preparaciones: [{
   // derivados en runtime (nunca persistidos): gramosTotal, costoTotal, costoPorGramo
 }]
 
-// Fase D2 — pendiente
-costosFijos: [{ id, nombre, monto, periodicidad /*'mensual'|'quincenal'|'anual'*/, activo }]
+// costosFijos[] — NO SE IMPLEMENTÓ como colección separada. Decisión del
+// 11 de agosto de 2026: es redundante con los gastos de Fase C. "Costos
+// fijos reales del período" (§10.5) se deriva directamente de
+// gastos(tipo='operativo') + depreciación de capex, que ya existen — una
+// colección paralela de "plantillas recurrentes" duplicaría el mismo
+// concepto sin agregar capacidad. Si en el futuro hace falta proyectar un
+// costo fijo antes de que se pague (vs. solo registrar el pago real),
+// retomar esto como feature nueva, no como algo ya diseñado aquí.
 
 // Fase D3 — pendiente
 zonasDomicilio: [{ id, nombre, tiempoAprox, precio, barrios: [] }]
 
-// Fase D2 — pendiente
+// ✅ IMPLEMENTADO (schemaVersion 5):
 parametros: {
-  costosFijosPct,      // 0.30 — global, confirmado
-  unidadesMetaMes      // para el prorrateo real de costos fijos (§10.5)
+  costosFijosPct   // 0.30 por defecto — global, override opcional por producto
 }
+// unidadesMetaMes NO se implementó: era de un enfoque de prorrateo por
+// volumen (costos fijos ÷ unidades esperadas) que la fórmula final de
+// §10.4 no usa — el recargo es un % sobre costo variable, no una
+// asignación por unidad. Vestigio de un borrador anterior, sin efecto.
 // NO hay margenPct: el margen es derivado, no parámetro. Ver §10.4.
 
 // productos — ✅ IMPLEMENTADO: ingredientes[{materiaId,gramos}] reemplazado
 // por componentes[] (unifica materia y preparaciones):
 productos: [{
   ...,
-  componentes: [{ tipo /*'materia'|'preparacion'*/, refId, gramos }]
-  // costosFijosPct (override del global) — Fase D2, pendiente
+  componentes: [{ tipo /*'materia'|'preparacion'*/, refId, gramos }],
+  costosFijosPct       // ✅ IMPLEMENTADO — override opcional del global
   // precio ya existe y es la ENTRADA; ganancia y margen se derivan
 }]
 ```
@@ -272,8 +281,8 @@ Todos en alcance. Los IDs son estables — úsalos para referirte a ellos entre 
 | **B** | Arreglar P0-1…P0-4, P1-1…P1-5, P2-1…P2-9 | A | Medio | ✅ Hecho y verificado en navegador. Detalle en `IMPLEMENTATION_STATUS.md` |
 | **C** | Módulo de gastos (§9) | B | Medio | ✅ Hecho y verificado en navegador. Detalle en `IMPLEMENTATION_STATUS.md` |
 | **D1** | Preparaciones intermedias + costeo por porcentaje panadero (§10.2, §10.3) | B, P1-3 | **Alto** | ✅ Hecho y verificado en navegador. Detalle en `IMPLEMENTATION_STATUS.md` |
-| **D2** | Costos fijos, margen, precio objetivo (§10.4, §10.5) | D1, C | Medio | 📋 Siguiente |
-| **D3** | Domicilios por zona (§10.6) | D1 | Bajo | 📋 Pendiente |
+| **D2** | Costos fijos, margen, precio objetivo (§10.4, §10.5) | D1, C | Medio | ✅ Hecho y verificado en navegador. Detalle en `IMPLEMENTATION_STATUS.md` |
+| **D3** | Domicilios por zona (§10.6) | D1 | Bajo | 📋 Siguiente |
 | **D4** | Migrar los datos del spreadsheet, con los errores corregidos (§11) | D1-D3 | Medio | 📋 Pendiente |
 | **E** | Backend en Google Sheets (§12) | D | Alto | 📋 Pendiente |
 | **F** | Resto de P1 y P2 | — | Bajo cada uno | ✅ Absorbido dentro de la Fase B |
@@ -463,6 +472,8 @@ costoVariable    = costoComponentes + costoEmpaque
 Es lo que la app ya hace, extendido para aceptar preparaciones como componente.
 
 ### 10.4 Recargo de costos fijos, precio y margen
+
+> ✅ **Implementado y verificado el 11 de agosto de 2026.** `js/core.js`: `getRentabilidadProducto` (costo variable → costo final → ganancia → markup/margen separados), `getPrecioObjetivo` (calculadora auxiliar, nunca escribe `producto.precio`), `getCoberturaCostosFijos` (§10.5). 13 tests nuevos, incluyendo el ejemplo del waffle New York reproducido exacto: costo final $12.769,65, ganancia $9.230,35, markup 72,3%, margen 42,0%. UI: desglose completo en la ficha de producto, override de `%` por producto, calculadora de precio objetivo, card "Parámetros de costeo" (el `%` global) en Reportes. **Importante, verificado con test de regresión:** `venta.items[].costo` y `getCascadaUtilidad` (Fase C) siguen usando solo costo variable — el recargo de costos fijos es una herramienta de precios, nunca se filtra a la contabilidad real. Detalle en `IMPLEMENTATION_STATUS.md`.
 
 **Confirmado el 10 de agosto de 2026 — el flujo va al revés de como está en el spreadsheet.** En las hojas, el margen es un parámetro y el precio se calcula a partir de él. En la operación real es al contrario: **el precio de venta lo deciden ustedes**, y el margen es la consecuencia.
 
@@ -808,17 +819,19 @@ Ninguna bloquea el arranque; todas tienen recomendación y pueden decidirse sobr
 | 1 | Documento estructurado y completo | ✅ Este archivo |
 | 2 | GitHub + backend en spreadsheet | ✅ Repo creado y en producción — [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (privado). Backend en Sheets: 📋 Fase E, no iniciada |
 | 3 | Reporte de ventas y gastos | ✅ Implementado y verificado (§9, Fase C) |
-| 4 | Fórmulas de costos fijos, costo por producto y ganancias | ✅ Motor de preparaciones y costeo por porcentaje panadero implementado y verificado (§10.2-§10.3, Fase D1). Costos fijos/margen/precio objetivo (§10.4-§10.5): 📋 Fase D2, siguiente |
+| 4 | Fórmulas de costos fijos, costo por producto y ganancias | ✅ Completo: preparaciones + porcentaje panadero (§10.2-§10.3, Fase D1) y costo final/markup/margen/cobertura (§10.4-§10.5, Fase D2), ambas implementadas y verificadas |
 
 ### Estado real del proyecto (11 de agosto de 2026)
 
-Fases **A, B, C y D1 completas**, verificadas con 71 tests automatizados (`node tests/core.test.js`) y con pruebas manuales de flujo completo en navegador (no solo unitarias). Todos los bugs P0/P1/P2 del handoff original corregidos. Ver `IMPLEMENTATION_STATUS.md` para el detalle bug por bug, incluyendo los bugs reales encontrados *durante* la verificación (no estaban en el diagnóstico original) y ya corregidos:
+Fases **A, B, C, D1 y D2 completas**, verificadas con 84 tests automatizados (`node tests/core.test.js`) y con pruebas manuales de flujo completo en navegador (no solo unitarias). Todos los bugs P0/P1/P2 del handoff original corregidos. Ver `IMPLEMENTATION_STATUS.md` para el detalle bug por bug, incluyendo los bugs reales encontrados *durante* la verificación (no estaban en el diagnóstico original) y ya corregidos:
 
 - Revertir una venta con stock insuficiente sobrepasaba el stock original (P0-1).
 - Guardar un gasto no refrescaba la cascada de utilidad en la pestaña "Resumen" hasta cambiar de pestaña.
 - El costo por gramo de una preparación se mostraba redondeado a entero (`$12/g` en vez de `$12,4591/g`) — significativo porque un producto usa cientos de gramos.
 - Agregar una fila de empaque al producto no recalculaba el costo hasta interactuar con esa fila.
 
-El motor de preparaciones se verificó contra el ejemplo real del spreadsheet (masa de waffle New York: 583,44 g, $7.269,15, $12,4591/g — exacto), incluyendo anidamiento de preparaciones, detección de ciclos directos e indirectos, y descuento/reversión de stock real de materia prima a través de una preparación al vender.
+El motor de preparaciones se verificó contra el ejemplo real del spreadsheet (masa de waffle New York: 583,44 g, $7.269,15, $12,4591/g — exacto), incluyendo anidamiento de preparaciones, detección de ciclos directos e indirectos, y descuento/reversión de stock real de materia prima a través de una preparación al vender. El costeo final (D2) se verificó con el mismo producto de referencia: costo final $12.769,65, ganancia $9.230,35, markup 72,3%, margen 42,0% — exacto contra la tabla del handoff — y se confirmó por test de regresión que el recargo de costos fijos nunca se filtra a la contabilidad real de Fase C (COGS y utilidad bruta siguen siendo costo variable puro).
 
-**Siguiente:** Fase D2 (costos fijos, margen, precio objetivo — §10.4-§10.5). Las decisiones ya están tomadas en el handoff (recargo 30% global, precio como entrada); es la pieza que junta costeo (D1) + gastos (C) en la cascada final de rentabilidad por producto.
+**Decisión tomada en esta fase:** la colección `costosFijos[]` planificada originalmente no se implementó — es redundante con los gastos operativos de Fase C, que ya cubren el mismo concepto ("costos fijos reales del período" = gastos operativos + depreciación). Documentado en §3.2.
+
+**Siguiente:** Fase D3 (domicilios por zona, §10.6) — la más pequeña de las que quedan — y Fase D4 (migrar los datos reales del spreadsheet con las 4 decisiones ya tomadas: recargo 30%, masa de harina de arroz, empaques diferenciados). Después, Fase E (backend en Google Sheets).

@@ -333,6 +333,18 @@ body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);
           <p class="item-sub" style="margin-top:8px">Utilidad bruta = ingresos − costo de ventas. Utilidad neta = bruta − operativos − depreciación. Flujo de caja = ingresos − todo lo que salió de la caja (compras de inventario + operativos + capex). Las compras de inventario no restan de la utilidad porque su costo ya está contado dentro del costo de ventas.</p>
         </div>
         <div class="card">
+          <div class="card-title">Parámetros de costeo</div>
+          <div class="modal-field" style="margin-bottom:8px">
+            <label>Recargo de costos fijos global (%)</label>
+            <input type="number" id="cfg-costos-fijos-pct" min="0" step="1" oninput="saveCostosFijosPctGlobal()">
+          </div>
+          <p class="item-sub">Se suma al costo variable de cada producto para decidir precios (HANDOFF §10.4). Un producto puede tener su propio % distinto — se edita en su ficha. Cambiar este número NO cambia ningún precio de venta ya guardado.</p>
+        </div>
+        <div class="card">
+          <div class="card-title">Cobertura del recargo de costos fijos</div>
+          <div id="cobertura-costos-fijos"></div>
+        </div>
+        <div class="card">
           <div class="card-title">Productos más rentables</div>
           <div id="r-rentables"><p class="empty">Sin datos en este período</p></div>
         </div>
@@ -592,13 +604,38 @@ body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);
       <label>Otro costo de empaque manual ($, opcional)</label>
       <input type="number" id="p-empaque-manual" placeholder="0" min="0" step="0.1" oninput="calcProdCost()">
     </div>
-    <div class="total-row" style="margin-bottom:10px">
-      <span>Costo por unidad</span>
-      <strong id="p-costo-calc">$0</strong>
+    <div class="modal-field">
+      <label>% costos fijos para este producto (opcional)</label>
+      <input type="number" id="p-costos-fijos-pct" placeholder="vacío = usar el global" min="0" step="1" oninput="calcProdCost()">
+    </div>
+    <div class="total-row" style="margin-bottom:6px">
+      <span>Costo variable</span>
+      <strong id="p-costo-variable-calc">$0</strong>
+    </div>
+    <div class="total-row" style="margin-bottom:6px">
+      <span id="p-costos-fijos-label">Costos fijos</span>
+      <strong id="p-costos-fijos-calc" style="color:var(--danger)">$0</strong>
     </div>
     <div class="total-row" style="margin-bottom:10px">
+      <span>Costo final</span>
+      <strong id="p-costo-calc">$0</strong>
+    </div>
+    <div class="total-row" style="margin-bottom:6px">
       <span>Ganancia por unidad</span>
       <strong id="p-gan-calc" style="color:var(--success)">$0</strong>
+    </div>
+    <div class="total-row" style="margin-bottom:6px">
+      <span>Markup sobre costo</span>
+      <strong id="p-markup-calc">0%</strong>
+    </div>
+    <div class="total-row" style="margin-bottom:10px">
+      <span>Margen sobre precio</span>
+      <strong id="p-margen-calc">0%</strong>
+    </div>
+    <div class="modal-field">
+      <label>Calculadora: precio para lograr un markup deseado (%, opcional)</label>
+      <input type="number" id="p-markup-objetivo" placeholder="Ej: 70" min="0" step="1" oninput="calcPrecioObjetivo()">
+      <p class="item-sub" id="p-precio-objetivo-result" style="margin-top:4px">Esto NO cambia el precio de venta — es solo una sugerencia.</p>
     </div>
     <input type="hidden" id="p-edit-id">
     <div class="modal-btns">
@@ -708,6 +745,8 @@ function loadState() {
   state = CrumblyCore.migrateState(parsed);
   const emailInput = document.getElementById('cfg-email');
   if (emailInput) emailInput.value = state.config.email;
+  const pctInput = document.getElementById('cfg-costos-fijos-pct');
+  if (pctInput) pctInput.value = state.parametros.costosFijosPct * 100;
 }
 
 // P0-4: antes fallaba en silencio (catch vacío). Ahora, si localStorage
@@ -1211,6 +1250,7 @@ function openModalProducto(id) {
     document.getElementById('p-nombre').value = p.nombre;
     document.getElementById('p-precio').value = p.precio;
     document.getElementById('p-empaque-manual').value = p.empaqueManual || '';
+    document.getElementById('p-costos-fijos-pct').value = typeof p.costosFijosPct === 'number' ? (p.costosFijosPct * 100) : '';
     document.getElementById('p-edit-id').value = id;
     p.componentes.forEach(c => addIngRow(c.tipo, c.refId, c.gramos));
     (p.empaquesUsados || []).forEach(e => addEmpRow(e.empaqueId, e.cantidad));
@@ -1219,9 +1259,12 @@ function openModalProducto(id) {
     document.getElementById('p-nombre').value = '';
     document.getElementById('p-precio').value = '';
     document.getElementById('p-empaque-manual').value = '';
+    document.getElementById('p-costos-fijos-pct').value = '';
     document.getElementById('p-edit-id').value = '';
     addIngRow();
   }
+  document.getElementById('p-markup-objetivo').value = '';
+  document.getElementById('p-precio-objetivo-result').textContent = 'Esto NO cambia el precio de venta — es solo una sugerencia.';
   document.getElementById('modal-producto').classList.add('open');
   calcProdCost();
 }
@@ -1301,30 +1344,46 @@ function getIngRowData() {
     return { tipo: tipo, refId: refId, gramos: gramos };
   }).filter(x => x && x.refId && x.gramos > 0);
 }
+// Arma un producto "candidato" desde los campos del formulario, sin
+// necesidad de que ya exista en state.productos — CrumblyCore.getCostoProducto
+// y getRentabilidadProducto solo leen sus campos, no lo buscan por id. Así
+// se reutiliza la MISMA fórmula que usa el resto de la app (HANDOFF §20)
+// en vez de recalcular el costo a mano aquí.
+function buildProductoCandidateFromUI() {
+  const pctInput = document.getElementById('p-costos-fijos-pct').value;
+  return {
+    id: document.getElementById('p-edit-id').value || '__preview__',
+    nombre: document.getElementById('p-nombre').value.trim(),
+    precio: parseFloat(document.getElementById('p-precio').value) || 0,
+    componentes: getIngRowData(),
+    empaquesUsados: getEmpRowData(),
+    empaqueManual: parseFloat(document.getElementById('p-empaque-manual').value) || 0,
+    costosFijosPct: pctInput !== '' ? (parseFloat(pctInput) || 0) / 100 : undefined
+  };
+}
 function calcProdCost() {
-  const componentes = getIngRowData();
-  let costo = 0;
-  componentes.forEach(c => {
-    if (c.tipo === 'preparacion') {
-      try { costo += CrumblyCore.getPreparacionCosto(state, c.refId).costoPorGramo * c.gramos; }
-      catch (e) { /* ciclo u otro error — se ignora en la vista previa, savePreparacion ya lo bloqueó al guardar */ }
-    } else {
-      const m = state.materia.find(x => x.id === c.refId);
-      if (m) costo += m.costo * c.gramos;
-    }
-  });
-  const emps = getEmpRowData();
-  emps.forEach(e => {
-    const m = state.empaques.find(x => x.id === e.empaqueId);
-    if (m) costo += m.costo * e.cantidad;
-  });
-  const empaqueManual = parseFloat(document.getElementById('p-empaque-manual').value) || 0;
-  costo += empaqueManual;
-  const precio = parseFloat(document.getElementById('p-precio').value) || 0;
-  document.getElementById('p-costo-calc').textContent = fmt(costo);
-  const gan = precio - costo;
-  document.getElementById('p-gan-calc').textContent = fmt(gan);
-  document.getElementById('p-gan-calc').style.color = gan >= 0 ? 'var(--success)' : 'var(--danger)';
+  const candidate = buildProductoCandidateFromUI();
+  const r = CrumblyCore.getRentabilidadProducto(candidate, state);
+  document.getElementById('p-costo-variable-calc').textContent = fmt(r.costoVariable);
+  document.getElementById('p-costos-fijos-label').textContent = 'Costos fijos (' + (r.costosFijosPct * 100).toFixed(0) + '%)';
+  document.getElementById('p-costos-fijos-calc').textContent = fmt(r.costoFinal - r.costoVariable);
+  document.getElementById('p-costo-calc').textContent = fmt(r.costoFinal);
+  document.getElementById('p-gan-calc').textContent = fmt(r.ganancia);
+  document.getElementById('p-gan-calc').style.color = r.ganancia >= 0 ? 'var(--success)' : 'var(--danger)';
+  // Markup y margen son la MISMA plata sobre bases distintas — se muestran
+  // separadas y etiquetadas para no confundirlas (HANDOFF §10.4).
+  document.getElementById('p-markup-calc').textContent = (r.markupPct * 100).toFixed(1) + '%';
+  document.getElementById('p-margen-calc').textContent = (r.margenPct * 100).toFixed(1) + '%';
+  calcPrecioObjetivo();
+}
+function calcPrecioObjetivo() {
+  const input = document.getElementById('p-markup-objetivo').value;
+  const resultEl = document.getElementById('p-precio-objetivo-result');
+  if (input === '') { resultEl.textContent = 'Esto NO cambia el precio de venta — es solo una sugerencia.'; return; }
+  const candidate = buildProductoCandidateFromUI();
+  const markupObjetivo = (parseFloat(input) || 0) / 100;
+  const precioSugerido = CrumblyCore.getPrecioObjetivo(candidate, state, markupObjetivo);
+  resultEl.textContent = 'Precio sugerido para ' + (markupObjetivo * 100).toFixed(0) + '% de markup: ' + fmt(precioSugerido) + ' (no se guarda solo)';
 }
 function saveProducto() {
   const nombre = document.getElementById('p-nombre').value.trim();
@@ -1333,18 +1392,25 @@ function saveProducto() {
   const editId = document.getElementById('p-edit-id').value;
   const componentes = getIngRowData();
   const empaquesUsados = getEmpRowData();
+  const pctInput = document.getElementById('p-costos-fijos-pct').value;
+  const costosFijosPct = pctInput !== '' ? (parseFloat(pctInput) || 0) / 100 : undefined;
   if (!nombre) { showToast('Ingresa el nombre del producto'); return; }
   if (!precio) { showToast('Ingresa el precio de venta'); return; }
   // P0-2: ya NO se guarda "costo" como snapshot congelado. El costo del
   // producto se calcula siempre en vivo con CrumblyCore.getCostoProducto,
   // así que si cambia el precio de un ingrediente (o de una preparación que
   // use) el margen se actualiza solo, sin tener que reabrir y regrabar
-  // cada producto.
+  // cada producto. costosFijosPct es opcional: sin valor, usa el global de
+  // Reportes (HANDOFF §10.4).
   if (editId) {
     const idx = state.productos.findIndex(x => x.id === editId);
-    state.productos[idx] = { ...state.productos[idx], nombre, precio, componentes, empaquesUsados, empaqueManual };
+    const actualizado = { ...state.productos[idx], nombre, precio, componentes, empaquesUsados, empaqueManual };
+    if (costosFijosPct === undefined) delete actualizado.costosFijosPct; else actualizado.costosFijosPct = costosFijosPct;
+    state.productos[idx] = actualizado;
   } else {
-    state.productos.push({ id: uid(), nombre, precio, componentes, empaquesUsados, empaqueManual });
+    const nuevo = { id: uid(), nombre, precio, componentes, empaquesUsados, empaqueManual };
+    if (costosFijosPct !== undefined) nuevo.costosFijosPct = costosFijosPct;
+    state.productos.push(nuevo);
   }
   saveState(); closeModal('modal-producto'); renderProductos();
   showToast('Producto guardado ✓');
@@ -1359,17 +1425,18 @@ function renderProductos() {
   const el = document.getElementById('productos-list');
   if (!state.productos.length) { el.innerHTML = '<p class="empty">No hay productos registrados</p>'; return; }
   el.innerHTML = state.productos.map(p => {
-    // P0-2: costo y empaque calculados en vivo, nunca leídos de un campo guardado.
-    const costo = CrumblyCore.getCostoProducto(p, state);
+    // P0-2: costo calculado en vivo, nunca leído de un campo guardado.
+    // r.costoFinal ya incluye el recargo de costos fijos (HANDOFF §10.4) —
+    // markup y margen se muestran separados y etiquetados, nunca como un
+    // solo "%" ambiguo (son la misma plata sobre bases distintas).
+    const r = CrumblyCore.getRentabilidadProducto(p, state);
     const empaqueTotal = CrumblyCore.getEmpaqueTotalProducto(p, state);
-    const gan = p.precio - costo;
-    const pct = p.precio > 0 ? (gan / p.precio * 100).toFixed(0) : 0;
     const empaqueTxt = empaqueTotal ? ` · Empaque: ${fmt(empaqueTotal)}` : '';
     return `<div class="list-item">
       <div style="flex:1;min-width:0">
         <div class="item-name">${esc(p.nombre)}</div>
-        <div class="item-sub">Costo: ${fmt(costo)} · Venta: ${fmt(p.precio)}${empaqueTxt}</div>
-        <div class="item-sub" style="color:${gan >= 0 ? 'var(--success)' : 'var(--danger)'}">Ganancia: ${fmt(gan)} (${pct}%)</div>
+        <div class="item-sub">Costo final: ${fmt(r.costoFinal)} · Venta: ${fmt(p.precio)}${empaqueTxt}</div>
+        <div class="item-sub" style="color:${r.ganancia >= 0 ? 'var(--success)' : 'var(--danger)'}">Ganancia: ${fmt(r.ganancia)} · Markup ${(r.markupPct*100).toFixed(0)}% · Margen ${(r.margenPct*100).toFixed(0)}%</div>
       </div>
       <div style="display:flex;gap:2px;flex-shrink:0">
         <button class="btn-icon" onclick="openModalProducto('${p.id}')" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
@@ -1672,6 +1739,34 @@ function renderCascadaUtilidad() {
         <div class="profit-val" style="color:var(--danger)">-${fmt(monto)}</div>
       </div>`).join('')
     : '';
+  renderCoberturaCostosFijos();
+}
+
+/* ─── PARÁMETROS DE COSTEO Y COBERTURA (HANDOFF §10.4-§10.5) ─── */
+function saveCostosFijosPctGlobal() {
+  const pct = parseFloat(document.getElementById('cfg-costos-fijos-pct').value);
+  state.parametros.costosFijosPct = isNaN(pct) ? CrumblyCore.COSTOS_FIJOS_PCT_DEFAULT : pct / 100;
+  saveState();
+  renderCoberturaCostosFijos();
+  renderProductos(); // el costo final de cada producto puede cambiar
+}
+function renderCoberturaCostosFijos() {
+  const el = document.getElementById('cobertura-costos-fijos');
+  if (!el) return;
+  const cob = CrumblyCore.getCoberturaCostosFijos(state, reportPeriod);
+  if (cob.costosFijosReales <= 0) {
+    el.innerHTML = '<p class="empty">Sin gastos operativos ni depreciación registrados en este período — registra gastos en la pestaña "Gastos" para ver la cobertura real.</p>';
+    return;
+  }
+  const bien = cob.coberturaPct >= 100;
+  const mensaje = bien
+    ? `Con el ${(cob.costosFijosPctActual*100).toFixed(0)}% actual recuperaste ${fmt(cob.recargoRecuperado)}, más de lo necesario para cubrir tus costos fijos reales de este período (${fmt(cob.costosFijosReales)}).`
+    : `Con el ${(cob.costosFijosPctActual*100).toFixed(0)}% actual recuperaste ${fmt(cob.recargoRecuperado)}. Tus costos fijos reales fueron ${fmt(cob.costosFijosReales)} — te faltó ${(100-cob.coberturaPct).toFixed(0)}%. Para cubrirlos exacto, el recargo debería estar cerca del ${(cob.pctSugerido*100).toFixed(0)}%.`;
+  el.innerHTML = `
+    <div class="profit-row"><div class="profit-name">Recargo recuperado</div><div class="profit-val">${fmt(cob.recargoRecuperado)}</div></div>
+    <div class="profit-row"><div class="profit-name">Costos fijos reales (gastos + depreciación)</div><div class="profit-val" style="color:var(--danger)">${fmt(cob.costosFijosReales)}</div></div>
+    <div class="total-row" style="margin-top:8px"><span>Cobertura</span><strong style="color:${bien ? 'var(--success)' : 'var(--danger)'}">${cob.coberturaPct.toFixed(0)}%</strong></div>
+    <p class="item-sub" style="margin-top:8px">${mensaje}</p>`;
 }
 
 function renderReportes() {
@@ -1813,6 +1908,21 @@ function generateSalesReportPDF() {
     headStyles: { fillColor: [74, 55, 40], textColor: 255 }
   });
   y = doc.lastAutoTable.finalY + 10;
+
+  // Cobertura del recargo de costos fijos (HANDOFF §10.5).
+  const cob = CrumblyCore.getCoberturaCostosFijos(state, reportPeriod);
+  if (cob.costosFijosReales > 0) {
+    if (y > 250) { doc.addPage(); y = 20; }
+    doc.setFontSize(12); doc.text('Cobertura del recargo de costos fijos', 14, y);
+    doc.autoTable({
+      startY: y + 4,
+      head: [['Recargo (' + (cob.costosFijosPctActual*100).toFixed(0) + '%) recuperado', 'Costos fijos reales', 'Cobertura']],
+      body: [[fmt(cob.recargoRecuperado), fmt(cob.costosFijosReales), cob.coberturaPct.toFixed(0) + '%']],
+      styles: { fontSize: 8.5, halign: 'center' },
+      headStyles: { fillColor: [196, 149, 106], textColor: 255 }
+    });
+    y = doc.lastAutoTable.finalY + 10;
+  }
 
   const gastosPeriodo = CrumblyCore.getGastosByPeriod(state.gastos, reportPeriod);
   if (gastosPeriodo.length) {
@@ -2064,6 +2174,8 @@ function resetearDatos() {
   try { localStorage.removeItem('crumbly-state'); } catch (e) {}
   state = CrumblyCore.emptyState();
   saveState();
+  document.getElementById('cfg-email').value = '';
+  document.getElementById('cfg-costos-fijos-pct').value = state.parametros.costosFijosPct * 100;
   refreshAll();
   showToast('Datos reseteados');
 }
