@@ -4,7 +4,7 @@
 
 ## Fase actual
 
-**Fases A, B, C, D1 y D2 completas y verificadas.** Repo en GitHub: [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (privado). Fases D3-D4 (domicilios, migración del spreadsheet) y E (backend): no iniciadas — siguiente en el roadmap del `HANDOFF.md`.
+**Fases A, B, C, D1 y D2 completas y verificadas.** D2 se simplificó a pedido el mismo día: se construyó y verificó el recargo de costos fijos por producto, y luego se retiró — el modelo vigente es costo + margen bruto por producto; la utilidad neta se conoce al cierre de cada período (ya existía en Fase C, sin cambios). Ver sección "D2 — revisión" abajo. Repo en GitHub: [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (privado). Fases D3-D4 (domicilios, migración del spreadsheet) y E (backend): no iniciadas.
 
 ## Qué se hizo
 
@@ -114,13 +114,23 @@ Costo final = costo variable × (1 + % costos fijos). El precio de venta sigue s
 
 No se encontraron bugs nuevos durante la verificación en navegador de esta fase (a diferencia de B, C y D1, que sí destaparon uno cada una).
 
+### D2 — revisión (mismo día): recargo de costos fijos retirado
+
+Después de verificar lo de arriba, se pidió explícitamente **quitar el recargo de costos fijos de la fórmula por producto**. No fue por un error — los cálculos de arriba eran correctos — fue una decisión de diseño: el negocio prefiere conocer la utilidad neta real al cierre de cada período (cruzando gastos reales con ventas reales, Fase C) en vez de estimarla por producto con un `%` global.
+
+**Se eliminó de `js/core.js`:** `getRentabilidadProducto`, `getPrecioObjetivo`, `getCoberturaCostosFijos`, `parametros.costosFijosPct`, `producto.costosFijosPct`. **Se agregó:** `getMargenProducto` (costo, ganancia, margen bruto — sin recargo). **De la UI:** desglose costo-final/markup/margen/calculadora en la ficha de producto → vuelve a costo + margen bruto; cards "Parámetros de costeo" y "Cobertura del recargo" en Reportes → eliminadas; sección de cobertura en el PDF → eliminada.
+
+**Sin cambios:** `getCostoProducto` (el costo variable, ya verificado correcto), la cascada de utilidad de Fase C (`getCascadaUtilidad`, la card "Utilidad neta y flujo de caja" en Reportes) — esa sigue siendo el mecanismo de "cierre" que el negocio quiere usar.
+
+Tests D2 reescritos: de 13 tests (costo final/markup/cobertura) a 4 tests (`getMargenProducto`, precio no se mueve solo, consistencia con el snapshot de venta, utilidad neta sigue siendo por período). Verificado en navegador con servidor local (`.claude/launch.json`, no versionado): ficha de producto y lista de productos muestran solo costo + margen bruto, sin rastro de las cards retiradas, PDF/CSV sin errores.
+
 ## Tests
 
 ```
 node tests/core.test.js
 ```
 
-**84/84 pasan.** Cobertura Fase B (33 tests): conversión de períodos (semana en lunes), formato de moneda, escape de HTML, costeo de producto en vivo, validación de stock, necesidades de inventario (3 tipos de insumo, ventana móvil), migración de esquema (no destructiva, tolera estado parcial/corrupto/null), aplicar/revertir venta (caso normal, stock insuficiente, toppings clampeados, venta legada sin `consumoReal`), dependencias al eliminar insumos. Cobertura Fase C (16 tests): costo promedio ponderado, clasificación de gastos por tipo, reversión con snapshot exacto, depreciación de capex, cascada de utilidad, agrupación por categoría. Cobertura Fase D1 (22 tests): porcentaje panadero con números reales del handoff, modo directo, anidamiento, ciclos (4 variantes), producto con componentes mixtos, venta/reversión a través de una preparación, dependencias extendidas. Cobertura Fase D2 (13 tests nuevos): costo final/markup/margen con el ejemplo real del handoff, override por producto, calculadora de precio objetivo, cobertura de costos fijos (recuperación, déficit, caso sin datos), y dos tests de regresión confirmando que Fase B/C no cambiaron.
+**75/75 pasan.** Cobertura Fase B (33 tests): conversión de períodos (semana en lunes), formato de moneda, escape de HTML, costeo de producto en vivo, validación de stock, necesidades de inventario (3 tipos de insumo, ventana móvil), migración de esquema (no destructiva, tolera estado parcial/corrupto/null), aplicar/revertir venta (caso normal, stock insuficiente, toppings clampeados, venta legada sin `consumoReal`), dependencias al eliminar insumos. Cobertura Fase C (16 tests): costo promedio ponderado, clasificación de gastos por tipo, reversión con snapshot exacto, depreciación de capex, cascada de utilidad, agrupación por categoría. Cobertura Fase D1 (22 tests): porcentaje panadero con números reales del handoff, modo directo, anidamiento, ciclos (4 variantes), producto con componentes mixtos, venta/reversión a través de una preparación, dependencias extendidas. Cobertura Fase D2, versión vigente (4 tests): `getMargenProducto` con costo real, el precio no se mueve solo al subir un costo, el snapshot de venta es consistente, la utilidad neta se sigue conociendo por período.
 
 No hay suite de UI automatizada — la verificación de pantallas se hizo manualmente en el navegador (ver tablas de arriba, incluyendo uso de los formularios/modales reales, no solo llamadas directas a `core.js`) porque el proyecto no tiene un test runner de browser configurado. Si se quiere esa cobertura permanente, es trabajo nuevo, no incluido aquí.
 

@@ -90,8 +90,6 @@
 
   // ─── Estado / migraciones (P1-3) ───────────────────────────
 
-  var COSTOS_FIJOS_PCT_DEFAULT = 0.30; // decisión del handoff, global salvo override por producto
-
   function emptyState() {
     return {
       schemaVersion: SCHEMA_VERSION,
@@ -102,7 +100,6 @@
       productos: [],
       ventas: [],
       gastos: [],
-      parametros: { costosFijosPct: COSTOS_FIJOS_PCT_DEFAULT },
       config: { email: '' }
     };
   }
@@ -123,11 +120,9 @@
       ventas: Array.isArray(raw.ventas) ? raw.ventas : [],
       gastos: Array.isArray(raw.gastos) ? raw.gastos : [], // v2 -> v3
       preparaciones: Array.isArray(raw.preparaciones) ? raw.preparaciones : [], // v3 -> v4
-      parametros: (raw.parametros && typeof raw.parametros === 'object') ? raw.parametros : {}, // v4 -> v5
       config: (raw.config && typeof raw.config === 'object') ? raw.config : {}
     };
     if (s.config.email === undefined) s.config.email = '';
-    if (typeof s.parametros.costosFijosPct !== 'number') s.parametros.costosFijosPct = COSTOS_FIJOS_PCT_DEFAULT;
 
     // v1 → v2: productos ganan empaquesUsados[] / empaqueManual (heredado
     // del costo manual de empaque de la versión anterior a toppings/empaque).
@@ -347,77 +342,17 @@
     return total;
   }
 
-  // ─── Costo final, markup y margen (HANDOFF §10.4-§10.5) ────
-  //
-  // IMPORTANTE — esto es una herramienta de PRECIOS, no cambia la
-  // contabilidad real: `venta.items[].costo` (P0-2) y `getCostoProducto`
-  // siguen siendo el costo variable puro (materia + empaque), y así deben
-  // quedarse — es el COGS real. El recargo de costos fijos de aquí abajo
-  // solo se usa para decidir qué cobrar y para el chequeo de cobertura;
-  // nunca se resta dos veces contra la cascada de utilidad de Fase C.
-  //
-  // Flujo (decisión del handoff, invertido respecto al Excel original): el
-  // precio de venta es la ENTRADA (ya existe en producto.precio); ganancia
-  // y margen se DERIVAN de él, no al revés.
-
-  function getCostosFijosPctEfectivo(producto, state) {
-    if (producto && typeof producto.costosFijosPct === 'number') return producto.costosFijosPct;
-    return (state.parametros && typeof state.parametros.costosFijosPct === 'number')
-      ? state.parametros.costosFijosPct
-      : COSTOS_FIJOS_PCT_DEFAULT;
-  }
-
-  function getRentabilidadProducto(producto, state) {
-    var costoVariable = getCostoProducto(producto, state);
-    var costosFijosPct = getCostosFijosPctEfectivo(producto, state);
-    var costoFinal = costoVariable * (1 + costosFijosPct);
-    var precioVenta = Number(producto.precio) || 0;
-    var ganancia = precioVenta - costoFinal;
-    return {
-      costoVariable: costoVariable,
-      costosFijosPct: costosFijosPct,
-      costoFinal: costoFinal,
-      precioVenta: precioVenta,
-      ganancia: ganancia,
-      markupPct: costoFinal > 0 ? ganancia / costoFinal : 0,   // sobre costo — "margen" en el lenguaje de las hojas
-      margenPct: precioVenta > 0 ? ganancia / precioVenta : 0  // sobre precio — margen contable
-    };
-  }
-
-  // Calculadora auxiliar: "¿a cuánto tendría que vender para lograr X% de
-  // markup sobre el costo?". NUNCA escribe producto.precio — es solo una
-  // sugerencia para que el usuario decida (ver HANDOFF §10.4).
-  function getPrecioObjetivo(producto, state, markupObjetivoPct) {
-    var costoFinal = getRentabilidadProducto(producto, state).costoFinal;
-    return costoFinal * (1 + (Number(markupObjetivoPct) || 0));
-  }
-
-  // Cruza el recargo de costos fijos (una decisión de precios) contra los
-  // costos fijos REALES ya registrados en Fase C (gastos operativos +
-  // depreciación) para el mismo período — HANDOFF §10.5. costoVentas ya
-  // representa la suma de costoVariable de cada venta del período (viene
-  // de getCascadaUtilidad, que a su vez lo deriva de ingresos-ganancia),
-  // así que no hay que recorrer las ventas de nuevo.
-  function getCoberturaCostosFijos(state, period, ref) {
-    var casc = getCascadaUtilidad(state, period, ref);
-    var pct = (state.parametros && typeof state.parametros.costosFijosPct === 'number')
-      ? state.parametros.costosFijosPct
-      : COSTOS_FIJOS_PCT_DEFAULT;
-    var recargoRecuperado = casc.costoVentas * pct;
-    var costosFijosReales = casc.totalOperativos + casc.depreciacion;
-    var coberturaPct = costosFijosReales > 0 ? (recargoRecuperado / costosFijosReales * 100) : null;
-    var faltante = Math.max(0, costosFijosReales - recargoRecuperado);
-    // % de recargo que HABRÍA hecho falta cobrar para cubrir exacto los
-    // costos fijos reales de este período, dado el costoVentas real.
-    var pctSugerido = casc.costoVentas > 0 ? (costosFijosReales / casc.costoVentas) : null;
-    return {
-      costosFijosPctActual: pct,
-      recargoRecuperado: recargoRecuperado,
-      costosFijosReales: costosFijosReales,
-      coberturaPct: coberturaPct,
-      faltante: faltante,
-      pctSugerido: pctSugerido
-    };
+  // ─── Margen bruto por producto ─────────────────────────────
+  // ponytail: sin recargo de costos fijos por producto (retirado a
+  // petición del usuario el 11 ago 2026). El costo del producto es solo
+  // costo variable; la utilidad neta se conoce por período, al cierre,
+  // cruzando ventas reales con gastos reales — eso ya existe en
+  // getCascadaUtilidad (Fase C), no aquí.
+  function getMargenProducto(producto, state) {
+    var costo = getCostoProducto(producto, state);
+    var precio = Number(producto.precio) || 0;
+    var ganancia = precio - costo;
+    return { costo: costo, precio: precio, ganancia: ganancia, margenPct: precio > 0 ? ganancia / precio : 0 };
   }
 
   // ─── Validación de stock antes de vender (P0-3) ────────────
@@ -913,10 +848,6 @@
     findProductosUsandoPreparacion: findProductosUsandoPreparacion,
     findPreparacionesUsandoPreparacion: findPreparacionesUsandoPreparacion,
     findPreparacionesUsandoMateria: findPreparacionesUsandoMateria,
-    COSTOS_FIJOS_PCT_DEFAULT: COSTOS_FIJOS_PCT_DEFAULT,
-    getCostosFijosPctEfectivo: getCostosFijosPctEfectivo,
-    getRentabilidadProducto: getRentabilidadProducto,
-    getPrecioObjetivo: getPrecioObjetivo,
-    getCoberturaCostosFijos: getCoberturaCostosFijos
+    getMargenProducto: getMargenProducto
   };
 });

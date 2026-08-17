@@ -4,7 +4,7 @@ App de una sola página para gestionar insumos, productos, ventas y reportes de 
 
 ## Uso local
 
-Abre `index.html` directamente en el navegador. Usuario `admin`, contraseña `crumbly2024` (no es seguridad real — ver `HANDOFF.md` §8.4).
+Abre `index.html` directamente en el navegador. Sin login — la app entra directo al dashboard.
 
 ## Estructura
 
