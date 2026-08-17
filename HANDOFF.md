@@ -709,6 +709,8 @@ No se corrige el Excel. **Los datos se migran a la app ya corregidos** (fase D4)
 
 ## §12. Fase E — Backend en Google Sheets
 
+**Estado (17 de agosto de 2026): código listo, despliegue pendiente del usuario.** Todo lo que se puede construir sin tener acceso a una cuenta de Google está hecho y probado — `backend/Code.gs` (Apps Script), `js/sync.js` (cliente) y la UI de sincronización en Reportes. Falta el paso que **no puedo hacer yo**: crear la hoja y desplegar el script bajo el correo de Crumbly (`backend/SETUP.md` trae el runbook completo, ~10 minutos). Hasta que eso pase, la app sigue funcionando exactamente igual que antes — 100% local, sin ningún cambio de comportamiento.
+
 ### 12.1 Aclaración
 
 **Adobe no tiene producto de hojas de cálculo.** Asumo Google Sheets, que además es coherente con el `.xlsx` que ya manejas y con lo que venía discutiéndose. Si querías otra cosa, §12.5 cubre alternativas; la arquitectura no cambia, solo el adaptador.
@@ -743,6 +745,8 @@ Google Sheet — una hoja por colección
 ```
 
 **`localStorage` como caché, Sheets como fuente de verdad.** La app sigue funcionando sin conexión y sincroniza cuando hay red. Importa de verdad si vas a registrar ventas en un punto con señal irregular; la alternativa (leer y escribir directo en cada operación) es más simple pero deja la app inutilizable sin internet, lo cual es inaceptable para un punto de venta.
+
+**Decisión de implementación (17 ago 2026): "push" del estado completo, no CRUD fila por fila.** Cada sincronización manda el `state` entero (el mismo objeto de `localStorage`) al backend, que lo guarda tal cual en una hoja `state_json` (una celda, JSON) — esa es la única fuente de verdad real, y `pull` simplemente la lee de vuelta. Las hojas normalizadas de la lista de arriba (`materia`, `ventas`, `venta_items`, etc.) se siguen generando en cada sincronización, pero son un **espejo de solo lectura para que puedas mirarlas/armar tablas dinámicas** — no se leen de vuelta, editarlas a mano no hace nada. Se descartó llevar IDs y hacer *diffs* fila por fila: para el volumen de este negocio (cientos/miles de filas, no millones) es más simple y mucho más difícil de romper reemplazar todo que sincronizar cambios incrementales. Si el volumen algún día lo justifica, se cambia sin tocar el resto de la app — el contrato (`pull`/`push` de un JSON) no cambia.
 
 ### 12.4 Detalles técnicos que muerden
 
@@ -813,7 +817,7 @@ Ninguna bloquea el arranque; todas tienen recomendación y pueden decidirse sobr
 | # | Petición | Estado |
 |---|---|---|
 | 1 | Documento estructurado y completo | ✅ Este archivo |
-| 2 | GitHub + backend en spreadsheet | ✅ Repo creado y en producción — [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (privado). Backend en Sheets: 📋 Fase E, no iniciada |
+| 2 | GitHub + backend en spreadsheet | ✅ Repo creado y en producción — [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (privado). Backend en Sheets: 🔧 Fase E — código y tests listos, falta que despliegues `backend/Code.gs` bajo el correo de Crumbly (`backend/SETUP.md`) |
 | 3 | Reporte de ventas y gastos | ✅ Implementado y verificado (§9, Fase C) |
 | 4 | Fórmulas de costo por producto y ganancias | ✅ Verificadas correctas (preparaciones + porcentaje panadero, §10.2-§10.3). El recargo de costos fijos por producto se construyó, se verificó, y se **retiró a pedido** — modelo vigente: costo + margen bruto por producto, utilidad neta al cierre (§10.4) |
 
@@ -846,3 +850,14 @@ Ronda de cambios a pedido explícito, a partir de una reunión (`Asesoria_crumbl
 Verificado: 87/87 tests de `core.js` (`node tests/core.test.js`) y flujo manual completo en navegador (servidor local, no `file://` — ver nota de `.claude/launch.json`) — insumo con margen variable → compra → promedio ponderado correcto (`$0,02` → `$0,0208` tras comprar igual cantidad a `$0,0216`), venta con cliente nuevo → aparece en historial y en el cliente reutilizado por teléfono, rango personalizado con fecha de hoy → mismos números que la pestaña "Hoy", card de cierre de caja independiente del selector de arriba, PDF de cierre de caja sin errores de consola.
 
 **Bug real encontrado y corregido durante esta ronda:** `new Date('YYYY-MM-DD')` parsea como medianoche UTC; combinado con `.setHours()` (hora local) esto desplaza un día hacia atrás en zonas horarias detrás de UTC (Colombia, UTC-5). Afectaba `rangeBounds()` y `getDepreciacionRango()`. Corregido con `parseLocalDate()`, que arma la fecha a partir de sus componentes Y/M/D en vez de parsear el string completo.
+
+### Fase E — backend en Google Sheets, primera pasada (17 de agosto de 2026)
+
+A pedido explícito, en paralelo a que el usuario trabaja el rediseño visual (`DISENO_HANDOFF.md`) con otra herramienta. Ver §12 para la arquitectura completa; resumen de lo construido:
+
+- `backend/Code.gs` — Apps Script con `doGet`/`doPost`, token contra `PropertiesService` (nunca en el código fuente), `LockService` en cada escritura, estado completo en JSON (`state_json`) + espejo de solo lectura por colección.
+- `js/sync.js` — cliente sin DOM (`ping`/`pull`/`push`), `POST` con `Content-Type: text/plain` para evitar el preflight que rompe Apps Script (§12.4). 11/11 tests con `fetch` simulado (`tests/sync.test.js`).
+- UI en Reportes: card "Sincronización (Google Sheets)" con URL/token, "Probar conexión" y "Sincronizar ahora". El auto-sync en segundo plano (tras cada `saveState()`, con debounce de 900ms) solo se activa **después** del primer "Sincronizar ahora" manual exitoso — así configurar la URL/token no dispara una subida sorpresa. Al cargar la app, si ya hubo una sincronización antes, intenta un `pull` en segundo plano sin bloquear el arranque (que sigue siendo instantáneo desde `localStorage`, igual que hoy).
+- Verificado en navegador con un `fetch` simulado (sin desplegar un Apps Script real todavía): probar conexión, sincronizar manualmente, y confirmar que una mutación real (guardar un insumo) dispara exactamente un push automático con el dato correcto adentro.
+
+**No pude hacer, y no debería poder hacer ningún asistente automatizado:** crear la cuenta/hoja de Google ni desplegar el script — eso requiere iniciar sesión con el correo de Crumbly. Queda en `backend/SETUP.md`, un runbook de ~10 minutos, como el único paso pendiente para que esto quede en producción. Hasta que se despliegue, la app funciona exactamente igual que antes de esta ronda — sin ningún cambio de comportamiento si nadie toca la tarjeta de Sincronización.

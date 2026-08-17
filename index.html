@@ -360,6 +360,22 @@ body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);
           </button>
         </div>
         <div class="card">
+          <div class="card-title">Sincronización (Google Sheets)</div>
+          <div class="modal-field" style="margin-bottom:8px">
+            <label>URL de la aplicación web</label>
+            <input type="text" id="cfg-backend-url" placeholder="https://script.google.com/macros/s/.../exec" oninput="saveSyncConfig()">
+          </div>
+          <div class="modal-field" style="margin-bottom:8px">
+            <label>Token</label>
+            <input type="password" id="cfg-backend-token" placeholder="Token del script" oninput="saveSyncConfig()">
+          </div>
+          <p class="item-sub" id="sync-status" style="margin-bottom:10px">Sin configurar — ver <code>backend/SETUP.md</code> para desplegar tu propio backend.</p>
+          <div style="display:flex;gap:8px">
+            <button class="btn icon-inline" style="flex:1;justify-content:center;display:flex;background:var(--warm);color:var(--dark)" onclick="testSyncConnection()">Probar conexión</button>
+            <button class="btn icon-inline" style="flex:1;justify-content:center;display:flex;background:var(--dark);color:var(--white)" onclick="syncNow()">Sincronizar ahora</button>
+          </div>
+        </div>
+        <div class="card">
           <div class="card-title">Correo de la marca</div>
           <div class="modal-field" style="margin-bottom:8px">
             <input type="email" id="cfg-email" placeholder="tumarca@correo.com" oninput="saveConfigEmail()">
@@ -696,6 +712,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="js/core.js"></script>
+<script src="js/sync.js"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -725,6 +742,11 @@ function loadState() {
   state = CrumblyCore.migrateState(parsed);
   const emailInput = document.getElementById('cfg-email');
   if (emailInput) emailInput.value = state.config.email;
+  const backendUrlInput = document.getElementById('cfg-backend-url');
+  if (backendUrlInput) backendUrlInput.value = state.config.backendUrl;
+  const backendTokenInput = document.getElementById('cfg-backend-token');
+  if (backendTokenInput) backendTokenInput.value = state.config.backendToken;
+  if (state.config.lastSync) updateSyncStatus('Última sincronización: ' + formatSyncTime(state.config.lastSync));
 }
 
 // P0-4: antes fallaba en silencio (catch vacío). Ahora, si localStorage
@@ -733,6 +755,7 @@ function loadState() {
 function saveState() {
   try {
     localStorage.setItem('crumbly-state', JSON.stringify(state));
+    schedulePush();
     return true;
   } catch (e) {
     showPersistentError(
@@ -744,6 +767,83 @@ function saveState() {
   }
 }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+/* ─── Sincronización con Google Sheets (Fase E, HANDOFF.md §12) ───
+   El auto-sync en segundo plano solo se activa DESPUÉS del primer
+   "Sincronizar ahora" manual exitoso (lastSync queda guardado) — así
+   pegar/editar la URL o el token no dispara una subida sorpresa antes
+   de que el usuario confirme que quiere sincronizar. */
+let syncPushTimer = null;
+function schedulePush() {
+  if (!state.config.lastSync) return;
+  if (!CrumblySync.isConfigured(state.config.backendUrl, state.config.backendToken)) return;
+  clearTimeout(syncPushTimer);
+  syncPushTimer = setTimeout(pushInBackground, 900);
+}
+function pushInBackground() {
+  CrumblySync.push(state.config.backendUrl, state.config.backendToken, state)
+    .then(r => {
+      if (!r.ok) { updateSyncStatus('Error al sincronizar: ' + (r.error || 'desconocido'), true); return; }
+      state.config.lastSync = r.ts || new Date().toISOString();
+      try { localStorage.setItem('crumbly-state', JSON.stringify(state)); } catch (e) {}
+      updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
+    })
+    .catch(() => updateSyncStatus('Sin conexión con el backend — los cambios quedan solo en este navegador por ahora', true));
+}
+function saveSyncConfig() {
+  state.config.backendUrl = document.getElementById('cfg-backend-url').value.trim();
+  state.config.backendToken = document.getElementById('cfg-backend-token').value.trim();
+  saveState();
+}
+function testSyncConnection() {
+  const url = document.getElementById('cfg-backend-url').value.trim();
+  const token = document.getElementById('cfg-backend-token').value.trim();
+  if (!CrumblySync.isConfigured(url, token)) { updateSyncStatus('Completa la URL y el token primero', true); return; }
+  updateSyncStatus('Probando…');
+  CrumblySync.ping(url, token)
+    .then(r => updateSyncStatus(r.ok ? 'Conectado ✓' : 'Error: ' + (r.error || 'token inválido'), !r.ok))
+    .catch(() => updateSyncStatus('No se pudo conectar — revisa la URL', true));
+}
+function syncNow() {
+  state.config.backendUrl = document.getElementById('cfg-backend-url').value.trim();
+  state.config.backendToken = document.getElementById('cfg-backend-token').value.trim();
+  if (!CrumblySync.isConfigured(state.config.backendUrl, state.config.backendToken)) { updateSyncStatus('Completa la URL y el token primero', true); return; }
+  updateSyncStatus('Sincronizando…');
+  CrumblySync.push(state.config.backendUrl, state.config.backendToken, state)
+    .then(r => {
+      if (!r.ok) { updateSyncStatus('Error: ' + (r.error || 'desconocido'), true); return; }
+      state.config.lastSync = r.ts || new Date().toISOString();
+      try { localStorage.setItem('crumbly-state', JSON.stringify(state)); } catch (e) {}
+      updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
+      showToast('Datos sincronizados con Google Sheets');
+    })
+    .catch(() => updateSyncStatus('No se pudo conectar con el backend', true));
+}
+function pullOnLoad() {
+  if (!state.config.lastSync) return;
+  if (!CrumblySync.isConfigured(state.config.backendUrl, state.config.backendToken)) return;
+  CrumblySync.pull(state.config.backendUrl, state.config.backendToken)
+    .then(r => {
+      if (!r.ok || !r.state) return;
+      state = CrumblyCore.migrateState(r.state);
+      state.config.lastSync = new Date().toISOString();
+      try { localStorage.setItem('crumbly-state', JSON.stringify(state)); } catch (e) {}
+      updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
+      refreshAll();
+    })
+    .catch(() => updateSyncStatus('Trabajando sin conexión con el backend — se sincronizará cuando vuelva la red', true));
+}
+function updateSyncStatus(msg, isError) {
+  const el = document.getElementById('sync-status');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.color = isError ? 'var(--danger)' : 'var(--muted)';
+}
+function formatSyncTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }) + ' ' + d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+}
 
 function showToast(msg) {
   const t = document.getElementById('toast');
@@ -2181,6 +2281,7 @@ function refreshAll() {
 
 loadState();
 refreshAll();
+pullOnLoad();
 </script>
 </body>
 </html>

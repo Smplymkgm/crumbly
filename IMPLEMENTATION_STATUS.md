@@ -4,7 +4,7 @@
 
 ## Fase actual
 
-**Fases A, B, C, D1 y D2 completas y verificadas.** D2 se simplificó a pedido el mismo día: se construyó y verificó el recargo de costos fijos por producto, y luego se retiró — el modelo vigente es costo + margen bruto por producto; la utilidad neta se conoce al cierre de cada período (ya existía en Fase C, sin cambios). Ver sección "D2 — revisión" abajo. Después de D2 se hizo una ronda adicional (17 ago 2026, ver sección "Ronda POS — clientes, ticket promedio, rango personalizable, cierre de caja, margen de variabilidad" abajo): login retirado, clientes reutilizables, ticket promedio, rango de fechas personalizable en Reportes, cierre de caja diario (solo reporte) y margen de variabilidad del 8% en insumos de precio volátil. Repo en GitHub: [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (privado). Fase D3 (domicilios): pospuesta a pedido, no bien definida aún. Fase D4 (migración del spreadsheet) y E (backend): no iniciadas.
+**Fases A, B, C, D1 y D2 completas y verificadas.** D2 se simplificó a pedido el mismo día: se construyó y verificó el recargo de costos fijos por producto, y luego se retiró — el modelo vigente es costo + margen bruto por producto; la utilidad neta se conoce al cierre de cada período (ya existía en Fase C, sin cambios). Ver sección "D2 — revisión" abajo. Después de D2 se hizo una ronda adicional (17 ago 2026, ver sección "Ronda POS — clientes, ticket promedio, rango personalizable, cierre de caja, margen de variabilidad" abajo): login retirado, clientes reutilizables, ticket promedio, rango de fechas personalizable en Reportes, cierre de caja diario (solo reporte) y margen de variabilidad del 8% en insumos de precio volátil. Repo en GitHub: [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (privado). Fase D3 (domicilios): pospuesta a pedido, no bien definida aún. Fase D4 (migración del spreadsheet): no iniciada. **Fase E (backend en Google Sheets): código y tests completos (ver sección propia abajo), falta que el usuario despliegue `backend/Code.gs` bajo el correo de Crumbly — `backend/SETUP.md`.**
 
 ## Qué se hizo
 
@@ -143,21 +143,42 @@ A pedido explícito, tras compartir una minuta de reunión (`Asesoria_crumbly.pd
 
 Verificado en navegador con servidor local (`.claude/launch.json`, no versionado, `http://localhost:8791` — `file://` no es confiable para cargar `js/core.js` en este entorno de preview). Datos de prueba creados y limpiados manualmente al terminar; no quedaron en el estado real de la app.
 
+### Fase E — Backend en Google Sheets, primera pasada (17 de agosto de 2026)
+
+A pedido explícito, en paralelo al rediseño visual. Código y tests completos; **despliegue pendiente del usuario** (`backend/SETUP.md`) — ver `HANDOFF.md` §12 para el porqué (no puedo crear cuentas de Google ni iniciar sesión por él).
+
+| Pieza | Estado | Verificación |
+|---|---|---|
+| `backend/Code.gs` (Apps Script: `doGet`/`doPost`, token, `LockService`, estado completo + espejo por colección) | ✅ DONE, sin desplegar | No ejecutable sin una hoja real — revisado a mano contra la especificación de `HANDOFF.md` §12.3-§12.4. Queda pendiente de verificación en vivo cuando el usuario lo despliegue. |
+| `js/sync.js` (`ping`/`pull`/`push`, sin DOM) | ✅ DONE | 11/11 tests con `fetch` simulado (`tests/sync.test.js`): query string correcto en `ping`/`pull`, `POST` con `Content-Type: text/plain` y body `{token, action, state}` en `push`, propaga `ok:false` del backend sin lanzar, rechaza en HTTP no-2xx. |
+| UI "Sincronización (Google Sheets)" en Reportes | ✅ DONE | Probado en navegador con `fetch` interceptado (sin backend real): "Probar conexión" → "Conectado ✓"; "Sincronizar ahora" → sube el estado completo y fija `lastSync`. |
+| Auto-sync tras cada `saveState()`, con debounce | ✅ DONE | Solo se activa después del primer "Sincronizar ahora" manual (evita subir datos a medio configurar). Probado: guardar un insumo nuevo dispara exactamente **un** push automático 900ms después, con el insumo correcto adentro. |
+| `pull` en segundo plano al cargar la app | ✅ DONE, sin verificar contra un backend real | Solo se intenta si ya hubo una sincronización antes (`lastSync` existe); si falla o no hay red, la app sigue con lo que ya tenía en `localStorage` — no bloquea el arranque. |
+| Migración de `state.config` (`backendUrl`, `backendToken`, `lastSync`) | ✅ DONE | `emptyState()` y `migrateState()` en `js/core.js`, mismo patrón que `config.email`. No requirió bump de `schemaVersion` (campo opcional con default, igual que el email). |
+
+**Decisión de implementación:** el backend guarda y devuelve el `state` completo como un solo JSON (`push`/`pull` de todo, no CRUD por fila) — ver el porqué en `HANDOFF.md` §12.3. Las hojas por colección (`materia`, `ventas`, etc.) son un espejo de solo lectura para inspección manual, no la fuente de verdad.
+
+**No construido en esta pasada, a propósito:** resolución de conflictos entre dispositivos (gana la última sincronización), reintentos automáticos si el push falla por falta de red (queda para cuando alguien lo sincronice manualmente o en la siguiente mutación exitosa), y por supuesto el despliegue real — eso es un paso manual de ~10 minutos que le corresponde al usuario (`backend/SETUP.md`).
+
 ## Tests
 
 ```
 node tests/core.test.js
+node tests/sync.test.js
 ```
 
-**87/87 pasan.** Cobertura Fase B (33 tests): conversión de períodos (semana en lunes), formato de moneda, escape de HTML, costeo de producto en vivo, validación de stock, necesidades de inventario (3 tipos de insumo, ventana móvil), migración de esquema (no destructiva, tolera estado parcial/corrupto/null), aplicar/revertir venta (caso normal, stock insuficiente, toppings clampeados, venta legada sin `consumoReal`), dependencias al eliminar insumos. Cobertura Fase C (16 tests): costo promedio ponderado, clasificación de gastos por tipo, reversión con snapshot exacto, depreciación de capex, cascada de utilidad, agrupación por categoría. Cobertura Fase D1 (22 tests): porcentaje panadero con números reales del handoff, modo directo, anidamiento, ciclos (4 variantes), producto con componentes mixtos, venta/reversión a través de una preparación, dependencias extendidas. Cobertura Fase D2, versión vigente (4 tests): `getMargenProducto` con costo real, el precio no se mueve solo al subir un costo, el snapshot de venta es consistente, la utilidad neta se sigue conociendo por período. Cobertura ronda POS (12 tests): clientes (5), ticket promedio (2), rango de fechas personalizable (2), margen de variabilidad 8% (3).
+**`core.test.js`: 87/87 pasan.** Cobertura Fase B (33 tests): conversión de períodos (semana en lunes), formato de moneda, escape de HTML, costeo de producto en vivo, validación de stock, necesidades de inventario (3 tipos de insumo, ventana móvil), migración de esquema (no destructiva, tolera estado parcial/corrupto/null), aplicar/revertir venta (caso normal, stock insuficiente, toppings clampeados, venta legada sin `consumoReal`), dependencias al eliminar insumos. Cobertura Fase C (16 tests): costo promedio ponderado, clasificación de gastos por tipo, reversión con snapshot exacto, depreciación de capex, cascada de utilidad, agrupación por categoría. Cobertura Fase D1 (22 tests): porcentaje panadero con números reales del handoff, modo directo, anidamiento, ciclos (4 variantes), producto con componentes mixtos, venta/reversión a través de una preparación, dependencias extendidas. Cobertura Fase D2, versión vigente (4 tests): `getMargenProducto` con costo real, el precio no se mueve solo al subir un costo, el snapshot de venta es consistente, la utilidad neta se sigue conociendo por período. Cobertura ronda POS (12 tests): clientes (5), ticket promedio (2), rango de fechas personalizable (2), margen de variabilidad 8% (3).
+
+**`sync.test.js`: 11/11 pasan.** Cliente de sincronización con `fetch` simulado — ver tabla de Fase E arriba.
 
 No hay suite de UI automatizada — la verificación de pantallas se hizo manualmente en el navegador (ver tablas de arriba, incluyendo uso de los formularios/modales reales, no solo llamadas directas a `core.js`) porque el proyecto no tiene un test runner de browser configurado. Si se quiere esa cobertura permanente, es trabajo nuevo, no incluido aquí.
 
 ## Siguiente en el roadmap
 
-1. **Fase D3 — Domicilios por zona** (`HANDOFF.md` §10.6): pospuesta a pedido explícito — el modelo de domicilios aún no está bien definido en el negocio. Retomar cuando haya decisión sobre zonas/tarifas.
-2. **Fase D4 — Migrar los datos del spreadsheet**, con las correcciones de `HANDOFF.md` §11 y las 4 decisiones de costeo ya tomadas (recargo 30%, masa de harina de arroz, empaques diferenciados $2.550/$1.650). Ya no hay nada que la bloquee.
-3. **Ajuste por IPC** para insumos de precio estable — pospuesto explícitamente al próximo año.
-4. **Fase E — Backend en Google Sheets.**
+1. **Desplegar el backend de Fase E** (`backend/SETUP.md`) — único paso que le corresponde al usuario, ~10 minutos bajo el correo de Crumbly. Una vez desplegado, verificar en vivo (probar conexión, sincronizar, abrir la app en otro dispositivo) y actualizar esta tabla.
+2. **Fase D3 — Domicilios por zona** (`HANDOFF.md` §10.6): pospuesta a pedido explícito — el modelo de domicilios aún no está bien definido en el negocio. Retomar cuando haya decisión sobre zonas/tarifas.
+3. **Fase D4 — Migrar los datos del spreadsheet**, con las correcciones de `HANDOFF.md` §11 y las 4 decisiones de costeo ya tomadas (recargo 30%, masa de harina de arroz, empaques diferenciados $2.550/$1.650). Ya no hay nada que la bloquee.
+4. **Ajuste por IPC** para insumos de precio estable — pospuesto explícitamente al próximo año.
+5. **Rediseño visual** (`DISENO_HANDOFF.md`) — en curso por el usuario con otra herramienta; integrar los mockups sobre la lógica actual cuando estén listos.
 
 El roadmap del handoff las ordena así a propósito (D2 depende de D1 + C, ambas ya completas; ver nota en `HANDOFF.md` §7).

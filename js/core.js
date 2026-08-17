@@ -109,7 +109,7 @@
       ventas: [],
       gastos: [],
       clientes: [],
-      config: { email: '' }
+      config: { email: '', backendUrl: '', backendToken: '', lastSync: null }
     };
   }
 
@@ -133,6 +133,12 @@
       config: (raw.config && typeof raw.config === 'object') ? raw.config : {}
     };
     if (s.config.email === undefined) s.config.email = '';
+    // Fase E — backend en Google Sheets (HANDOFF.md §12): config de
+    // sincronización, vacía hasta que el usuario despliegue su propio
+    // Apps Script y pegue la URL + token (backend/SETUP.md).
+    if (s.config.backendUrl === undefined) s.config.backendUrl = '';
+    if (s.config.backendToken === undefined) s.config.backendToken = '';
+    if (s.config.lastSync === undefined) s.config.lastSync = null;
 
     // v1 → v2: productos ganan empaquesUsados[] / empaqueManual (heredado
     // del costo manual de empaque de la versión anterior a toppings/empaque).
