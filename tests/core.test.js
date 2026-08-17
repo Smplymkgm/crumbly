@@ -830,6 +830,109 @@ test('la utilidad neta (Fase C) se sigue conociendo por período, no por product
   assert.ok(Math.abs(c.utilidadBruta - (22000 - 9822.81)) < 0.01);
 });
 
+console.log('\n== Clientes (nombre + teléfono reutilizable) ==');
+
+test('findOrCreateCliente crea un cliente nuevo', () => {
+  const s = C.emptyState();
+  const id = C.findOrCreateCliente(s, 'Ana', '3001234567');
+  assert.strictEqual(s.clientes.length, 1);
+  assert.strictEqual(s.clientes[0].nombre, 'Ana');
+  assert.strictEqual(s.clientes[0].id, id);
+});
+
+test('findOrCreateCliente reutiliza por teléfono en vez de duplicar', () => {
+  const s = C.emptyState();
+  const id1 = C.findOrCreateCliente(s, 'Ana', '3001234567');
+  const id2 = C.findOrCreateCliente(s, 'Ana', '3001234567');
+  assert.strictEqual(id1, id2);
+  assert.strictEqual(s.clientes.length, 1);
+});
+
+test('findOrCreateCliente actualiza el nombre si vino distinto para el mismo teléfono', () => {
+  const s = C.emptyState();
+  C.findOrCreateCliente(s, 'Ana', '3001234567');
+  C.findOrCreateCliente(s, 'Ana María', '3001234567');
+  assert.strictEqual(s.clientes.length, 1);
+  assert.strictEqual(s.clientes[0].nombre, 'Ana María');
+});
+
+test('findOrCreateCliente sin nombre ni teléfono no crea nada', () => {
+  const s = C.emptyState();
+  const id = C.findOrCreateCliente(s, '', '');
+  assert.strictEqual(id, null);
+  assert.strictEqual(s.clientes.length, 0);
+});
+
+test('applyVenta guarda clienteId cuando se provee', () => {
+  const s = stateMargen();
+  const clienteId = C.findOrCreateCliente(s, 'Ana', '3001234567');
+  const venta = C.applyVenta(s, [{ productoId: 'p1', qty: 1, toppings: [] }], [], { clienteId });
+  assert.strictEqual(venta.clienteId, clienteId);
+});
+
+console.log('\n== Ticket promedio ==');
+
+test('getTicketPromedio promedia el total de las ventas', () => {
+  const ventas = [{ total: 20000 }, { total: 30000 }, { total: 10000 }];
+  assert.strictEqual(C.getTicketPromedio(ventas), 20000);
+});
+
+test('getTicketPromedio sin ventas es 0', () => {
+  assert.strictEqual(C.getTicketPromedio([]), 0);
+});
+
+console.log('\n== Rango de fechas personalizable ==');
+
+test('getVentasByRange incluye solo ventas dentro del rango (inclusive)', () => {
+  const ventas = [
+    { fecha: '2026-08-01T10:00:00', total: 100 },
+    { fecha: '2026-08-05T10:00:00', total: 200 },
+    { fecha: '2026-08-10T10:00:00', total: 300 }
+  ];
+  const enRango = C.getVentasByRange(ventas, '2026-08-01', '2026-08-05');
+  assert.strictEqual(enRango.length, 2);
+  assert.strictEqual(enRango.reduce((a, v) => a + v.total, 0), 300);
+});
+
+test('getCascadaUtilidadRango da el mismo resultado que getCascadaUtilidad para un rango equivalente a "hoy"', () => {
+  const s = stateMargen();
+  C.applyVenta(s, [{ productoId: 'p1', qty: 1, toppings: [] }], [], {});
+  // Fecha LOCAL de hoy, como la entregaría un <input type="date"> del
+  // navegador — usar toISOString() aquí daría la fecha en UTC, que en
+  // Colombia (UTC-5) puede ser un día distinto al local.
+  const n = new Date();
+  const hoy = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0');
+  const porPeriodo = C.getCascadaUtilidad(s, 'dia');
+  const porRango = C.getCascadaUtilidadRango(s, hoy, hoy);
+  assert.ok(Math.abs(porPeriodo.ingresos - porRango.ingresos) < 0.01);
+  assert.ok(Math.abs(porPeriodo.utilidadBruta - porRango.utilidadBruta) < 0.01);
+});
+
+console.log('\n== Margen de variabilidad 8% en insumos de precio volátil ==');
+
+test('insumo marcado margenVariable: la compra aplica +8% antes del promedio ponderado', () => {
+  const s = C.migrateState({ materia: [{ id: 'm1', nombre: 'Cacao', cantidad: 0, costo: 0, minimo: 0, margenVariable: true }] });
+  const g = C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 10000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 1000 });
+  // costoCompra = 10000/1000 = 10 ; +8% = 10.8 ; stock previo 0 -> se usa directo
+  assert.ok(Math.abs(s.materia[0].costo - 10.8) < 0.001);
+  assert.strictEqual(g.margenVariabilidadAplicado, 0.08);
+});
+
+test('insumo NO marcado margenVariable: la compra NO aplica el 8%', () => {
+  const s = C.migrateState({ materia: [{ id: 'm1', nombre: 'Harina', cantidad: 0, costo: 0, minimo: 0 }] });
+  const g = C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 10000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 1000 });
+  assert.ok(Math.abs(s.materia[0].costo - 10) < 0.001);
+  assert.strictEqual(g.margenVariabilidadAplicado, undefined);
+});
+
+test('eliminarGasto revierte exacto incluso con el margen de variabilidad aplicado', () => {
+  const s = C.migrateState({ materia: [{ id: 'm1', nombre: 'Cacao', cantidad: 500, costo: 20, minimo: 0, margenVariable: true }] });
+  const g = C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 10000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 1000 });
+  C.eliminarGasto(s, g.id);
+  assert.strictEqual(s.materia[0].costo, 20);
+  assert.strictEqual(s.materia[0].cantidad, 500);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);

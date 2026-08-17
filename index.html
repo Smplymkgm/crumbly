@@ -199,6 +199,14 @@ body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);
     <div class="page" id="page-ventas">
       <div class="section-title">Registrar Venta</div>
       <div class="card">
+        <div class="card-title">Cliente (opcional)</div>
+        <div class="sale-select-row" style="margin-bottom:0">
+          <input type="text" id="venta-cliente-nombre" placeholder="Nombre">
+          <input type="tel" id="venta-cliente-telefono" list="clientes-telefonos" placeholder="Teléfono" oninput="onVentaTelefonoInput()">
+        </div>
+        <datalist id="clientes-telefonos"></datalist>
+      </div>
+      <div class="card">
         <div class="card-title">Platos</div>
         <div id="sale-items-wrap">
           <div class="sale-line" id="sline-0">
@@ -240,6 +248,11 @@ body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);
         <button class="tab-btn" onclick="setReportPeriod('semana',this)">Semana</button>
         <button class="tab-btn" onclick="setReportPeriod('mes',this)">Mes</button>
         <button class="tab-btn" onclick="setReportPeriod('anio',this)">Año</button>
+        <button class="tab-btn" onclick="setReportPeriod('custom',this)">Personalizado</button>
+      </div>
+      <div class="sale-select-row" id="reportes-rango-custom" style="display:none;margin-bottom:14px">
+        <input type="date" id="r-rango-inicio" onchange="onReportRangeChange()">
+        <input type="date" id="r-rango-fin" onchange="onReportRangeChange()">
       </div>
       <div class="tab-row">
         <button class="tab-btn active" id="rv-btn-resumen" onclick="setReportView('resumen',this)">Resumen</button>
@@ -255,6 +268,14 @@ body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);
           <div class="stat-card">
             <div class="stat-label">Ganancias</div>
             <div class="stat-value" id="r-ganancias" style="color:var(--success)">$0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Ticket promedio</div>
+            <div class="stat-value" id="r-ticket-promedio" style="font-size:1.1rem">$0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Ventas</div>
+            <div class="stat-value" id="r-num-ventas" style="font-size:1.1rem">0</div>
           </div>
         </div>
         <div class="card">
@@ -296,6 +317,20 @@ body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);
         <div class="card">
           <div class="card-title">Productos más rentables</div>
           <div id="r-rentables"><p class="empty">Sin datos en este período</p></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Cierre de caja del día</div>
+          <div class="profit-row"><div class="profit-name">Ventas</div><div class="profit-val" id="cc-num-ventas">0</div></div>
+          <div class="profit-row"><div class="profit-name">Unidades vendidas</div><div class="profit-val" id="cc-unidades">0</div></div>
+          <div class="profit-row"><div class="profit-name">Ingresos</div><div class="profit-val" id="cc-ingresos">$0</div></div>
+          <div class="profit-row"><div class="profit-name">Gastos del día</div><div class="profit-val" style="color:var(--danger)" id="cc-gastos">-$0</div></div>
+          <div class="total-row" style="margin-top:8px"><span>Utilidad neta del día</span><strong id="cc-utilidad-neta">$0</strong></div>
+          <div class="total-row" style="margin-top:6px"><span>Ticket promedio</span><strong id="cc-ticket-promedio">$0</strong></div>
+          <p class="item-sub" style="margin-top:8px">Solo un reporte — no bloquea ni cierra registros del día.</p>
+          <button class="btn btn-add icon-inline" style="width:100%;margin-top:8px;justify-content:center;display:flex" onclick="generateCierreCajaPDF()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Reporte de cierre de caja (PDF)
+          </button>
         </div>
         <div class="card">
           <div class="card-title icon-inline"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Necesidades de compra (semana)</div>
@@ -410,6 +445,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);
       <label>Alerta de stock mínimo (gramos)</label>
       <input type="number" id="m-minimo" placeholder="100" min="0">
     </div>
+    <div class="modal-field">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="m-margen-variable" style="width:auto">
+        Precio variable — aplicar margen de variabilidad (8%) al comprar
+      </label>
+    </div>
     <input type="hidden" id="m-edit-id">
     <div class="modal-btns">
       <button class="btn-cancel" onclick="closeModal('modal-materia')">Cancelar</button>
@@ -443,6 +484,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);
       <label>Alerta de stock mínimo</label>
       <input type="number" id="e-minimo" placeholder="10" min="0">
     </div>
+    <div class="modal-field">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="e-margen-variable" style="width:auto">
+        Precio variable — aplicar margen de variabilidad (8%) al comprar
+      </label>
+    </div>
     <input type="hidden" id="e-edit-id">
     <div class="modal-btns">
       <button class="btn-cancel" onclick="closeModal('modal-empaque')">Cancelar</button>
@@ -475,6 +522,12 @@ body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--text);
     <div class="modal-field">
       <label>Alerta de stock mínimo</label>
       <input type="number" id="t-minimo" placeholder="5" min="0">
+    </div>
+    <div class="modal-field">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="t-margen-variable" style="width:auto">
+        Precio variable — aplicar margen de variabilidad (8%) al comprar
+      </label>
     </div>
     <input type="hidden" id="t-edit-id">
     <div class="modal-btns">
@@ -749,11 +802,13 @@ function openModalMateria(id) {
     document.getElementById('m-cantidad').value = item.cantidad;
     document.getElementById('m-costo').value = item.costo;
     document.getElementById('m-minimo').value = item.minimo || 100;
+    document.getElementById('m-margen-variable').checked = !!item.margenVariable;
     document.getElementById('m-edit-id').value = id;
   } else {
     document.getElementById('modal-materia-title').textContent = 'Nuevo ingrediente';
     ['m-nombre','m-cantidad','m-costo'].forEach(x => document.getElementById(x).value = '');
     document.getElementById('m-minimo').value = 100;
+    document.getElementById('m-margen-variable').checked = false;
     document.getElementById('m-edit-id').value = '';
   }
   m.classList.add('open');
@@ -763,13 +818,14 @@ function saveMateria() {
   const cantidad = parseFloat(document.getElementById('m-cantidad').value) || 0;
   const costo = parseFloat(document.getElementById('m-costo').value) || 0;
   const minimo = parseFloat(document.getElementById('m-minimo').value) || 100;
+  const margenVariable = document.getElementById('m-margen-variable').checked;
   const editId = document.getElementById('m-edit-id').value;
   if (!nombre) { showToast('Ingresa el nombre del ingrediente'); return; }
   if (editId) {
     const idx = state.materia.findIndex(x => x.id === editId);
-    state.materia[idx] = { ...state.materia[idx], nombre, cantidad, costo, minimo };
+    state.materia[idx] = { ...state.materia[idx], nombre, cantidad, costo, minimo, margenVariable };
   } else {
-    state.materia.push({ id: uid(), nombre, cantidad, costo, minimo });
+    state.materia.push({ id: uid(), nombre, cantidad, costo, minimo, margenVariable });
   }
   saveState(); closeModal('modal-materia'); renderMateria(); renderDashboard();
   showToast('Ingrediente guardado ✓');
@@ -837,11 +893,13 @@ function openModalTopping(id) {
     document.getElementById('t-costo').value = item.costo;
     document.getElementById('t-precio').value = item.precio;
     document.getElementById('t-minimo').value = item.minimo || 5;
+    document.getElementById('t-margen-variable').checked = !!item.margenVariable;
     document.getElementById('t-edit-id').value = id;
   } else {
     document.getElementById('modal-topping-title').textContent = 'Nuevo topping';
     ['t-nombre','t-cantidad','t-costo','t-precio'].forEach(x => document.getElementById(x).value = '');
     document.getElementById('t-minimo').value = 5;
+    document.getElementById('t-margen-variable').checked = false;
     document.getElementById('t-edit-id').value = '';
   }
   m.classList.add('open');
@@ -852,13 +910,14 @@ function saveTopping() {
   const costo = parseFloat(document.getElementById('t-costo').value) || 0;
   const precio = parseFloat(document.getElementById('t-precio').value) || 0;
   const minimo = parseFloat(document.getElementById('t-minimo').value) || 5;
+  const margenVariable = document.getElementById('t-margen-variable').checked;
   const editId = document.getElementById('t-edit-id').value;
   if (!nombre) { showToast('Ingresa el nombre del topping'); return; }
   if (editId) {
     const idx = state.toppings.findIndex(x => x.id === editId);
-    state.toppings[idx] = { ...state.toppings[idx], nombre, cantidad, costo, precio, minimo };
+    state.toppings[idx] = { ...state.toppings[idx], nombre, cantidad, costo, precio, minimo, margenVariable };
   } else {
-    state.toppings.push({ id: uid(), nombre, cantidad, costo, precio, minimo });
+    state.toppings.push({ id: uid(), nombre, cantidad, costo, precio, minimo, margenVariable });
   }
   saveState(); closeModal('modal-topping'); renderTopping(); renderDashboard();
   showToast('Topping guardado ✓');
@@ -898,11 +957,13 @@ function openModalEmpaque(id) {
     document.getElementById('e-cantidad').value = item.cantidad;
     document.getElementById('e-costo').value = item.costo;
     document.getElementById('e-minimo').value = item.minimo || 10;
+    document.getElementById('e-margen-variable').checked = !!item.margenVariable;
     document.getElementById('e-edit-id').value = id;
   } else {
     document.getElementById('modal-empaque-title').textContent = 'Nuevo empaque';
     ['e-nombre','e-unidad','e-cantidad','e-costo'].forEach(x => document.getElementById(x).value = '');
     document.getElementById('e-minimo').value = 10;
+    document.getElementById('e-margen-variable').checked = false;
     document.getElementById('e-edit-id').value = '';
   }
   m.classList.add('open');
@@ -913,13 +974,14 @@ function saveEmpaque() {
   const cantidad = parseFloat(document.getElementById('e-cantidad').value) || 0;
   const costo = parseFloat(document.getElementById('e-costo').value) || 0;
   const minimo = parseFloat(document.getElementById('e-minimo').value) || 10;
+  const margenVariable = document.getElementById('e-margen-variable').checked;
   const editId = document.getElementById('e-edit-id').value;
   if (!nombre) { showToast('Ingresa el nombre del empaque'); return; }
   if (editId) {
     const idx = state.empaques.findIndex(x => x.id === editId);
-    state.empaques[idx] = { ...state.empaques[idx], nombre, unidad, cantidad, costo, minimo };
+    state.empaques[idx] = { ...state.empaques[idx], nombre, unidad, cantidad, costo, minimo, margenVariable };
   } else {
-    state.empaques.push({ id: uid(), nombre, unidad, cantidad, costo, minimo });
+    state.empaques.push({ id: uid(), nombre, unidad, cantidad, costo, minimo, margenVariable });
   }
   saveState(); closeModal('modal-empaque'); renderEmpaque(); renderDashboard();
   showToast('Empaque guardado ✓');
@@ -1317,7 +1379,18 @@ function populateSaleSelects() {
       state.productos.map(p => `<option value="${p.id}" ${p.id === cur ? 'selected' : ''}>${esc(p.nombre)} · ${fmt(p.precio)}</option>`).join('');
   });
   populateToppingSelects();
+  populateClientesDatalist();
   updateSaleTotal();
+}
+function populateClientesDatalist() {
+  const dl = document.getElementById('clientes-telefonos');
+  if (!dl) return;
+  dl.innerHTML = state.clientes.map(c => `<option value="${esc(c.telefono)}">${esc(c.nombre)}</option>`).join('');
+}
+function onVentaTelefonoInput() {
+  const tel = document.getElementById('venta-cliente-telefono').value.trim();
+  const existente = state.clientes.find(c => c.telefono === tel);
+  if (existente) document.getElementById('venta-cliente-nombre').value = existente.nombre;
 }
 function populateToppingSelects() {
   document.querySelectorAll('.topping-select').forEach(sel => {
@@ -1444,11 +1517,16 @@ function registrarVenta() {
     stockInsuficiente = true;
   }
 
+  // Cliente opcional — se reutiliza por teléfono entre ventas (findOrCreateCliente).
+  const clienteNombre = document.getElementById('venta-cliente-nombre').value;
+  const clienteTelefono = document.getElementById('venta-cliente-telefono').value;
+  const clienteId = CrumblyCore.findOrCreateCliente(state, clienteNombre, clienteTelefono);
+
   // La aplicación real de la venta (descontar stock, construir items,
   // registrar consumoReal) vive en CrumblyCore.applyVenta — una sola
   // fuente de verdad, testeada en tests/core.test.js, reutilizada también
   // por eliminarVenta() para revertir con precisión (ver nota ahí).
-  const venta = CrumblyCore.applyVenta(state, lineas, toppingsSueltos, { stockInsuficiente });
+  const venta = CrumblyCore.applyVenta(state, lineas, toppingsSueltos, { stockInsuficiente, clienteId });
   if (!venta) { showToast('Selecciona al menos un producto o topping'); return; }
   const total = venta.total;
   saveState();
@@ -1462,6 +1540,8 @@ function registrarVenta() {
       <button class="add-ing-btn" style="margin-bottom:12px" onclick="addToppingToRow(0)">+ Agregar topping a este plato</button>
     </div>`;
   document.getElementById('sale-topping-solo-wrap').innerHTML = '';
+  document.getElementById('venta-cliente-nombre').value = '';
+  document.getElementById('venta-cliente-telefono').value = '';
   saleRowCount = 1;
   populateSaleSelects();
   renderVentasHistorial();
@@ -1502,10 +1582,13 @@ function renderVentasHistorial() {
     const ds = d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
     const prods = v.items.map(i => `${esc(i.nombre)} x${i.qty}`).join(', ');
     const warn = v.stockInsuficiente ? '<div style="font-size:11px;color:var(--danger)">⚠ stock insuficiente</div>' : '';
+    const cliente = v.clienteId ? state.clientes.find(c => c.id === v.clienteId) : null;
+    const clienteTxt = cliente ? `<div class="item-sub">${esc(cliente.nombre)}</div>` : '';
     return `<div class="list-item">
       <div style="flex:1;min-width:0">
         <div class="item-name" style="font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${prods}</div>
         <div class="item-sub">${ds}</div>
+        ${clienteTxt}
         ${warn}
       </div>
       <div style="text-align:right;flex-shrink:0;display:flex;align-items:center;gap:6px">
@@ -1526,6 +1609,17 @@ function getDateStart(period) { return CrumblyCore.getDateStart(period); }
 function getPeriodLabel(period) { return CrumblyCore.getPeriodLabel(period); }
 function getPeriodRangeLabel(period) { return CrumblyCore.getPeriodRangeLabel(period); }
 function getVentasByPeriod(period) { return CrumblyCore.getVentasByPeriod(state.ventas, period); }
+
+// Rango personalizable (HANDOFF): cuando reportPeriod === 'custom' estas
+// funciones reemplazan a getVentasByPeriod/getGastosByPeriod/getCascadaUtilidad
+// en todos los puntos de consumo (resumen, gastos, PDF, CSV, correo).
+let reportRangeStart = null, reportRangeEnd = null;
+function hasCustomRange() { return reportPeriod === 'custom' && reportRangeStart && reportRangeEnd; }
+function getReportVentas() { return hasCustomRange() ? CrumblyCore.getVentasByRange(state.ventas, reportRangeStart, reportRangeEnd) : getVentasByPeriod(reportPeriod); }
+function getReportGastos() { return hasCustomRange() ? CrumblyCore.getGastosByRange(state.gastos, reportRangeStart, reportRangeEnd) : CrumblyCore.getGastosByPeriod(state.gastos, reportPeriod); }
+function getReportCascada() { return hasCustomRange() ? CrumblyCore.getCascadaUtilidadRango(state, reportRangeStart, reportRangeEnd) : CrumblyCore.getCascadaUtilidad(state, reportPeriod); }
+function getReportLabel() { return hasCustomRange() ? (reportRangeStart + ' a ' + reportRangeEnd) : getPeriodLabel(reportPeriod); }
+function getReportRangeLabel() { return hasCustomRange() ? (reportRangeStart + ' — ' + reportRangeEnd) : getPeriodRangeLabel(reportPeriod); }
 
 function renderDashboard() {
   const hoy = getVentasByPeriod('dia');
@@ -1570,6 +1664,12 @@ function setReportPeriod(p, el) {
   // Insumos, que comparten la clase .tab-btn.
   el.parentElement.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   el.classList.add('active');
+  document.getElementById('reportes-rango-custom').style.display = p === 'custom' ? 'flex' : 'none';
+  renderReportes();
+}
+function onReportRangeChange() {
+  reportRangeStart = document.getElementById('r-rango-inicio').value || null;
+  reportRangeEnd = document.getElementById('r-rango-fin').value || null;
   renderReportes();
 }
 
@@ -1588,7 +1688,7 @@ function setReportView(v, el) {
 
 /* ─── UTILIDAD NETA Y FLUJO DE CAJA (HANDOFF §9.1, §9.5) ─── */
 function renderCascadaUtilidad() {
-  const c = CrumblyCore.getCascadaUtilidad(state, reportPeriod);
+  const c = getReportCascada();
   document.getElementById('un-bruta').textContent = fmt(c.utilidadBruta);
   document.getElementById('un-operativos').textContent = '-' + fmt(c.totalOperativos);
   document.getElementById('un-depreciacion').textContent = '-' + fmt(c.depreciacion);
@@ -1605,12 +1705,14 @@ function renderCascadaUtilidad() {
 }
 
 function renderReportes() {
-  const ventas = getVentasByPeriod(reportPeriod);
+  const ventas = getReportVentas();
   const ingresos = ventas.reduce((a,v) => a + v.total, 0);
   const ganancias = ventas.reduce((a,v) => a + v.ganancia, 0);
   const costos = ingresos - ganancias;
   document.getElementById('r-ingresos').textContent = fmt(ingresos);
   document.getElementById('r-ganancias').textContent = fmt(ganancias);
+  document.getElementById('r-ticket-promedio').textContent = fmt(CrumblyCore.getTicketPromedio(ventas));
+  document.getElementById('r-num-ventas').textContent = ventas.length;
   document.getElementById('r-bar-ing-val').textContent = fmt(ingresos);
   document.getElementById('r-bar-cos-val').textContent = fmt(costos);
   const mx = ingresos || 1;
@@ -1631,7 +1733,81 @@ function renderReportes() {
     <div class="profit-val">+${fmt(d.gan)}</div></div>`).join('');
   renderInventoryNeeds();
   renderCascadaUtilidad();
+  renderCierreCaja();
   if (reportView === 'gastos') renderGastos();
+}
+
+/* ─── CIERRE DE CAJA DIARIO — solo reporte, no bloquea datos ─── */
+function renderCierreCaja() {
+  const ventas = getVentasByPeriod('dia');
+  const gastos = CrumblyCore.getGastosByPeriod(state.gastos, 'dia');
+  const casc = CrumblyCore.getCascadaUtilidad(state, 'dia');
+  const unidades = ventas.reduce((a,v) => a + v.items.reduce((b,i) => b + i.qty, 0), 0);
+  const totalGastos = gastos.reduce((a,g) => a + g.monto, 0);
+  document.getElementById('cc-num-ventas').textContent = ventas.length;
+  document.getElementById('cc-unidades').textContent = unidades;
+  document.getElementById('cc-ingresos').textContent = fmt(casc.ingresos);
+  document.getElementById('cc-gastos').textContent = '-' + fmt(totalGastos);
+  document.getElementById('cc-utilidad-neta').textContent = fmt(casc.utilidadNeta);
+  document.getElementById('cc-ticket-promedio').textContent = fmt(CrumblyCore.getTicketPromedio(ventas));
+}
+function generateCierreCajaPDF() {
+  if (!window.jspdf) { showToast('No se pudo cargar el generador de PDF'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const ventas = getVentasByPeriod('dia');
+  const gastos = CrumblyCore.getGastosByPeriod(state.gastos, 'dia');
+  const casc = CrumblyCore.getCascadaUtilidad(state, 'dia');
+  const unidades = ventas.reduce((a,v) => a + v.items.reduce((b,i) => b + i.qty, 0), 0);
+  const totalGastos = gastos.reduce((a,g) => a + g.monto, 0);
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
+  doc.text('Crumbly', 14, 18);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
+  doc.text('Cierre de caja — ' + getPeriodLabel('dia'), 14, 25);
+  doc.setFontSize(9); doc.setTextColor(120);
+  doc.text(getPeriodRangeLabel('dia'), 14, 31);
+  doc.setTextColor(0);
+
+  doc.autoTable({
+    startY: 38,
+    head: [['Ventas', 'Unidades', 'Ingresos', 'Gastos', 'Utilidad neta', 'Ticket prom.']],
+    body: [[String(ventas.length), String(unidades), fmt(casc.ingresos), fmt(totalGastos), fmt(casc.utilidadNeta), fmt(CrumblyCore.getTicketPromedio(ventas))]],
+    styles: { fontSize: 8.5, halign: 'center' },
+    headStyles: { fillColor: [74, 55, 40], textColor: 255 }
+  });
+
+  let y = doc.lastAutoTable.finalY + 10;
+  doc.setFontSize(12); doc.text('Ventas del día', 14, y);
+  const rows = ventas.map(v => {
+    const d = new Date(v.fecha);
+    const hora = d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+    const cliente = v.clienteId ? (state.clientes.find(c => c.id === v.clienteId) || {}).nombre : '';
+    return [hora, v.items.map(i => i.nombre + ' x' + i.qty).join(', '), cliente || '—', fmt(v.total)];
+  });
+  doc.autoTable({
+    startY: y + 4,
+    head: [['Hora', 'Productos', 'Cliente', 'Total']],
+    body: rows.length ? rows : [['—', 'Sin ventas hoy', '—', '—']],
+    styles: { fontSize: 8, cellPadding: 3 },
+    headStyles: { fillColor: [74, 55, 40], textColor: 255 },
+    columnStyles: { 1: { cellWidth: 70 } }
+  });
+
+  if (gastos.length) {
+    y = doc.lastAutoTable.finalY + 10;
+    doc.setFontSize(12); doc.text('Gastos del día', 14, y);
+    doc.autoTable({
+      startY: y + 4,
+      head: [['Tipo', 'Categoría', 'Descripción', 'Monto']],
+      body: gastos.map(g => [GASTO_TIPO_LABEL[g.tipo], g.categoria, g.descripcion || g.proveedor || '—', fmt(g.monto)]),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [74, 55, 40], textColor: 255 }
+    });
+  }
+
+  doc.save('crumbly-cierre-caja-' + new Date().toISOString().slice(0, 10) + '.pdf');
+  showToast('Cierre de caja descargado');
 }
 
 /* ─── NECESIDADES DE INVENTARIO ───
@@ -1669,7 +1845,7 @@ function generateSalesReportPDF() {
   if (!window.jspdf) { showToast('No se pudo cargar el generador de PDF'); return; }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
-  const ventas = getVentasByPeriod(reportPeriod);
+  const ventas = getReportVentas();
   const ingresos = ventas.reduce((a, v) => a + v.total, 0);
   const ganancias = ventas.reduce((a, v) => a + v.ganancia, 0);
   const costos = ingresos - ganancias;
@@ -1678,9 +1854,9 @@ function generateSalesReportPDF() {
   doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
   doc.text('Crumbly', 14, 18);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
-  doc.text('Reporte de ventas \u2014 ' + getPeriodLabel(reportPeriod), 14, 25);
+  doc.text('Reporte de ventas \u2014 ' + getReportLabel(), 14, 25);
   doc.setFontSize(9); doc.setTextColor(120);
-  doc.text('Periodo: ' + getPeriodRangeLabel(reportPeriod), 14, 31);
+  doc.text('Periodo: ' + getReportRangeLabel(), 14, 31);
   doc.setTextColor(0);
 
   doc.autoTable({
@@ -1732,7 +1908,7 @@ function generateSalesReportPDF() {
   }
 
   // Cascada de utilidad + desglose de gastos del período (HANDOFF §9.5).
-  const casc = CrumblyCore.getCascadaUtilidad(state, reportPeriod);
+  const casc = getReportCascada();
   if (y > 250) { doc.addPage(); y = 20; }
   doc.setFontSize(12); doc.setTextColor(0); doc.text('Utilidad neta y flujo de caja', 14, y);
   doc.autoTable({
@@ -1744,7 +1920,7 @@ function generateSalesReportPDF() {
   });
   y = doc.lastAutoTable.finalY + 10;
 
-  const gastosPeriodo = CrumblyCore.getGastosByPeriod(state.gastos, reportPeriod);
+  const gastosPeriodo = getReportGastos();
   if (gastosPeriodo.length) {
     if (y > 250) { doc.addPage(); y = 20; }
     doc.setFontSize(12); doc.text('Gastos del período', 14, y);
@@ -1843,7 +2019,7 @@ function downloadCSV(filename, rows) {
   URL.revokeObjectURL(url);
 }
 function exportVentasCSV() {
-  const ventas = getVentasByPeriod(reportPeriod);
+  const ventas = getReportVentas();
   const rows = [['Fecha', 'Productos', 'Total', 'Ganancia']];
   ventas.forEach(v => {
     const d = new Date(v.fecha);
@@ -1863,7 +2039,7 @@ function exportInventarioCSV() {
   showToast('CSV de inventario exportado — súbelo a tu Google Sheet');
 }
 function exportGastosCSV() {
-  const gastos = CrumblyCore.getGastosByPeriod(state.gastos, reportPeriod);
+  const gastos = getReportGastos();
   const rows = [['Fecha', 'Tipo', 'Categoría', 'Descripción', 'Monto', 'Proveedor']];
   gastos.forEach(g => {
     const d = new Date(g.fecha);
@@ -1876,8 +2052,8 @@ function exportGastosCSV() {
 function shareReportByEmail() {
   generateSalesReportPDF();
   const to = state.config.email || '';
-  const subject = encodeURIComponent('Reporte Crumbly \u2014 ' + getPeriodLabel(reportPeriod));
-  const body = encodeURIComponent('Adjunto el reporte de ventas de Crumbly (' + getPeriodRangeLabel(reportPeriod) + ').\n\nEl PDF se acaba de descargar a tu dispositivo — adjúntalo aquí manualmente antes de enviar.\n\n\u2014 Crumbly');
+  const subject = encodeURIComponent('Reporte Crumbly \u2014 ' + getReportLabel());
+  const body = encodeURIComponent('Adjunto el reporte de ventas de Crumbly (' + getReportRangeLabel() + ').\n\nEl PDF se acaba de descargar a tu dispositivo — adjúntalo aquí manualmente antes de enviar.\n\n\u2014 Crumbly');
   setTimeout(() => { window.location.href = `mailto:${to}?subject=${subject}&body=${body}`; }, 400);
 }
 
@@ -1955,7 +2131,7 @@ function eliminarGasto(id) {
 }
 const GASTO_TIPO_LABEL = { inventario: 'Inventario', operativo: 'Operativo', capex: 'Implemento' };
 function renderGastos() {
-  const gastos = CrumblyCore.getGastosByPeriod(state.gastos, reportPeriod);
+  const gastos = getReportGastos();
   const porTipo = { inventario: 0, operativo: 0, capex: 0 };
   gastos.forEach(g => { porTipo[g.tipo] = (porTipo[g.tipo] || 0) + g.monto; });
   document.getElementById('g-tot-inventario').textContent = fmt(porTipo.inventario);

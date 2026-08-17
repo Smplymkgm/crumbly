@@ -1,10 +1,10 @@
 # Estado de implementación — Crumbly
 
-> Última corrida: 2026-08-11. Actualizar en el mismo commit que el cambio que describe — no marcar DONE sin haber probado.
+> Última corrida: 2026-08-17. Actualizar en el mismo commit que el cambio que describe — no marcar DONE sin haber probado.
 
 ## Fase actual
 
-**Fases A, B, C, D1 y D2 completas y verificadas.** D2 se simplificó a pedido el mismo día: se construyó y verificó el recargo de costos fijos por producto, y luego se retiró — el modelo vigente es costo + margen bruto por producto; la utilidad neta se conoce al cierre de cada período (ya existía en Fase C, sin cambios). Ver sección "D2 — revisión" abajo. Repo en GitHub: [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (privado). Fases D3-D4 (domicilios, migración del spreadsheet) y E (backend): no iniciadas.
+**Fases A, B, C, D1 y D2 completas y verificadas.** D2 se simplificó a pedido el mismo día: se construyó y verificó el recargo de costos fijos por producto, y luego se retiró — el modelo vigente es costo + margen bruto por producto; la utilidad neta se conoce al cierre de cada período (ya existía en Fase C, sin cambios). Ver sección "D2 — revisión" abajo. Después de D2 se hizo una ronda adicional (17 ago 2026, ver sección "Ronda POS — clientes, ticket promedio, rango personalizable, cierre de caja, margen de variabilidad" abajo): login retirado, clientes reutilizables, ticket promedio, rango de fechas personalizable en Reportes, cierre de caja diario (solo reporte) y margen de variabilidad del 8% en insumos de precio volátil. Repo en GitHub: [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (privado). Fase D3 (domicilios): pospuesta a pedido, no bien definida aún. Fase D4 (migración del spreadsheet) y E (backend): no iniciadas.
 
 ## Qué se hizo
 
@@ -124,20 +124,40 @@ Después de verificar lo de arriba, se pidió explícitamente **quitar el recarg
 
 Tests D2 reescritos: de 13 tests (costo final/markup/cobertura) a 4 tests (`getMargenProducto`, precio no se mueve solo, consistencia con el snapshot de venta, utilidad neta sigue siendo por período). Verificado en navegador con servidor local (`.claude/launch.json`, no versionado): ficha de producto y lista de productos muestran solo costo + margen bruto, sin rastro de las cards retiradas, PDF/CSV sin errores.
 
+### Ronda POS — clientes, ticket promedio, rango personalizable, cierre de caja, margen de variabilidad (17 de agosto de 2026)
+
+A pedido explícito, tras compartir una minuta de reunión (`Asesoria_crumbly.pdf`) y comparar contra sistemas POS de restaurante. Motor en `js/core.js`, UI en `index.html`.
+
+| Pieza | Estado | Verificación |
+|---|---|---|
+| Login retirado por completo | ✅ DONE | `#login-screen`, `USERS`, `doLogin`/`doLogout` y CSS asociado eliminados; `#app` visible directo. `refreshAll()` se llama al iniciar. Verificado: la app abre directo en el dashboard, sin pantalla de login. |
+| Clientes reutilizables (nombre + teléfono) | ✅ DONE | `findOrCreateCliente(state, nombre, telefono)` — mismo teléfono reutiliza el cliente y actualiza el nombre si vino distinto. Card "Cliente (opcional)" en Ventas, con `<datalist>` de teléfonos conocidos que autocompleta el nombre. Probado en navegador: venta con cliente nuevo aparece en el historial con su nombre; venta repetida con el mismo teléfono no crea un cliente duplicado. |
+| Ticket promedio | ✅ DONE | `getTicketPromedio(ventas)`. Card en Reportes junto al conteo de ventas del período. Probado: 1 venta de $22.000 → ticket promedio $22.000. |
+| Rango de fechas personalizable | ✅ DONE | Quinta pestaña "Personalizado" en Reportes + dos `<input type="date">`. `getVentasByRange`/`getGastosByRange`/`getCascadaUtilidadRango` reutilizan `rangeBounds`/`computeCascada` (sin duplicar fórmulas de período). Alimenta resumen, gastos, PDF, CSV y correo vía wrappers `getReportVentas/Gastos/Cascada/Label/RangeLabel` en `index.html`. Probado: rango con la fecha de hoy da los mismos números que la pestaña "Hoy". |
+| Cierre de caja diario (solo reporte) | ✅ DONE | Card fija "Cierre de caja del día" en Reportes, siempre sobre `'dia'` — independiente del selector de período/rango de arriba (decisión explícita: "solo un reporte del día", sin bloqueo de datos). Ventas, unidades, ingresos, gastos, utilidad neta y ticket promedio del día + botón de PDF (`generateCierreCajaPDF`). Probado en navegador: card y PDF sin errores de consola, números consistentes con `getCascadaUtilidad(state,'dia')`. |
+| Margen de variabilidad 8% en insumos de precio volátil | ✅ DONE | Checkbox "Precio variable" en materia/empaque/topping (`margenVariable`). Al comprar (`registrarGasto`), el costo unitario de esa compra se multiplica ×1,08 (`MARGEN_VARIABILIDAD_PCT`) antes de entrar al promedio ponderado; los insumos sin el checkbox no cambian. Probado en navegador: insumo a $0,02/g marcado, compra igual cantidad → costo pasa a $0,0208/g (promedio ponderado entre $0,02 stock viejo y $0,0216 = $0,02×1,08 de la compra nueva) — coincide exacto con el cálculo esperado. Reversión del gasto (`eliminarGasto`) restaura el costo/cantidad exactos aun con el margen aplicado. |
+
+**Explícitamente pospuesto, no construido en esta ronda:** Fase D3 (domicilios — el modelo aún no está bien definido en el negocio); ajuste por IPC para insumos de precio estable (el usuario pidió aplicarlo recién el próximo año).
+
+**Bug real encontrado y corregido durante esta ronda:** `new Date('YYYY-MM-DD')` parsea como medianoche UTC; combinado con `.setHours()` (hora local) desplazaba la fecha un día hacia atrás en zonas horarias detrás de UTC (Colombia, UTC-5) — afectaba `rangeBounds()` y `getDepreciacionRango()`. El test de rango personalizable que reprodujo el caso también usaba `toISOString()` para "hoy" (UTC) y tuvo que corregirse igual. Fix: `parseLocalDate()`, que arma la fecha desde sus componentes Y/M/D en vez de parsear el string completo con el constructor de `Date`.
+
+Verificado en navegador con servidor local (`.claude/launch.json`, no versionado, `http://localhost:8791` — `file://` no es confiable para cargar `js/core.js` en este entorno de preview). Datos de prueba creados y limpiados manualmente al terminar; no quedaron en el estado real de la app.
+
 ## Tests
 
 ```
 node tests/core.test.js
 ```
 
-**75/75 pasan.** Cobertura Fase B (33 tests): conversión de períodos (semana en lunes), formato de moneda, escape de HTML, costeo de producto en vivo, validación de stock, necesidades de inventario (3 tipos de insumo, ventana móvil), migración de esquema (no destructiva, tolera estado parcial/corrupto/null), aplicar/revertir venta (caso normal, stock insuficiente, toppings clampeados, venta legada sin `consumoReal`), dependencias al eliminar insumos. Cobertura Fase C (16 tests): costo promedio ponderado, clasificación de gastos por tipo, reversión con snapshot exacto, depreciación de capex, cascada de utilidad, agrupación por categoría. Cobertura Fase D1 (22 tests): porcentaje panadero con números reales del handoff, modo directo, anidamiento, ciclos (4 variantes), producto con componentes mixtos, venta/reversión a través de una preparación, dependencias extendidas. Cobertura Fase D2, versión vigente (4 tests): `getMargenProducto` con costo real, el precio no se mueve solo al subir un costo, el snapshot de venta es consistente, la utilidad neta se sigue conociendo por período.
+**87/87 pasan.** Cobertura Fase B (33 tests): conversión de períodos (semana en lunes), formato de moneda, escape de HTML, costeo de producto en vivo, validación de stock, necesidades de inventario (3 tipos de insumo, ventana móvil), migración de esquema (no destructiva, tolera estado parcial/corrupto/null), aplicar/revertir venta (caso normal, stock insuficiente, toppings clampeados, venta legada sin `consumoReal`), dependencias al eliminar insumos. Cobertura Fase C (16 tests): costo promedio ponderado, clasificación de gastos por tipo, reversión con snapshot exacto, depreciación de capex, cascada de utilidad, agrupación por categoría. Cobertura Fase D1 (22 tests): porcentaje panadero con números reales del handoff, modo directo, anidamiento, ciclos (4 variantes), producto con componentes mixtos, venta/reversión a través de una preparación, dependencias extendidas. Cobertura Fase D2, versión vigente (4 tests): `getMargenProducto` con costo real, el precio no se mueve solo al subir un costo, el snapshot de venta es consistente, la utilidad neta se sigue conociendo por período. Cobertura ronda POS (12 tests): clientes (5), ticket promedio (2), rango de fechas personalizable (2), margen de variabilidad 8% (3).
 
 No hay suite de UI automatizada — la verificación de pantallas se hizo manualmente en el navegador (ver tablas de arriba, incluyendo uso de los formularios/modales reales, no solo llamadas directas a `core.js`) porque el proyecto no tiene un test runner de browser configurado. Si se quiere esa cobertura permanente, es trabajo nuevo, no incluido aquí.
 
 ## Siguiente en el roadmap
 
-1. **Fase D3 — Domicilios por zona** (`HANDOFF.md` §10.6): la más pequeña de las que quedan — catálogo de zonas + línea opcional en la venta. Pendiente decidir si el domicilio es ingreso con costo asociado o un pasante (§13, pendiente #1 del handoff).
+1. **Fase D3 — Domicilios por zona** (`HANDOFF.md` §10.6): pospuesta a pedido explícito — el modelo de domicilios aún no está bien definido en el negocio. Retomar cuando haya decisión sobre zonas/tarifas.
 2. **Fase D4 — Migrar los datos del spreadsheet**, con las correcciones de `HANDOFF.md` §11 y las 4 decisiones de costeo ya tomadas (recargo 30%, masa de harina de arroz, empaques diferenciados $2.550/$1.650). Ya no hay nada que la bloquee.
-3. **Fase E — Backend en Google Sheets.**
+3. **Ajuste por IPC** para insumos de precio estable — pospuesto explícitamente al próximo año.
+4. **Fase E — Backend en Google Sheets.**
 
 El roadmap del handoff las ordena así a propósito (D2 depende de D1 + C, ambas ya completas; ver nota en `HANDOFF.md` §7).

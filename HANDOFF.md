@@ -1,6 +1,6 @@
 # Crumbly — Handoff técnico y roadmap
 
-> **Última actualización:** 10 de agosto de 2026
+> **Última actualización:** 17 de agosto de 2026
 > **Archivo de la app:** `crumbly 2.html` (1394 líneas) → renombrar a `index.html`. Ver §1.
 > **Archivo de costeo:** `COSTOS WAFFLES.xlsx` (22 hojas). Analizado en §10.
 > **Decisión de esta sesión:** se arreglan todos los bugs conocidos y se migra el modelo de costeo del spreadsheet a la app, con backend en Google Sheets. Sin IVA, sin canales de venta por aplicación. Todas las decisiones de costeo tomadas — la migración está desbloqueada (§13).
@@ -792,7 +792,7 @@ Ninguna bloquea el arranque; todas tienen recomendación y pueden decidirse sobr
 
 | # | Pregunta | Bloquea | Recomendación |
 |---|---|---|---|
-| 1 | **¿El domicilio es ingreso o pasante?** ¿Le pagas a un mensajero? | §10.6 | Ingreso con su costo asociado, para ver si la zona 3 se sostiene |
+| 1 | **¿El domicilio es ingreso o pasante?** ¿Le pagas a un mensajero? | §10.6 | Pospuesto a pedido explícito (16 ago 2026) — el modelo de domicilios aún no está bien definido en el negocio |
 | 2 | **Al comprar insumos, ¿el costo se reemplaza o se promedia** con el stock existente? | §9.2 | Promedio ponderado; reemplazo si prefieres simplicidad |
 | 3 | **¿Repo público o privado?** | §8.4 | **Privado** |
 | 4 | **`D31 = 22000` sin etiqueta** — ¿es el precio real de tienda del New York? (E3) | Verificación de E3 | — |
@@ -831,3 +831,18 @@ El motor de preparaciones se verificó contra el ejemplo real del spreadsheet (m
 **Decisión del 11 de agosto de 2026 (segunda pasada):** se construyó y verificó el recargo de costos fijos por producto (costo final, markup/margen separados, cobertura) y luego se retiró a pedido explícito — no por un error, sino porque el negocio prefiere conocer el neto real al cierre de cada período (cruzando gastos reales de Fase C con ventas reales) en vez de estimarlo por producto. Ver §10.4. Tampoco se implementó `costosFijos[]` como colección separada — redundante con los gastos operativos de Fase C. Documentado en §3.2.
 
 **Siguiente:** Fase D3 (domicilios por zona, §10.6) — la más pequeña de las que quedan — y Fase D4 (migrar los datos reales del spreadsheet con las 4 decisiones ya tomadas: recargo 30%, masa de harina de arroz, empaques diferenciados). Después, Fase E (backend en Google Sheets).
+
+### Estado real del proyecto (17 de agosto de 2026)
+
+Ronda de cambios a pedido explícito, a partir de una reunión (`Asesoria_crumbly.pdf`) y de comparar Crumbly contra sistemas POS de restaurante. **D3 (domicilios) se pospuso** — no bien definido aún en el negocio. Se construyó:
+
+1. **Clientes reutilizables.** Al registrar una venta se puede capturar nombre + teléfono; si el teléfono ya existe se reutiliza el mismo cliente (`findOrCreateCliente`). El historial de ventas muestra el cliente cuando aplica.
+2. **Ticket promedio.** `getTicketPromedio(ventas)` — promedio del total de venta sobre el conjunto de ventas del período activo. Visible en Reportes junto al conteo de ventas.
+3. **Rango de fechas personalizable.** Quinta pestaña "Personalizado" en Reportes junto a Hoy/Semana/Mes/Año, con dos `<input type="date">`. `getVentasByRange`/`getGastosByRange`/`getCascadaUtilidadRango` en `core.js`, todos delegando en las mismas funciones puras que ya usaban los períodos fijos (`rangeBounds`, `computeCascada`) — sin duplicar fórmulas. Alimenta resumen, gastos, PDF, CSV y el correo compartido.
+4. **Cierre de caja diario.** Card fija en Reportes (`Cierre de caja del día`) que siempre muestra el día actual — independiente del selector de período/rango de arriba. **Solo un reporte** (decisión explícita del usuario): número de ventas, unidades, ingresos, gastos, utilidad neta y ticket promedio del día, con botón de PDF. No bloquea ni cierra ningún dato — se puede seguir vendiendo y registrando gastos normalmente.
+5. **Margen de variabilidad del 8%.** Los insumos (materia prima, empaque, topping) tienen un checkbox "Precio variable". Al comprar ese insumo (`registrarGasto`), el costo unitario de la compra se incrementa 8% (`MARGEN_VARIABILIDAD_PCT`) *antes* de entrar al promedio ponderado — decisión explícita del usuario: es un colchón fijo para insumos que suben de precio durante el año. Los insumos sin ese marcador no se ven afectados. El ajuste por IPC para insumos de precio estable **se pospuso al próximo año**, a pedido explícito — no se construyó.
+6. **Login retirado por completo** (ver también línea 61) y reversión de Fase D2 (costo final/markup/cobertura de costos fijos, ver arriba) — ambos a pedido explícito en esta misma ronda.
+
+Verificado: 87/87 tests de `core.js` (`node tests/core.test.js`) y flujo manual completo en navegador (servidor local, no `file://` — ver nota de `.claude/launch.json`) — insumo con margen variable → compra → promedio ponderado correcto (`$0,02` → `$0,0208` tras comprar igual cantidad a `$0,0216`), venta con cliente nuevo → aparece en historial y en el cliente reutilizado por teléfono, rango personalizado con fecha de hoy → mismos números que la pestaña "Hoy", card de cierre de caja independiente del selector de arriba, PDF de cierre de caja sin errores de consola.
+
+**Bug real encontrado y corregido durante esta ronda:** `new Date('YYYY-MM-DD')` parsea como medianoche UTC; combinado con `.setHours()` (hora local) esto desplaza un día hacia atrás en zonas horarias detrás de UTC (Colombia, UTC-5). Afectaba `rangeBounds()` y `getDepreciacionRango()`. Corregido con `parseLocalDate()`, que arma la fecha a partir de sus componentes Y/M/D en vez de parsear el string completo.

@@ -16,7 +16,15 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var SCHEMA_VERSION = 5;
+  var SCHEMA_VERSION = 6;
+
+  // decisión del 11 ago 2026: insumos de precio volátil llevan un +8% de
+  // colchón al registrar su compra, para no subcostear cuando el proveedor
+  // sube de precio entre compras. Insumos NO marcados como variables se
+  // ajustan por IPC — a partir de 2027, todavía no implementado.
+  var MARGEN_VARIABILIDAD_PCT = 0.08;
+
+  function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 
   // ─── Formato ───────────────────────────────────────────────
 
@@ -100,6 +108,7 @@
       productos: [],
       ventas: [],
       gastos: [],
+      clientes: [],
       config: { email: '' }
     };
   }
@@ -120,6 +129,7 @@
       ventas: Array.isArray(raw.ventas) ? raw.ventas : [],
       gastos: Array.isArray(raw.gastos) ? raw.gastos : [], // v2 -> v3
       preparaciones: Array.isArray(raw.preparaciones) ? raw.preparaciones : [], // v3 -> v4
+      clientes: Array.isArray(raw.clientes) ? raw.clientes : [], // v5 -> v6
       config: (raw.config && typeof raw.config === 'object') ? raw.config : {}
     };
     if (s.config.email === undefined) s.config.email = '';
@@ -285,7 +295,7 @@
     var componentes = (input.componentes || []).map(function (c) {
       return { tipo: c.tipo, refId: c.refId, porcentaje: Number(c.porcentaje) || 0, gramos: Number(c.gramos) || 0 };
     });
-    var id = input.id || (Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
+    var id = input.id || genId();
     if (wouldCreateCiclo(state, id, componentes)) {
       throw new Error('Esta combinación crea un ciclo entre preparaciones (una depende de otra que depende de ella).');
     }
@@ -353,6 +363,30 @@
     var precio = Number(producto.precio) || 0;
     var ganancia = precio - costo;
     return { costo: costo, precio: precio, ganancia: ganancia, margenPct: precio > 0 ? ganancia / precio : 0 };
+  }
+
+  // ─── Clientes (nombre + teléfono, reutilizable entre ventas) ───
+  // El teléfono es la clave de reutilización: si ya existe un cliente con
+  // ese teléfono, se reusa (y se actualiza el nombre si vino distinto);
+  // si no, se crea. Sin teléfono ni nombre, no hay cliente que registrar
+  // (la venta queda sin clienteId, como hoy).
+  function findOrCreateCliente(state, nombre, telefono) {
+    nombre = (nombre || '').trim();
+    telefono = (telefono || '').trim();
+    if (!nombre && !telefono) return null;
+    var existente = telefono ? state.clientes.find(function (c) { return c.telefono === telefono; }) : null;
+    if (existente) {
+      if (nombre) existente.nombre = nombre;
+      return existente.id;
+    }
+    var nuevo = { id: genId(), nombre: nombre || '(sin nombre)', telefono: telefono };
+    state.clientes.push(nuevo);
+    return nuevo.id;
+  }
+
+  function getTicketPromedio(ventas) {
+    if (!ventas || !ventas.length) return 0;
+    return ventas.reduce(function (a, v) { return a + v.total; }, 0) / ventas.length;
   }
 
   // ─── Validación de stock antes de vender (P0-3) ────────────
@@ -558,13 +592,14 @@
     if (!items.length) return null;
 
     var venta = {
-      id: opts.id || (Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
+      id: opts.id || genId(),
       fecha: opts.fecha || new Date().toISOString(),
       items: items,
       total: total,
       ganancia: ganancia,
       stockInsuficiente: !!opts.stockInsuficiente,
-      consumoReal: consumoReal
+      consumoReal: consumoReal,
+      clienteId: opts.clienteId || null
     };
     state.ventas.push(venta);
     return venta;
@@ -654,7 +689,7 @@
     if (!input.tipo || !GASTO_CATEGORIAS[input.tipo]) throw new Error('Tipo de gasto inválido');
 
     var gasto = {
-      id: input.id || (Date.now().toString(36) + Math.random().toString(36).slice(2, 6)),
+      id: input.id || genId(),
       fecha: input.fecha || new Date().toISOString(),
       tipo: input.tipo,
       categoria: input.categoria || '',
@@ -678,6 +713,14 @@
       gasto.cantidadAntes = insumo.cantidad;
 
       var costoCompraUnitario = monto / cantidad;
+      // Insumo de precio volátil: +8% de colchón sobre el costo de esta
+      // compra antes de mezclarlo al promedio ponderado — decisión del
+      // 11 ago 2026, para no subcostear cuando el proveedor sube de precio
+      // entre una compra y la siguiente.
+      if (insumo.margenVariable) {
+        costoCompraUnitario *= (1 + MARGEN_VARIABILIDAD_PCT);
+        gasto.margenVariabilidadAplicado = MARGEN_VARIABILIDAD_PCT;
+      }
       insumo.costo = costoPromedioPonderado(insumo.costo, insumo.cantidad, costoCompraUnitario, cantidad);
       insumo.cantidad = (Number(insumo.cantidad) || 0) + cantidad;
       gasto.actualizoCosto = true;
@@ -714,6 +757,29 @@
     return (gastos || []).filter(function (g) { return new Date(g.fecha) >= start; });
   }
 
+  // ─── Rango de fechas personalizable (Reportes) ─────────────
+  // `new Date('YYYY-MM-DD')` se interpreta como medianoche UTC — en
+  // cualquier huso horario detrás de UTC (Colombia, UTC-5) eso corre la
+  // fecha un día hacia atrás en hora local. Se construye la fecha local
+  // a mano para que el rango sea exactamente el que se ve en el selector.
+  function parseLocalDate(dateStr) {
+    var parts = String(dateStr).split('T')[0].split('-').map(Number);
+    return new Date(parts[0], parts[1] - 1, parts[2]);
+  }
+  function rangeBounds(startISO, endISO) {
+    var start = parseLocalDate(startISO); start.setHours(0, 0, 0, 0);
+    var end = parseLocalDate(endISO); end.setHours(23, 59, 59, 999);
+    return { start: start, end: end };
+  }
+  function getVentasByRange(ventas, startISO, endISO) {
+    var b = rangeBounds(startISO, endISO);
+    return (ventas || []).filter(function (v) { var f = new Date(v.fecha); return f >= b.start && f <= b.end; });
+  }
+  function getGastosByRange(gastos, startISO, endISO) {
+    var b = rangeBounds(startISO, endISO);
+    return (gastos || []).filter(function (g) { var f = new Date(g.fecha); return f >= b.start && f <= b.end; });
+  }
+
   function meses30(desde, hasta) {
     return (hasta.getTime() - desde.getTime()) / (1000 * 60 * 60 * 24 * 30);
   }
@@ -740,6 +806,12 @@
     if (factor === undefined) factor = 1;
     return mensual * factor;
   }
+  function getDepreciacionRango(state, startISO, endISO) {
+    var b = rangeBounds(startISO, endISO); // ya resuelto a fecha local correcta
+    var mensual = getDepreciacionMensualTotal(state, b.end);
+    var dias = Math.max(1, (b.end - b.start) / (1000 * 60 * 60 * 24));
+    return mensual * (dias / 30);
+  }
 
   function agruparGastosPorCategoria(gastos) {
     var out = {};
@@ -756,21 +828,22 @@
   // operativos + capex). Ver HANDOFF §9.1 — las compras de inventario NO
   // restan de la utilidad porque su costo ya está contado dentro del costo
   // de ventas; restarlas de nuevo aquí sería contarlas dos veces.
-  function getCascadaUtilidad(state, period, ref) {
-    var ventas = getVentasByPeriod(state.ventas, period, ref);
+  // Cálculo compartido: recibe ventas/gastos YA filtrados (por período o
+  // por rango custom) más la depreciación ya prorrateada, y arma la
+  // cascada completa. Así getCascadaUtilidad (período) y
+  // getCascadaUtilidadRango (fechas custom) nunca duplican la fórmula.
+  function computeCascada(ventas, gastos, depreciacion) {
     var ingresos = ventas.reduce(function (a, v) { return a + v.total; }, 0);
     var gananciaVentas = ventas.reduce(function (a, v) { return a + v.ganancia; }, 0);
     var costoVentas = ingresos - gananciaVentas;
     var utilidadBruta = gananciaVentas;
 
-    var gastosPeriodo = getGastosByPeriod(state.gastos, period, ref);
-    var operativos = gastosPeriodo.filter(function (g) { return g.tipo === 'operativo'; });
+    var operativos = gastos.filter(function (g) { return g.tipo === 'operativo'; });
     var totalOperativos = operativos.reduce(function (a, g) { return a + g.monto; }, 0);
-    var depreciacion = getDepreciacionPeriodo(state, period, ref);
     var utilidadNeta = utilidadBruta - totalOperativos - depreciacion;
 
-    var comprasInventario = gastosPeriodo.filter(function (g) { return g.tipo === 'inventario'; }).reduce(function (a, g) { return a + g.monto; }, 0);
-    var capexPeriodo = gastosPeriodo.filter(function (g) { return g.tipo === 'capex'; }).reduce(function (a, g) { return a + g.monto; }, 0);
+    var comprasInventario = gastos.filter(function (g) { return g.tipo === 'inventario'; }).reduce(function (a, g) { return a + g.monto; }, 0);
+    var capexPeriodo = gastos.filter(function (g) { return g.tipo === 'capex'; }).reduce(function (a, g) { return a + g.monto; }, 0);
     var flujoCaja = ingresos - comprasInventario - totalOperativos - capexPeriodo;
 
     return {
@@ -787,6 +860,23 @@
       capexPeriodo: capexPeriodo,
       flujoCaja: flujoCaja
     };
+  }
+
+  function getCascadaUtilidad(state, period, ref) {
+    var ventas = getVentasByPeriod(state.ventas, period, ref);
+    var gastosPeriodo = getGastosByPeriod(state.gastos, period, ref);
+    var depreciacion = getDepreciacionPeriodo(state, period, ref);
+    return computeCascada(ventas, gastosPeriodo, depreciacion);
+  }
+
+  // Misma cascada, para un rango de fechas elegido a mano (no uno de los
+  // períodos fijos Hoy/Semana/Mes/Año) — HANDOFF: "registros... fecha
+  // personalizable".
+  function getCascadaUtilidadRango(state, startISO, endISO) {
+    var ventas = getVentasByRange(state.ventas, startISO, endISO);
+    var gastosRango = getGastosByRange(state.gastos, startISO, endISO);
+    var depreciacion = getDepreciacionRango(state, startISO, endISO);
+    return computeCascada(ventas, gastosRango, depreciacion);
   }
 
   // ─── Dependencias (P1-4: no romper recetas al borrar un insumo) ───
@@ -848,6 +938,13 @@
     findProductosUsandoPreparacion: findProductosUsandoPreparacion,
     findPreparacionesUsandoPreparacion: findPreparacionesUsandoPreparacion,
     findPreparacionesUsandoMateria: findPreparacionesUsandoMateria,
-    getMargenProducto: getMargenProducto
+    getMargenProducto: getMargenProducto,
+    findOrCreateCliente: findOrCreateCliente,
+    getTicketPromedio: getTicketPromedio,
+    getVentasByRange: getVentasByRange,
+    getGastosByRange: getGastosByRange,
+    getDepreciacionRango: getDepreciacionRango,
+    getCascadaUtilidadRango: getCascadaUtilidadRango,
+    MARGEN_VARIABILIDAD_PCT: MARGEN_VARIABILIDAD_PCT
   };
 });
