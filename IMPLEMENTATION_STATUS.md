@@ -4,7 +4,7 @@
 
 ## Fase actual
 
-**Fases A, B, C, D1 y D2 completas y verificadas.** D2 se simplificó a pedido el mismo día: se construyó y verificó el recargo de costos fijos por producto, y luego se retiró — el modelo vigente es costo + margen bruto por producto; la utilidad neta se conoce al cierre de cada período (ya existía en Fase C, sin cambios). Ver sección "D2 — revisión" abajo. Después de D2 se hizo una ronda adicional (17 ago 2026, ver sección "Ronda POS — clientes, ticket promedio, rango personalizable, cierre de caja, margen de variabilidad" abajo): login retirado, clientes reutilizables, ticket promedio, rango de fechas personalizable en Reportes, cierre de caja diario (solo reporte) y margen de variabilidad del 8% en insumos de precio volátil. Repo en GitHub: [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (privado). Fase D3 (domicilios): pospuesta a pedido, no bien definida aún. Fase D4 (migración del spreadsheet): no iniciada. **Fase E (backend en Google Sheets): código y tests completos (ver sección propia abajo), falta que el usuario despliegue `backend/Code.gs` bajo el correo de Crumbly — `backend/SETUP.md`.**
+**Fases A, B, C, D1 y D2 completas y verificadas.** D2 se simplificó a pedido el mismo día: se construyó y verificó el recargo de costos fijos por producto, y luego se retiró — el modelo vigente es costo + margen bruto por producto; la utilidad neta se conoce al cierre de cada período (ya existía en Fase C, sin cambios). Ver sección "D2 — revisión" abajo. Después de D2 se hizo una ronda adicional (17 ago 2026, ver sección "Ronda POS — clientes, ticket promedio, rango personalizable, cierre de caja, margen de variabilidad" abajo): login retirado, clientes reutilizables, ticket promedio, rango de fechas personalizable en Reportes, cierre de caja diario (solo reporte) y margen de variabilidad del 8% en insumos de precio volátil. Repo en GitHub: [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (privado). Fase D3 (domicilios): pospuesta a pedido, no bien definida aún. Fase D4 (migración del spreadsheet): no iniciada. **Fase E (backend en Google Sheets): DESPLEGADO Y VERIFICADO en producción** el 18 ago 2026 (ver sección propia abajo) — ya no es "pendiente". **Rediseño visual (`DISENO_HANDOFF.md`): en curso** — base de datos y lógica de negocio extendidas y probadas (categorías, adiciones, comprobantes, ver sección propia abajo); la reconstrucción de `index.html` con el nuevo shell/pantallas sigue en progreso.
 
 ## Qué se hizo
 
@@ -145,7 +145,7 @@ Verificado en navegador con servidor local (`.claude/launch.json`, no versionado
 
 ### Fase E — Backend en Google Sheets, primera pasada (17 de agosto de 2026)
 
-A pedido explícito, en paralelo al rediseño visual. Código y tests completos; **despliegue pendiente del usuario** (`backend/SETUP.md`) — ver `HANDOFF.md` §12 para el porqué (no puedo crear cuentas de Google ni iniciar sesión por él).
+A pedido explícito, en paralelo al rediseño visual. **Desplegado y verificado en producción el 18 ago 2026** — `ping`, `push` y `pull` probados con `curl` y con `fetch()` real desde el navegador contra la URL real. Ver `HANDOFF.md` §12 para el detalle del despliegue (incluye una nota técnica: el flujo "Extensiones → Apps Script" falló en este entorno, se resolvió con un proyecto independiente que abre la hoja por ID).
 
 | Pieza | Estado | Verificación |
 |---|---|---|
@@ -153,12 +153,28 @@ A pedido explícito, en paralelo al rediseño visual. Código y tests completos;
 | `js/sync.js` (`ping`/`pull`/`push`, sin DOM) | ✅ DONE | 11/11 tests con `fetch` simulado (`tests/sync.test.js`): query string correcto en `ping`/`pull`, `POST` con `Content-Type: text/plain` y body `{token, action, state}` en `push`, propaga `ok:false` del backend sin lanzar, rechaza en HTTP no-2xx. |
 | UI "Sincronización (Google Sheets)" en Reportes | ✅ DONE | Probado en navegador con `fetch` interceptado (sin backend real): "Probar conexión" → "Conectado ✓"; "Sincronizar ahora" → sube el estado completo y fija `lastSync`. |
 | Auto-sync tras cada `saveState()`, con debounce | ✅ DONE | Solo se activa después del primer "Sincronizar ahora" manual (evita subir datos a medio configurar). Probado: guardar un insumo nuevo dispara exactamente **un** push automático 900ms después, con el insumo correcto adentro. |
-| `pull` en segundo plano al cargar la app | ✅ DONE, sin verificar contra un backend real | Solo se intenta si ya hubo una sincronización antes (`lastSync` existe); si falla o no hay red, la app sigue con lo que ya tenía en `localStorage` — no bloquea el arranque. |
+| `pull` en segundo plano al cargar la app | ✅ DONE, verificado contra el backend real | Solo se intenta si ya hubo una sincronización antes (`lastSync` existe); si falla o no hay red, la app sigue con lo que ya tenía en `localStorage` — no bloquea el arranque. |
 | Migración de `state.config` (`backendUrl`, `backendToken`, `lastSync`) | ✅ DONE | `emptyState()` y `migrateState()` en `js/core.js`, mismo patrón que `config.email`. No requirió bump de `schemaVersion` (campo opcional con default, igual que el email). |
+| **Despliegue real** (Sheet + Apps Script bajo `crumbly2026@gmail.com`) | ✅ DONE — 18 ago 2026 | `ping`/`push`/`pull` probados con `curl` y con `fetch()` real desde el navegador contra la URL en producción. Ver `HANDOFF.md` §12 para el detalle (incluye la nota técnica del proyecto independiente por `CRUMBLY_SHEET_ID`). |
 
 **Decisión de implementación:** el backend guarda y devuelve el `state` completo como un solo JSON (`push`/`pull` de todo, no CRUD por fila) — ver el porqué en `HANDOFF.md` §12.3. Las hojas por colección (`materia`, `ventas`, etc.) son un espejo de solo lectura para inspección manual, no la fuente de verdad.
 
-**No construido en esta pasada, a propósito:** resolución de conflictos entre dispositivos (gana la última sincronización), reintentos automáticos si el push falla por falta de red (queda para cuando alguien lo sincronice manualmente o en la siguiente mutación exitosa), y por supuesto el despliegue real — eso es un paso manual de ~10 minutos que le corresponde al usuario (`backend/SETUP.md`).
+**No construido a propósito:** resolución de conflictos entre dispositivos (gana la última sincronización), reintentos automáticos si el push falla por falta de red (queda para cuando alguien lo sincronice manualmente o en la siguiente mutación exitosa).
+
+### Rediseño visual — base de datos y lógica (18 de agosto de 2026)
+
+A partir de `DISENO_HANDOFF.md` (handoff de alta fidelidad recibido del usuario: 5 pantallas — Dashboard, Caja, Inventario, Productos, Clientes — + 3 modales, paleta blanco/negro/gris, sidebar colapsable). Antes de tocar `index.html` se extendió `js/core.js` (schemaVersion 6→7), todo aditivo:
+
+| Pieza | Estado | Verificación |
+|---|---|---|
+| Campos nuevos: `categoria` (insumos/productos), adiciones (`esAdicion`/`precioAdicion`/`porcion`/`nombreAdicion` en cualquier insumo), `metodoPago`/`comprobante` (ventas), `comprobante` (gastos), `direccion` (clientes) | ✅ DONE | `migrateState` los rellena con default en estados viejos sin romper nada — 97/97 tests siguen pasando. |
+| `applyVenta` consume adiciones de **cualquier** tipo de insumo (antes solo toppings podían agregarse a una línea) | ✅ DONE | Reutiliza el mismo snapshot `consumoReal` — `revertVenta` no necesitó cambios. Probado: vender con adición → descuenta `porcion × qty` del insumo correcto; revertir → restaura exacto. |
+| `componentes` de un producto (la "Fórmula") ahora puede referenciar empaques/toppings, no solo materia prima | ✅ DONE | `getCostoProducto` y el descuento de stock se generalizaron vía un helper nuevo (`aplicarComponentes`) que unificó 4 sitios que antes repetían la misma expansión materia/preparación por separado — se corrigió el hueco (empaques/toppings no eran válidos como ingrediente de receta) al mismo tiempo que se eliminaba la duplicación. |
+| `getInsumosUnificados`/`getAdiciones`/`getMovimientos` (helpers nuevos) | ✅ DONE | Para las pantallas Inventario/Productos/Caja del rediseño. Materia/empaques/toppings **no se fusionaron** internamente — solo se aplanan para las pantallas que necesitan verlos juntos; así preparaciones, tests existentes y el backend de Sheets (que ya espeja las 3 colecciones por separado) no se rompen. |
+
+**Decisión de implementación:** el modal único de "insumo" del diseño (con selector "tipo de medición": gramos/mililitros/kilogramos/unidad) se mapea internamente a solo 2 colecciones — gramos/mililitros/kilogramos → `materia` (mililitros tratado ≈ gramos para costeo, aproximación conocida), unidad → `empaques`. El usuario nunca ve esta distinción interna; es puramente de implementación, para reusar el motor de costeo ya probado en vez de construir uno nuevo por tipo de medición.
+
+**Pendiente:** la reconstrucción de `index.html` (shell nuevo, 5 pantallas, 3 modales) — la base de datos ya soporta todo lo que el diseño necesita, pero la interfaz actual sigue siendo la anterior (crema/café, navegación inferior) hasta que se termine.
 
 ## Tests
 
@@ -167,7 +183,7 @@ node tests/core.test.js
 node tests/sync.test.js
 ```
 
-**`core.test.js`: 87/87 pasan.** Cobertura Fase B (33 tests): conversión de períodos (semana en lunes), formato de moneda, escape de HTML, costeo de producto en vivo, validación de stock, necesidades de inventario (3 tipos de insumo, ventana móvil), migración de esquema (no destructiva, tolera estado parcial/corrupto/null), aplicar/revertir venta (caso normal, stock insuficiente, toppings clampeados, venta legada sin `consumoReal`), dependencias al eliminar insumos. Cobertura Fase C (16 tests): costo promedio ponderado, clasificación de gastos por tipo, reversión con snapshot exacto, depreciación de capex, cascada de utilidad, agrupación por categoría. Cobertura Fase D1 (22 tests): porcentaje panadero con números reales del handoff, modo directo, anidamiento, ciclos (4 variantes), producto con componentes mixtos, venta/reversión a través de una preparación, dependencias extendidas. Cobertura Fase D2, versión vigente (4 tests): `getMargenProducto` con costo real, el precio no se mueve solo al subir un costo, el snapshot de venta es consistente, la utilidad neta se sigue conociendo por período. Cobertura ronda POS (12 tests): clientes (5), ticket promedio (2), rango de fechas personalizable (2), margen de variabilidad 8% (3).
+**`core.test.js`: 97/97 pasan.** Cobertura Fase B (33 tests): conversión de períodos (semana en lunes), formato de moneda, escape de HTML, costeo de producto en vivo, validación de stock, necesidades de inventario (3 tipos de insumo, ventana móvil), migración de esquema (no destructiva, tolera estado parcial/corrupto/null), aplicar/revertir venta (caso normal, stock insuficiente, toppings clampeados, venta legada sin `consumoReal`), dependencias al eliminar insumos. Cobertura Fase C (16 tests): costo promedio ponderado, clasificación de gastos por tipo, reversión con snapshot exacto, depreciación de capex, cascada de utilidad, agrupación por categoría. Cobertura Fase D1 (22 tests): porcentaje panadero con números reales del handoff, modo directo, anidamiento, ciclos (4 variantes), producto con componentes mixtos, venta/reversión a través de una preparación, dependencias extendidas. Cobertura Fase D2, versión vigente (4 tests): `getMargenProducto` con costo real, el precio no se mueve solo al subir un costo, el snapshot de venta es consistente, la utilidad neta se sigue conociendo por período. Cobertura ronda POS (12 tests): clientes (5), ticket promedio (2), rango de fechas personalizable (2), margen de variabilidad 8% (3). Cobertura rediseño — base de datos (10 tests): insumos unificados, adiciones (filtrado, consumo en `applyVenta`, reversión), `findInsumoConTipo`, `getMovimientos`, dirección de cliente, migración de campos nuevos, componentes tipo empaques/toppings en la receta.
 
 **`sync.test.js`: 11/11 pasan.** Cliente de sincronización con `fetch` simulado — ver tabla de Fase E arriba.
 
@@ -175,7 +191,7 @@ No hay suite de UI automatizada — la verificación de pantallas se hizo manual
 
 ## Siguiente en el roadmap
 
-1. **Desplegar el backend de Fase E** (`backend/SETUP.md`) — único paso que le corresponde al usuario, ~10 minutos bajo el correo de Crumbly. Una vez desplegado, verificar en vivo (probar conexión, sincronizar, abrir la app en otro dispositivo) y actualizar esta tabla.
+1. ~~Desplegar el backend de Fase E~~ — ✅ hecho y verificado el 18 ago 2026.
 2. **Fase D3 — Domicilios por zona** (`HANDOFF.md` §10.6): pospuesta a pedido explícito — el modelo de domicilios aún no está bien definido en el negocio. Retomar cuando haya decisión sobre zonas/tarifas.
 3. **Fase D4 — Migrar los datos del spreadsheet**, con las correcciones de `HANDOFF.md` §11 y las 4 decisiones de costeo ya tomadas (recargo 30%, masa de harina de arroz, empaques diferenciados $2.550/$1.650). Ya no hay nada que la bloquee.
 4. **Ajuste por IPC** para insumos de precio estable — pospuesto explícitamente al próximo año.

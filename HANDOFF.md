@@ -709,7 +709,9 @@ No se corrige el Excel. **Los datos se migran a la app ya corregidos** (fase D4)
 
 ## §12. Fase E — Backend en Google Sheets
 
-**Estado (17 de agosto de 2026): código listo, despliegue pendiente del usuario.** Todo lo que se puede construir sin tener acceso a una cuenta de Google está hecho y probado — `backend/Code.gs` (Apps Script), `js/sync.js` (cliente) y la UI de sincronización en Reportes. Falta el paso que **no puedo hacer yo**: crear la hoja y desplegar el script bajo el correo de Crumbly (`backend/SETUP.md` trae el runbook completo, ~10 minutos). Hasta que eso pase, la app sigue funcionando exactamente igual que antes — 100% local, sin ningún cambio de comportamiento.
+**Estado (18 de agosto de 2026): DESPLEGADO Y VERIFICADO EN PRODUCCIÓN.** Hoja "Crumbly — Datos" creada bajo `crumbly2026@gmail.com`, `Code.gs` pegado como proyecto independiente de Apps Script (no vinculado al Sheet — ver nota abajo), Script Properties configuradas (`CRUMBLY_SHEET_ID`, `CRUMBLY_TOKEN`), implementado como App web ("Cualquiera" + token). `ping`/`push`/`pull` probados contra la URL real con `curl` y con `fetch()` real desde el navegador — ambos funcionan. La URL y el token quedan solo en el navegador del usuario (Reportes → Sincronización) y en las Script Properties de Google — no se commitean.
+
+**Nota técnica:** el flujo "Extensiones → Apps Script" desde dentro del Sheet falló de forma reproducible en este entorno (redirección rota entre cuentas de Google). Se resolvió creando el proyecto directo desde script.google.com y hacién­dolo abrir la hoja por ID (`SpreadsheetApp.openById`, propiedad `CRUMBLY_SHEET_ID`) en vez de depender de `getActiveSpreadsheet()` — ver `backend/SETUP.md`, sección 2. Esto es además más robusto en general.
 
 ### 12.1 Aclaración
 

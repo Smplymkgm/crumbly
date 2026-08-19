@@ -19,6 +19,7 @@
  */
 
 var TOKEN_PROPERTY = 'CRUMBLY_TOKEN';
+var SHEET_ID_PROPERTY = 'CRUMBLY_SHEET_ID';
 var STATE_SHEET = 'state_json';
 
 function doGet(e) {
@@ -72,8 +73,15 @@ function json_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
 
+// Proyecto independiente (no vinculado a un Sheet específico) — abre por
+// ID en vez de depender de SpreadsheetApp.getActiveSpreadsheet(). Así
+// funciona igual si el script se creó desde script.google.com en vez de
+// Extensiones → Apps Script, y es más robusto en general (sobrevive a
+// duplicar el archivo, no depende de "estar dentro" de la hoja).
 function ss_() {
-  return SpreadsheetApp.getActiveSpreadsheet();
+  var id = PropertiesService.getScriptProperties().getProperty(SHEET_ID_PROPERTY);
+  if (!id) throw new Error('Falta CRUMBLY_SHEET_ID en las Propiedades del script — ver backend/SETUP.md');
+  return SpreadsheetApp.openById(id);
 }
 
 function getOrCreateSheet_(name) {

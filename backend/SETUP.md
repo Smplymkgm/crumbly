@@ -10,24 +10,29 @@ Todo el código ya está listo en `backend/Code.gs`. Aquí solo copias y pegas.
 
 1. Con la sesión del correo de Crumbly abierta, ve a [sheets.google.com](https://sheets.google.com) → **Hoja de cálculo en blanco**.
 2. Nómbrala **"Crumbly — Datos"** (o el nombre que prefieras, no importa para el funcionamiento).
+3. Copia el **ID de la hoja** de la URL — la parte entre `/d/` y `/edit`, ej. en
+   `https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOp/edit` el ID es `1AbCdEfGhIjKlMnOp`. Lo necesitas en el paso 3.
 
-## 2. Pegar el script
+## 2. Crear el proyecto de Apps Script
 
-1. En la hoja, ve a **Extensiones → Apps Script**.
-2. Se abre un editor con un archivo `Code.gs` vacío (con una función `myFunction()` de ejemplo). Borra todo su contenido.
-3. Abre `backend/Code.gs` de este repo, copia todo el archivo, y pégalo en el editor de Apps Script.
-4. Arriba a la izquierda, dale un nombre al proyecto, por ejemplo "Crumbly Backend".
-5. Guarda (ícono de disco o `Ctrl+S` / `Cmd+S`).
+*(Nota: si "Extensiones → Apps Script" desde dentro de la hoja no carga — a veces falla el redireccionamiento entre cuentas — usa este camino directo, funciona igual de bien.)*
 
-## 3. Configurar el token secreto
+1. Ve a [script.google.com/home/my](https://script.google.com/home/my) con la sesión de Crumbly.
+2. **Nuevo proyecto**.
+3. Borra el contenido de `Code.gs` que aparece por defecto (la función `myFunction()` de ejemplo).
+4. Abre `backend/Code.gs` de este repo, copia todo el archivo, y pégalo.
+5. Arriba a la izquierda, dale un nombre al proyecto, por ejemplo "Crumbly Backend".
+6. Guarda (ícono de disco o `Ctrl+S` / `Cmd+S`).
 
-Este token es la única contraseña que protege tus datos — sin él, nadie puede leer ni escribir en la hoja aunque encuentre la URL.
+## 3. Configurar el token y el ID de la hoja
+
+El token es la única contraseña que protege tus datos — sin él, nadie puede leer ni escribir en la hoja aunque encuentre la URL. El ID le dice al script sobre qué hoja trabajar (este proyecto no vive "dentro" de la hoja, así que hay que decírselo).
 
 1. En el editor de Apps Script, ve a **Configuración del proyecto** (ícono de engranaje, panel izquierdo).
-2. Baja hasta **Propiedades del script** → **Añadir propiedad del script**.
-3. Propiedad: `CRUMBLY_TOKEN`
-   Valor: **inventa una cadena larga y aleatoria** (ej. genera una en [1password.com/password-generator](https://1password.com/password-generator/) o similar, 32+ caracteres). Guárdala en un lugar seguro — es la que vas a pegar en la app en el paso 5.
-4. Guarda.
+2. Baja hasta **Propiedades del script** → **Añadir propiedad del script**. Agrega dos:
+   - Propiedad: `CRUMBLY_TOKEN` — Valor: **inventa una cadena larga y aleatoria** (ej. genera una en [1password.com/password-generator](https://1password.com/password-generator/), 32+ caracteres). Guárdala en un lugar seguro — es la que vas a pegar en la app en el paso 5.
+   - Propiedad: `CRUMBLY_SHEET_ID` — Valor: el ID que copiaste en el paso 1.3.
+3. Guarda.
 
 ## 4. Desplegar como aplicación web
 

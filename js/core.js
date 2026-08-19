@@ -16,7 +16,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var SCHEMA_VERSION = 6;
+  var SCHEMA_VERSION = 7;
 
   // decisión del 11 ago 2026: insumos de precio volátil llevan un +8% de
   // colchón al registrar su compra, para no subcostear cuando el proveedor
@@ -167,15 +167,37 @@
       return out;
     });
 
-    s.materia = s.materia.map(function (m) { return Object.assign({ minimo: 100 }, m); });
-    s.empaques = s.empaques.map(function (e) { return Object.assign({ minimo: 10, unidad: 'unidad' }, e); });
-    s.toppings = s.toppings.map(function (t) { return Object.assign({ minimo: 5 }, t); });
+    // v6 → v7: rediseño (DISENO_HANDOFF.md) — categoría libre para filtrar
+    // en Inventario, adiciones (insumo vendible como extra en una venta,
+    // con su propio precio y porción consumida por unidad vendida), y
+    // comprobante de pago en ventas/gastos con método de pago transferencia.
+    var conAdiciones = function (defaults) {
+      return function (item) {
+        var out = Object.assign({ categoria: '', esAdicion: false, precioAdicion: 0, porcion: 0, nombreAdicion: '' }, defaults, item);
+        return out;
+      };
+    };
+    s.materia = s.materia.map(conAdiciones({ minimo: 100 }));
+    s.empaques = s.empaques.map(conAdiciones({ minimo: 10, unidad: 'unidad' }));
+    s.toppings = s.toppings.map(conAdiciones({ minimo: 5 }));
+
+    s.productos = s.productos.map(function (p) {
+      return Object.assign({ categoria: '', foto: '' }, p);
+    });
+
+    s.clientes = s.clientes.map(function (c) {
+      return Object.assign({ direccion: '' }, c);
+    });
 
     s.ventas = s.ventas.map(function (v) {
-      var out = Object.assign({}, v);
+      var out = Object.assign({ metodoPago: 'efectivo', comprobante: '', adicionesConsumo: {} }, v);
       if (!Array.isArray(out.items)) out.items = [];
       if (out.stockInsuficiente === undefined) out.stockInsuficiente = false;
       return out;
+    });
+
+    s.gastos = s.gastos.map(function (g) {
+      return Object.assign({ comprobante: '' }, g);
     });
 
     return s;
@@ -271,6 +293,25 @@
     return out;
   }
 
+  // Recorre los `componentes` de un producto (materia/preparación/empaques/
+  // toppings — rediseño, DISENO_HANDOFF.md) y llama apply(bucket, id,
+  // cantidad) por cada insumo hoja involucrado, ya multiplicado por `qty`.
+  // Una preparación se expande primero a materia cruda (nunca llega a
+  // apply() como 'preparacion'). Único punto que conoce esta expansión —
+  // computeSaleConsumption, getConsumptionRolling, applyVenta y el
+  // fallback legado de revertVenta lo reusan, en vez de repetirlo 4 veces.
+  function aplicarComponentes(state, componentes, qty, apply) {
+    (componentes || []).forEach(function (c) {
+      var cantidad = (Number(c.gramos) || 0) * qty;
+      if (c.tipo === 'empaques' || c.tipo === 'toppings') {
+        apply(c.tipo, c.refId, cantidad);
+      } else {
+        var expandido = expandGramosAMateria(state, c.tipo, c.refId, cantidad);
+        Object.keys(expandido).forEach(function (mid) { apply('materia', mid, expandido[mid]); });
+      }
+    });
+  }
+
   // ¿Guardar `componentes` en la preparación `prepId` (nueva o existente)
   // crearía un ciclo? Chequeo estructural sobre el grafo de preparaciones,
   // independiente del cálculo de costo — se corre ANTES de persistir.
@@ -329,6 +370,10 @@
 
   // ─── Costeo de producto (P0-2: siempre en vivo, nunca cacheado) ───
 
+  // tipo → colección: dónde buscar un componente de receta que no sea
+  // materia ni preparación. Rediseño (DISENO_HANDOFF.md): la "Fórmula" de
+  // un producto puede referenciar cualquier insumo, no solo materia prima.
+  var COLECCION_POR_TIPO = { empaques: 'empaques', toppings: 'toppings' };
   function getCostoProducto(producto, state) {
     if (!producto) return 0;
     var costo = Number(producto.empaqueManual) || 0;
@@ -336,6 +381,9 @@
       var gramos = Number(c.gramos) || 0;
       if (c.tipo === 'preparacion') {
         costo += gramos * getPreparacionCosto(state, c.refId).costoPorGramo;
+      } else if (COLECCION_POR_TIPO[c.tipo]) {
+        var ins = (state[COLECCION_POR_TIPO[c.tipo]] || []).find(function (x) { return x.id === c.refId; });
+        if (ins) costo += gramos * (Number(ins.costo) || 0);
       } else {
         var m = (state.materia || []).find(function (x) { return x.id === c.refId; });
         if (m) costo += gramos * (Number(m.costo) || 0);
@@ -371,21 +419,44 @@
     return { costo: costo, precio: precio, ganancia: ganancia, margenPct: precio > 0 ? ganancia / precio : 0 };
   }
 
+  // ─── Insumos unificados (rediseño, DISENO_HANDOFF.md) ──────────
+  // materia/empaques/toppings se mantienen como colecciones separadas (no se
+  // fusionan: preservaría menos de lo que rompería — preparaciones referencian
+  // materia por id, el backend de Sheets ya las espeja por separado, y los
+  // tests existentes asumen esta forma). Esta función solo aplana las tres
+  // para pantallas que necesitan verlas juntas (Inventario, selector de
+  // fórmula, lista de adiciones).
+  var UNIDAD_LABEL = { materia: 'g', empaques: 'unidad', toppings: 'unidad' };
+  function getInsumosUnificados(state) {
+    var out = [];
+    ['materia', 'empaques', 'toppings'].forEach(function (tipo) {
+      (state[tipo] || []).forEach(function (item) {
+        out.push(Object.assign({ tipo: tipo, unidad: item.unidad || UNIDAD_LABEL[tipo] }, item));
+      });
+    });
+    return out;
+  }
+
+  function getAdiciones(state) {
+    return getInsumosUnificados(state).filter(function (i) { return i.esAdicion; });
+  }
+
   // ─── Clientes (nombre + teléfono, reutilizable entre ventas) ───
   // El teléfono es la clave de reutilización: si ya existe un cliente con
   // ese teléfono, se reusa (y se actualiza el nombre si vino distinto);
   // si no, se crea. Sin teléfono ni nombre, no hay cliente que registrar
   // (la venta queda sin clienteId, como hoy).
-  function findOrCreateCliente(state, nombre, telefono) {
+  function findOrCreateCliente(state, nombre, telefono, direccion) {
     nombre = (nombre || '').trim();
     telefono = (telefono || '').trim();
     if (!nombre && !telefono) return null;
     var existente = telefono ? state.clientes.find(function (c) { return c.telefono === telefono; }) : null;
     if (existente) {
       if (nombre) existente.nombre = nombre;
+      if (direccion) existente.direccion = direccion;
       return existente.id;
     }
-    var nuevo = { id: genId(), nombre: nombre || '(sin nombre)', telefono: telefono };
+    var nuevo = { id: genId(), nombre: nombre || '(sin nombre)', telefono: telefono, direccion: direccion || '' };
     state.clientes.push(nuevo);
     return nuevo.id;
   }
@@ -393,6 +464,20 @@
   function getTicketPromedio(ventas) {
     if (!ventas || !ventas.length) return 0;
     return ventas.reduce(function (a, v) { return a + v.total; }, 0) / ventas.length;
+  }
+
+  // ─── Movimientos (Caja) — ventas y gastos de un período, en una sola
+  // lista ordenada por fecha descendente, para la pantalla "Caja" del
+  // rediseño. No inventa datos nuevos, solo normaliza/combina lo que ya
+  // devuelven getVentasByPeriod/getGastosByPeriod.
+  function getMovimientos(ventas, gastos) {
+    var deVenta = (ventas || []).map(function (v) {
+      return { tipo: 'venta', categoria: 'venta', fecha: v.fecha, monto: v.total, signo: '+', ref: v };
+    });
+    var deGasto = (gastos || []).map(function (g) {
+      return { tipo: 'gasto', categoria: g.tipo, fecha: g.fecha, monto: g.monto, signo: '-', ref: g };
+    });
+    return deVenta.concat(deGasto).sort(function (a, b) { return new Date(b.fecha) - new Date(a.fecha); });
   }
 
   // ─── Validación de stock antes de vender (P0-3) ────────────
@@ -410,13 +495,10 @@
       var qty = Number(line.qty) || 0;
       var p = (state.productos || []).find(function (x) { return x.id === line.productoId; });
       if (p && qty > 0) {
-        // Cada componente (materia directa o preparación) se expande hasta
-        // materia cruda antes de sumarlo — así una receta con preparaciones
-        // anidadas valida contra el stock real, no contra un intermedio.
-        (p.componentes || []).forEach(function (c) {
-          var expandido = expandGramosAMateria(state, c.tipo, c.refId, (Number(c.gramos) || 0) * qty);
-          Object.keys(expandido).forEach(function (mid) { add('materia', mid, expandido[mid]); });
-        });
+        // Cada componente (materia directa, preparación, empaque o topping)
+        // se expande hasta insumo hoja antes de sumarlo — así una receta con
+        // preparaciones anidadas valida contra el stock real, no un intermedio.
+        aplicarComponentes(state, p.componentes, qty, add);
         (p.empaquesUsados || []).forEach(function (e) {
           add('empaques', e.empaqueId, (Number(e.cantidad) || 0) * qty);
         });
@@ -424,6 +506,10 @@
       (line.toppings || []).forEach(function (t) {
         var totQty = (Number(t.qty) || 0) * qty;
         if (totQty > 0) add('toppings', t.toppingId, totQty);
+      });
+      (line.adiciones || []).forEach(function (adId) {
+        var found = findInsumoConTipo(state, adId);
+        if (found && found.item.esAdicion) add(found.tipo, adId, (Number(found.item.porcion) || 0) * qty);
       });
     });
     (toppingsSueltos || []).forEach(function (t) {
@@ -477,16 +563,16 @@
         if (item.productoId) {
           var p = (state.productos || []).find(function (x) { return x.id === item.productoId; });
           if (p) {
-            (p.componentes || []).forEach(function (c) {
-              var expandido = expandGramosAMateria(state, c.tipo, c.refId, (Number(c.gramos) || 0) * item.qty);
-              Object.keys(expandido).forEach(function (mid) { add('materia', mid, expandido[mid]); });
-            });
+            aplicarComponentes(state, p.componentes, item.qty, add);
             (p.empaquesUsados || []).forEach(function (e) {
               add('empaques', e.empaqueId, (Number(e.cantidad) || 0) * item.qty);
             });
           }
         } else if (item.toppingId) {
           add('toppings', item.toppingId, Number(item.qty) || 0);
+        } else if (item.adicionId) {
+          var found = findInsumoConTipo(state, item.adicionId);
+          if (found) add(found.tipo, item.adicionId, (Number(found.item.porcion) || 0) * (Number(item.qty) || 0));
         }
       });
     });
@@ -537,6 +623,18 @@
   // solo se registrara la cantidad "teórica" de la receta, revertir una
   // venta que se vendió con stock insuficiente (clampeado a 0) sumaría de
   // más y dejaría el inventario por encima del valor real.
+  // Busca un insumo por id en las tres colecciones (materia/empaques/
+  // toppings) — usado por las adiciones del rediseño, que pueden venir de
+  // cualquiera de las tres, no solo de toppings.
+  function findInsumoConTipo(state, id) {
+    var buckets = [['materia', state.materia], ['empaques', state.empaques], ['toppings', state.toppings]];
+    for (var i = 0; i < buckets.length; i++) {
+      var found = (buckets[i][1] || []).find(function (x) { return x.id === id; });
+      if (found) return { item: found, tipo: buckets[i][0], list: buckets[i][1] };
+    }
+    return null;
+  }
+
   function applyVenta(state, lineas, toppingsSueltos, opts) {
     opts = opts || {};
     const items = [];
@@ -561,10 +659,7 @@
           items.push({ productoId: p.id, nombre: p.nombre, qty: qty, precio: p.precio, costo: costo });
           total += p.precio * qty;
           ganancia += (p.precio - costo) * qty;
-          (p.componentes || []).forEach(function (c) {
-            var expandido = expandGramosAMateria(state, c.tipo, c.refId, (Number(c.gramos) || 0) * qty);
-            Object.keys(expandido).forEach(function (mid) { deduct('materia', state.materia, mid, expandido[mid]); });
-          });
+          aplicarComponentes(state, p.componentes, qty, function (bucket, id, cant) { deduct(bucket, state[bucket], id, cant); });
           (p.empaquesUsados || []).forEach(function (e) {
             deduct('empaques', state.empaques, e.empaqueId, (Number(e.cantidad) || 0) * qty);
           });
@@ -580,6 +675,19 @@
           ganancia += (top.precio - top.costo) * totQty;
           deduct('toppings', state.toppings, top.id, totQty);
         }
+      });
+      // Adiciones (rediseño): insumo de cualquier tipo marcado esAdicion,
+      // consumido en proporción `porcion` por cada unidad vendida de la línea.
+      (line.adiciones || []).forEach(function (adId) {
+        var found = findInsumoConTipo(state, adId);
+        if (!found || !found.item.esAdicion) return;
+        var precio = Number(found.item.precioAdicion) || 0;
+        var porcion = Number(found.item.porcion) || 0;
+        var costoUnit = (Number(found.item.costo) || 0) * porcion;
+        items.push({ adicionId: adId, nombre: (found.item.nombreAdicion || found.item.nombre) + ' (adición)', qty: qty, precio: precio, costo: costoUnit });
+        total += precio * qty;
+        ganancia += (precio - costoUnit) * qty;
+        deduct(found.tipo, found.list, adId, porcion * qty);
       });
     });
 
@@ -605,7 +713,9 @@
       ganancia: ganancia,
       stockInsuficiente: !!opts.stockInsuficiente,
       consumoReal: consumoReal,
-      clienteId: opts.clienteId || null
+      clienteId: opts.clienteId || null,
+      metodoPago: opts.metodoPago || 'efectivo',
+      comprobante: opts.comprobante || ''
     };
     state.ventas.push(venta);
     return venta;
@@ -631,12 +741,9 @@
         if (item.productoId) {
           var p = (state.productos || []).find(function (x) { return x.id === item.productoId; });
           if (p) {
-            (p.componentes || []).forEach(function (c) {
-              var expandido = expandGramosAMateria(state, c.tipo, c.refId, (Number(c.gramos) || 0) * item.qty);
-              Object.keys(expandido).forEach(function (mid) {
-                var m = (state.materia || []).find(function (x) { return x.id === mid; });
-                if (m) m.cantidad += expandido[mid];
-              });
+            aplicarComponentes(state, p.componentes, item.qty, function (bucket, id, cant) {
+              var m = (state[bucket] || []).find(function (x) { return x.id === id; });
+              if (m) m.cantidad += cant;
             });
             (p.empaquesUsados || []).forEach(function (e) {
               var m = (state.empaques || []).find(function (x) { return x.id === e.empaqueId; });
@@ -646,6 +753,9 @@
         } else if (item.toppingId) {
           var t = (state.toppings || []).find(function (x) { return x.id === item.toppingId; });
           if (t) t.cantidad += item.qty;
+        } else if (item.adicionId) {
+          var found = findInsumoConTipo(state, item.adicionId);
+          if (found) found.item.cantidad += (Number(found.item.porcion) || 0) * (Number(item.qty) || 0);
         }
       });
     }
@@ -945,6 +1055,10 @@
     findPreparacionesUsandoPreparacion: findPreparacionesUsandoPreparacion,
     findPreparacionesUsandoMateria: findPreparacionesUsandoMateria,
     getMargenProducto: getMargenProducto,
+    getInsumosUnificados: getInsumosUnificados,
+    getAdiciones: getAdiciones,
+    getMovimientos: getMovimientos,
+    findInsumoConTipo: findInsumoConTipo,
     findOrCreateCliente: findOrCreateCliente,
     getTicketPromedio: getTicketPromedio,
     getVentasByRange: getVentasByRange,

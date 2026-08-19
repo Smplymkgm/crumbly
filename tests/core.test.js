@@ -933,6 +933,120 @@ test('eliminarGasto revierte exacto incluso con el margen de variabilidad aplica
   assert.strictEqual(s.materia[0].cantidad, 500);
 });
 
+console.log('\n== Rediseño: insumos unificados y adiciones ==');
+
+test('getInsumosUnificados aplana materia+empaques+toppings con su tipo', () => {
+  const s = C.migrateState({
+    materia: [{ id: 'm1', nombre: 'Harina', cantidad: 100, costo: 1, minimo: 10 }],
+    empaques: [{ id: 'e1', nombre: 'Caja', cantidad: 5, costo: 200, minimo: 1 }],
+    toppings: [{ id: 't1', nombre: 'Chispas', cantidad: 50, costo: 5, precio: 10, minimo: 5 }]
+  });
+  const unificados = C.getInsumosUnificados(s);
+  assert.strictEqual(unificados.length, 3);
+  assert.deepStrictEqual(unificados.map(i => i.tipo).sort(), ['empaques', 'materia', 'toppings']);
+  assert.strictEqual(unificados.find(i => i.id === 'm1').unidad, 'g');
+});
+
+test('getAdiciones filtra solo los insumos marcados esAdicion, de cualquier tipo', () => {
+  const s = C.migrateState({
+    materia: [
+      { id: 'crema', nombre: 'Crema de leche', cantidad: 1000, costo: 9, minimo: 100, esAdicion: true, precioAdicion: 2000, porcion: 30, nombreAdicion: 'Chantilly' },
+      { id: 'harina', nombre: 'Harina', cantidad: 1000, costo: 1, minimo: 100 }
+    ],
+    toppings: [{ id: 'choco', nombre: 'Chocolate', cantidad: 100, costo: 10, precio: 3000, minimo: 10, esAdicion: true, precioAdicion: 3000, porcion: 20 }]
+  });
+  const adiciones = C.getAdiciones(s);
+  assert.strictEqual(adiciones.length, 2);
+  assert.ok(adiciones.every(a => a.esAdicion));
+});
+
+test('applyVenta con una adición consume su porción y suma su precio/ganancia', () => {
+  const s = C.migrateState({
+    productos: [{ id: 'p1', nombre: 'Waffle', precio: 18000, componentes: [], empaquesUsados: [] }],
+    materia: [{ id: 'crema', nombre: 'Crema', cantidad: 1000, costo: 9, minimo: 100, esAdicion: true, precioAdicion: 2000, porcion: 30 }]
+  });
+  const venta = C.applyVenta(s, [{ productoId: 'p1', qty: 2, adiciones: ['crema'] }], []);
+  // 2 unidades × 30g de porción = 60g consumidos
+  assert.strictEqual(s.materia[0].cantidad, 940);
+  assert.strictEqual(venta.total, 18000 * 2 + 2000 * 2);
+  const itemAdicion = venta.items.find(i => i.adicionId === 'crema');
+  assert.strictEqual(itemAdicion.qty, 2);
+  assert.strictEqual(itemAdicion.costo, 9 * 30); // costo por unidad vendida = porción × costo/g
+});
+
+test('revertVenta deshace una venta con adición sin cambios adicionales (usa consumoReal)', () => {
+  const s = C.migrateState({
+    productos: [{ id: 'p1', nombre: 'Waffle', precio: 18000, componentes: [], empaquesUsados: [] }],
+    materia: [{ id: 'crema', nombre: 'Crema', cantidad: 1000, costo: 9, minimo: 100, esAdicion: true, precioAdicion: 2000, porcion: 30 }]
+  });
+  const venta = C.applyVenta(s, [{ productoId: 'p1', qty: 1, adiciones: ['crema'] }], []);
+  assert.strictEqual(s.materia[0].cantidad, 970);
+  C.revertVenta(s, venta);
+  assert.strictEqual(s.materia[0].cantidad, 1000);
+});
+
+test('findInsumoConTipo encuentra el insumo y su bucket entre las tres colecciones', () => {
+  const s = C.migrateState({ toppings: [{ id: 't1', nombre: 'Chispas', cantidad: 10, costo: 5, precio: 10, minimo: 1 }] });
+  const found = C.findInsumoConTipo(s, 't1');
+  assert.strictEqual(found.tipo, 'toppings');
+  assert.strictEqual(found.item.nombre, 'Chispas');
+});
+
+test('getMovimientos combina ventas y gastos ordenados por fecha descendente', () => {
+  const ventas = [{ fecha: '2026-08-15T10:00:00', total: 20000 }];
+  const gastos = [{ fecha: '2026-08-17T10:00:00', tipo: 'operativo', monto: 5000 }, { fecha: '2026-08-16T10:00:00', tipo: 'inventario', monto: 3000 }];
+  const mov = C.getMovimientos(ventas, gastos);
+  assert.strictEqual(mov.length, 3);
+  assert.strictEqual(mov[0].fecha, '2026-08-17T10:00:00');
+  assert.strictEqual(mov[0].signo, '-');
+  assert.strictEqual(mov[2].tipo, 'venta');
+  assert.strictEqual(mov[2].signo, '+');
+});
+
+test('findOrCreateCliente guarda la dirección cuando viene con el cliente nuevo', () => {
+  const s = C.migrateState(null);
+  const id = C.findOrCreateCliente(s, 'Ana', '3001234567', 'Cra 12 #34-56');
+  assert.strictEqual(s.clientes.find(c => c.id === id).direccion, 'Cra 12 #34-56');
+});
+
+test('migrateState agrega categoria/esAdicion/comprobante a estados viejos sin romper nada', () => {
+  const s = C.migrateState({
+    materia: [{ id: 'm1', nombre: 'Harina', cantidad: 100, costo: 1, minimo: 10 }],
+    productos: [{ id: 'p1', nombre: 'Waffle', precio: 18000, componentes: [] }],
+    ventas: [{ id: 'v1', fecha: '2026-08-01T10:00:00', items: [], total: 0, ganancia: 0 }],
+    gastos: [{ id: 'g1', fecha: '2026-08-01T10:00:00', tipo: 'operativo', categoria: 'Aseo', monto: 5000 }],
+    clientes: [{ id: 'c1', nombre: 'Ana', telefono: '300' }]
+  });
+  assert.strictEqual(s.materia[0].categoria, '');
+  assert.strictEqual(s.materia[0].esAdicion, false);
+  assert.strictEqual(s.productos[0].categoria, '');
+  assert.strictEqual(s.ventas[0].metodoPago, 'efectivo');
+  assert.strictEqual(s.gastos[0].comprobante, '');
+  assert.strictEqual(s.clientes[0].direccion, '');
+});
+
+test('getCostoProducto suma un componente tipo empaques o toppings, no solo materia', () => {
+  const s = C.migrateState({
+    empaques: [{ id: 'vaso', nombre: 'Vaso', cantidad: 100, costo: 250, minimo: 10 }],
+    toppings: [{ id: 'choco', nombre: 'Chocolate', cantidad: 100, costo: 10, precio: 3000, minimo: 10 }],
+    productos: [{ id: 'p1', nombre: 'Malteada', precio: 15000, componentes: [{ tipo: 'empaques', refId: 'vaso', gramos: 1 }, { tipo: 'toppings', refId: 'choco', gramos: 20 }] }]
+  });
+  const producto = s.productos[0];
+  // 1 vaso × 250 + 20 × 10 (chocolate) = 450
+  assert.strictEqual(C.getCostoProducto(producto, s), 450);
+});
+
+test('applyVenta descuenta stock de un componente tipo empaques/toppings en la receta', () => {
+  const s = C.migrateState({
+    empaques: [{ id: 'vaso', nombre: 'Vaso', cantidad: 100, costo: 250, minimo: 10 }],
+    productos: [{ id: 'p1', nombre: 'Malteada', precio: 15000, componentes: [{ tipo: 'empaques', refId: 'vaso', gramos: 1 }], empaquesUsados: [] }]
+  });
+  const venta = C.applyVenta(s, [{ productoId: 'p1', qty: 3 }], []);
+  assert.strictEqual(s.empaques[0].cantidad, 97);
+  C.revertVenta(s, venta);
+  assert.strictEqual(s.empaques[0].cantidad, 100);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);
