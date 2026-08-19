@@ -1847,51 +1847,41 @@ function generateCierreCajaPDF() {
   const unidades = ventas.reduce((a,v) => a + v.items.reduce((b,i) => b + i.qty, 0), 0);
   const totalGastos = gastos.reduce((a,g) => a + g.monto, 0);
 
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
-  doc.text('Crumbly', 14, 18);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
-  doc.text('Cierre de caja — ' + getPeriodLabel('dia'), 14, 25);
-  doc.setFontSize(9); doc.setTextColor(120);
-  doc.text(getPeriodRangeLabel('dia'), 14, 31);
-  doc.setTextColor(0);
+  let y = pdfHeader(doc, 'Cierre de caja', getPeriodLabel('dia'), getPeriodRangeLabel('dia'));
 
-  doc.autoTable({
-    startY: 38,
+  y = pdfMinimalTable(doc, {
+    startY: y,
     head: [['Ventas', 'Unidades', 'Ingresos', 'Gastos', 'Utilidad neta', 'Ticket prom.']],
     body: [[String(ventas.length), String(unidades), fmt(casc.ingresos), fmt(totalGastos), fmt(casc.utilidadNeta), fmt(CrumblyCore.getTicketPromedio(ventas))]],
-    styles: { fontSize: 8.5, halign: 'center' },
-    headStyles: { fillColor: [74, 55, 40], textColor: 255 }
-  });
+    columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } }
+  }) + 14;
 
-  let y = doc.lastAutoTable.finalY + 10;
-  doc.setFontSize(12); doc.text('Ventas del día', 14, y);
+  pdfSectionLabel(doc, 'Ventas del día', y); y += 7;
   const rows = ventas.map(v => {
     const d = new Date(v.fecha);
     const hora = d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
     const cliente = v.clienteId ? (state.clientes.find(c => c.id === v.clienteId) || {}).nombre : '';
     return [hora, v.items.map(i => i.nombre + ' x' + i.qty).join(', '), cliente || '—', fmt(v.total)];
   });
-  doc.autoTable({
-    startY: y + 4,
+  y = pdfMinimalTable(doc, {
+    startY: y,
     head: [['Hora', 'Productos', 'Cliente', 'Total']],
     body: rows.length ? rows : [['—', 'Sin ventas hoy', '—', '—']],
-    styles: { fontSize: 8, cellPadding: 3 },
-    headStyles: { fillColor: [74, 55, 40], textColor: 255 },
-    columnStyles: { 1: { cellWidth: 70 } }
-  });
+    columnStyles: { 1: { cellWidth: 70 }, 3: { halign: 'right' } }
+  }) + 14;
 
   if (gastos.length) {
-    y = doc.lastAutoTable.finalY + 10;
-    doc.setFontSize(12); doc.text('Gastos del día', 14, y);
-    doc.autoTable({
-      startY: y + 4,
+    y = pdfCheckPageBreak(doc, y);
+    pdfSectionLabel(doc, 'Gastos del día', y); y += 7;
+    pdfMinimalTable(doc, {
+      startY: y,
       head: [['Tipo', 'Categoría', 'Descripción', 'Monto']],
       body: gastos.map(g => [GASTO_TIPO_LABEL[g.tipo], g.categoria, g.descripcion || g.proveedor || '—', fmt(g.monto)]),
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [74, 55, 40], textColor: 255 }
+      columnStyles: { 3: { halign: 'right' } }
     });
   }
 
+  pdfFooter(doc);
   doc.save('crumbly-cierre-caja-' + new Date().toISOString().slice(0, 10) + '.pdf');
   showToast('Cierre de caja descargado');
 }
@@ -1907,6 +1897,56 @@ function calcInventoryNeeds() {
 }
 const TIPO_LABEL = { materia: '', empaques: ' (empaque)', toppings: ' (topping)' };
 
+/* ─── EXPORTAR PDF: estilo minimal tipo invoice (título grande, líneas
+   finas, sin tablas con fondo de color) — helpers compartidos para no
+   repetir el mismo layout en cada reporte. ─── */
+const PDF_MARGIN = 20;
+const PDF_RIGHT = 190;
+function pdfHeader(doc, title, metaLeft, metaRight) {
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(24); doc.setTextColor(20);
+  doc.text(title, PDF_MARGIN, 28);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(130);
+  doc.text(metaLeft, PDF_MARGIN, 37);
+  doc.text(metaRight, PDF_RIGHT, 37, { align: 'right' });
+  doc.setDrawColor(225); doc.setLineWidth(0.2);
+  doc.line(PDF_MARGIN, 43, PDF_RIGHT, 43);
+  doc.setTextColor(20);
+  return 55;
+}
+function pdfSectionLabel(doc, text, y) {
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(20);
+  doc.text(text, PDF_MARGIN, y);
+}
+function pdfMinimalTable(doc, opts) {
+  doc.autoTable(Object.assign({
+    theme: 'plain',
+    margin: { left: PDF_MARGIN, right: 210 - PDF_RIGHT },
+    styles: { fontSize: 8.5, textColor: [30, 30, 30], cellPadding: { top: 5, right: 3, bottom: 5, left: 3 } },
+    headStyles: { textColor: [140, 140, 140], fontStyle: 'normal', fontSize: 7.5, cellPadding: { top: 0, right: 3, bottom: 6, left: 3 } },
+    didDrawCell: function (data) {
+      if (data.section === 'head') {
+        doc.setDrawColor(210); doc.setLineWidth(0.15);
+        doc.line(data.cell.x, data.cell.y + data.cell.height, data.cell.x + data.cell.width, data.cell.y + data.cell.height);
+      }
+    }
+  }, opts));
+  return doc.lastAutoTable.finalY;
+}
+function pdfCheckPageBreak(doc, y, limit) {
+  if (y > (limit || 258)) { doc.addPage(); return 28; }
+  return y;
+}
+function pdfFooter(doc) {
+  const pages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(170);
+    doc.text('Crumbly', PDF_MARGIN, 289);
+    doc.text('Pagina ' + i + ' de ' + pages, PDF_RIGHT, 289, { align: 'right' });
+  }
+  doc.setTextColor(20);
+}
+
 /* ─── EXPORTAR PDF ─── */
 function getWeekRangeLabel() { return getPeriodRangeLabel('semana'); }
 function generateSalesReportPDF() {
@@ -1919,43 +1959,38 @@ function generateSalesReportPDF() {
   const costos = ingresos - ganancias;
   const unidades = ventas.reduce((a, v) => a + v.items.reduce((b, i) => b + i.qty, 0), 0);
 
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
-  doc.text('Crumbly', 14, 18);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
-  doc.text('Reporte de ventas \u2014 ' + getReportLabel(), 14, 25);
-  doc.setFontSize(9); doc.setTextColor(120);
-  doc.text('Periodo: ' + getReportRangeLabel(), 14, 31);
-  doc.setTextColor(0);
+  let y = pdfHeader(doc, 'Reporte de ventas', getReportLabel(), getReportRangeLabel());
 
-  doc.autoTable({
-    startY: 38,
-    head: [['Ingresos', 'Costos', 'Ganancias', 'Ventas', 'Unidades']],
-    body: [[
-      fmt(ingresos), fmt(costos), fmt(ganancias), String(ventas.length), String(unidades)
-    ]],
-    styles: { fontSize: 9, halign: 'center' },
-    headStyles: { fillColor: [74, 55, 40], textColor: 255 }
-  });
+  // N\u00famero "hero" de ingresos totales, al estilo del total grande de una
+  // factura \u2014 el resto del resumen queda en la tabla minimal de abajo.
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(130);
+  doc.text('Ingresos totales', PDF_RIGHT, y, { align: 'right' });
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(24); doc.setTextColor(20);
+  doc.text(fmt(ingresos), PDF_RIGHT, y + 11, { align: 'right' });
+  doc.setTextColor(20);
+  y += 22;
 
-  let y = doc.lastAutoTable.finalY + 10;
-  doc.setFontSize(12); doc.setTextColor(0); doc.text('Detalle de ventas', 14, y);
+  y = pdfMinimalTable(doc, {
+    startY: y,
+    head: [['Costos', 'Ganancias', 'Ventas', 'Unidades']],
+    body: [[fmt(costos), fmt(ganancias), String(ventas.length), String(unidades)]],
+    columnStyles: { 0: { halign: 'right' }, 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } }
+  }) + 14;
 
+  pdfSectionLabel(doc, 'Detalle de ventas', y); y += 7;
   const rows = ventas.map(v => {
     const d = new Date(v.fecha);
     const fecha = d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }) + ' ' + d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
     const productos = v.items.map(i => i.nombre + ' x' + i.qty).join(', ');
     return [fecha, productos, fmt(v.total), fmt(v.ganancia)];
   });
-  doc.autoTable({
-    startY: y + 4,
+  y = pdfMinimalTable(doc, {
+    startY: y,
     head: [['Fecha', 'Productos', 'Total', 'Ganancia']],
     body: rows.length ? rows : [['\u2014', 'Sin ventas en este periodo', '\u2014', '\u2014']],
-    styles: { fontSize: 8, cellPadding: 3 },
-    headStyles: { fillColor: [74, 55, 40], textColor: 255 },
-    columnStyles: { 1: { cellWidth: 78 } }
-  });
+    columnStyles: { 1: { cellWidth: 74 }, 2: { halign: 'right' }, 3: { halign: 'right' } }
+  }) + 14;
 
-  y = doc.lastAutoTable.finalY + 10;
   const prod = {};
   ventas.forEach(v => v.items.forEach(i => {
     if (!prod[i.nombre]) prod[i.nombre] = { gan: 0, qty: 0 };
@@ -1964,46 +1999,43 @@ function generateSalesReportPDF() {
   }));
   const sorted = Object.entries(prod).sort((a, b) => b[1].gan - a[1].gan);
   if (sorted.length) {
-    doc.setFontSize(12); doc.text('Productos mas rentables', 14, y);
-    doc.autoTable({
-      startY: y + 4,
+    y = pdfCheckPageBreak(doc, y);
+    pdfSectionLabel(doc, 'Productos m\u00e1s rentables', y); y += 7;
+    y = pdfMinimalTable(doc, {
+      startY: y,
       head: [['Producto', 'Unidades', 'Ganancia']],
       body: sorted.map(([n, d]) => [n, String(d.qty), fmt(d.gan)]),
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [196, 149, 106], textColor: 255 }
-    });
-    y = doc.lastAutoTable.finalY + 10;
+      columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' } }
+    }) + 14;
   }
 
-  // Cascada de utilidad + desglose de gastos del período (HANDOFF §9.5).
+  // Cascada de utilidad + desglose de gastos del per\u00edodo (HANDOFF \u00a79.5).
   const casc = getReportCascada();
-  if (y > 250) { doc.addPage(); y = 20; }
-  doc.setFontSize(12); doc.setTextColor(0); doc.text('Utilidad neta y flujo de caja', 14, y);
-  doc.autoTable({
-    startY: y + 4,
-    head: [['Utilidad bruta', 'Gastos operativos', 'Depreciación', 'Utilidad neta', 'Flujo de caja']],
+  y = pdfCheckPageBreak(doc, y);
+  pdfSectionLabel(doc, 'Utilidad neta y flujo de caja', y); y += 7;
+  y = pdfMinimalTable(doc, {
+    startY: y,
+    head: [['Utilidad bruta', 'Gastos operativos', 'Depreciaci\u00f3n', 'Utilidad neta', 'Flujo de caja']],
     body: [[fmt(casc.utilidadBruta), '-' + fmt(casc.totalOperativos), '-' + fmt(casc.depreciacion), fmt(casc.utilidadNeta), fmt(casc.flujoCaja)]],
-    styles: { fontSize: 8.5, halign: 'center' },
-    headStyles: { fillColor: [74, 55, 40], textColor: 255 }
-  });
-  y = doc.lastAutoTable.finalY + 10;
+    columnStyles: { 0: { halign: 'right' }, 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } }
+  }) + 14;
 
   const gastosPeriodo = getReportGastos();
   if (gastosPeriodo.length) {
-    if (y > 250) { doc.addPage(); y = 20; }
-    doc.setFontSize(12); doc.text('Gastos del período', 14, y);
-    doc.autoTable({
-      startY: y + 4,
-      head: [['Fecha', 'Tipo', 'Categoría', 'Descripción', 'Monto']],
+    y = pdfCheckPageBreak(doc, y);
+    pdfSectionLabel(doc, 'Gastos del per\u00edodo', y); y += 7;
+    pdfMinimalTable(doc, {
+      startY: y,
+      head: [['Fecha', 'Tipo', 'Categor\u00eda', 'Descripci\u00f3n', 'Monto']],
       body: gastosPeriodo.map(g => {
         const d = new Date(g.fecha);
-        return [d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }), g.tipo, g.categoria, g.descripcion || g.proveedor || '—', fmt(g.monto)];
+        return [d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }), g.tipo, g.categoria, g.descripcion || g.proveedor || '\u2014', fmt(g.monto)];
       }),
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [74, 55, 40], textColor: 255 }
+      columnStyles: { 4: { halign: 'right' } }
     });
   }
 
+  pdfFooter(doc);
   doc.save('crumbly-ventas-' + reportPeriod + '-' + new Date().toISOString().slice(0, 10) + '.pdf');
   showToast('Reporte de ventas descargado');
 }
@@ -2013,22 +2045,16 @@ function generateInventoryReportPDF() {
   const doc = new jsPDF();
   const data = calcInventoryNeeds();
 
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
-  doc.text('Crumbly', 14, 18);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
-  doc.text('Reporte semanal de inventario', 14, 25);
-  doc.setFontSize(9); doc.setTextColor(120);
-  doc.text('Generado: ' + new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }), 14, 31);
-  doc.setTextColor(0);
+  let y = pdfHeader(doc, 'Reporte de inventario', 'Semanal', 'Generado: ' + new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }));
 
   const urgent = data.filter(d => d.necesitaComprar);
-  let y = 40;
   if (urgent.length) {
-    doc.setFontSize(12); doc.setTextColor(196, 74, 74);
-    doc.text('Insumos a reabastecer pronto', 14, y);
-    doc.setTextColor(0);
-    doc.autoTable({
-      startY: y + 4,
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(178, 59, 59);
+    doc.text('Insumos a reabastecer pronto', PDF_MARGIN, y);
+    doc.setTextColor(20);
+    y += 7;
+    y = pdfMinimalTable(doc, {
+      startY: y,
       head: [['Insumo', 'Disponible', 'Consumo/semana', 'Semanas rest.', 'Sugerido comprar']],
       body: urgent.map(d => [
         d.nombre + TIPO_LABEL[d.tipo],
@@ -2037,21 +2063,21 @@ function generateInventoryReportPDF() {
         d.semanasRestantes === Infinity ? '\u2014' : d.semanasRestantes.toFixed(1),
         d.sugerido > 0 ? d.sugerido.toFixed(0) + d.unidadLabel : '\u2014'
       ]),
-      styles: { fontSize: 8.5 },
-      headStyles: { fillColor: [196, 74, 74], textColor: 255 }
-    });
-    y = doc.lastAutoTable.finalY + 10;
+      columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } }
+    }) + 14;
   } else {
-    doc.setFontSize(10);
-    doc.text('No hay insumos criticos esta semana.', 14, y);
-    y += 8;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(90);
+    doc.text('No hay insumos cr\u00edticos esta semana.', PDF_MARGIN, y);
+    doc.setTextColor(20);
+    y += 14;
   }
 
   // P1-1: esta tabla ahora s\u00ed incluye los tres tipos de insumo \u2014 antes
   // se llamaba "Inventario completo" pero solo tra\u00eda materia prima.
-  doc.setFontSize(12); doc.text('Inventario completo (materia prima, empaque y toppings)', 14, y);
-  doc.autoTable({
-    startY: y + 4,
+  y = pdfCheckPageBreak(doc, y);
+  pdfSectionLabel(doc, 'Inventario completo (materia prima, empaque y toppings)', y); y += 7;
+  pdfMinimalTable(doc, {
+    startY: y,
     head: [['Insumo', 'Disponible', 'Minimo', 'Consumo/semana', 'Semanas rest.', 'Estado']],
     body: data.map(d => [
       d.nombre + TIPO_LABEL[d.tipo],
@@ -2061,10 +2087,10 @@ function generateInventoryReportPDF() {
       d.semanasRestantes === Infinity ? '\u2014' : d.semanasRestantes.toFixed(1),
       d.necesitaComprar ? 'Urgente' : 'OK'
     ]),
-    styles: { fontSize: 8 },
-    headStyles: { fillColor: [74, 55, 40], textColor: 255 }
+    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } }
   });
 
+  pdfFooter(doc);
   doc.save('crumbly-inventario-semana-' + new Date().toISOString().slice(0, 10) + '.pdf');
   showToast('Reporte de inventario descargado');
 }
