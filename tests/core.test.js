@@ -1047,6 +1047,21 @@ test('applyVenta descuenta stock de un componente tipo empaques/toppings en la r
   assert.strictEqual(s.empaques[0].cantidad, 100);
 });
 
+test('getIngresosPorDia devuelve 7 días cronológicos con el total correcto por día', () => {
+  const ventas = [
+    { fecha: '2026-08-17T10:00:00', total: 100 },
+    { fecha: '2026-08-17T18:00:00', total: 50 },
+    { fecha: '2026-08-15T10:00:00', total: 200 }
+  ];
+  const dias = C.getIngresosPorDia(ventas, 7, '2026-08-17T20:00:00');
+  assert.strictEqual(dias.length, 7);
+  assert.strictEqual(dias[6].fecha, '2026-08-17');
+  assert.strictEqual(dias[6].total, 150);
+  assert.strictEqual(dias[6].esHoy, true);
+  const dia15 = dias.find(d => d.fecha === '2026-08-15');
+  assert.strictEqual(dia15.total, 200);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);

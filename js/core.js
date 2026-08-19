@@ -96,6 +96,28 @@
     });
   }
 
+  // Ingresos por día de los últimos `days` días (incluye hoy), en orden
+  // cronológico — para la gráfica de barras del Dashboard (rediseño). Cada
+  // punto trae la fecha local (YYYY-MM-DD) para no repetir el cálculo de
+  // huso horario que ya rompió rangeBounds() una vez (ver parseLocalDate).
+  var DIAS_LABEL = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+  function getIngresosPorDia(ventas, days, ref) {
+    var end = ref ? new Date(ref) : new Date();
+    var out = [];
+    for (var i = (days || 7) - 1; i >= 0; i--) {
+      var d = new Date(end.getFullYear(), end.getMonth(), end.getDate() - i);
+      out.push({ fecha: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'), dayLabel: DIAS_LABEL[d.getDay()], total: 0, esHoy: i === 0 });
+    }
+    var byDate = {};
+    out.forEach(function (o) { byDate[o.fecha] = o; });
+    (ventas || []).forEach(function (v) {
+      var f = new Date(v.fecha);
+      var key = f.getFullYear() + '-' + String(f.getMonth() + 1).padStart(2, '0') + '-' + String(f.getDate()).padStart(2, '0');
+      if (byDate[key]) byDate[key].total += v.total;
+    });
+    return out;
+  }
+
   // ─── Estado / migraciones (P1-3) ───────────────────────────
 
   function emptyState() {
@@ -1055,6 +1077,7 @@
     findPreparacionesUsandoPreparacion: findPreparacionesUsandoPreparacion,
     findPreparacionesUsandoMateria: findPreparacionesUsandoMateria,
     getMargenProducto: getMargenProducto,
+    getIngresosPorDia: getIngresosPorDia,
     getInsumosUnificados: getInsumosUnificados,
     getAdiciones: getAdiciones,
     getMovimientos: getMovimientos,
