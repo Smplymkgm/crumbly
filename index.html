@@ -363,9 +363,9 @@ textarea.field{height:auto}
     </div>
     <div style="display:flex;gap:10px">
       <div class="modal-field" style="flex:1">
-        <label class="field-label">Categoría</label>
-        <input type="text" id="ins-categoria" class="field" list="ins-categorias-list" placeholder="Ej: Frutas">
-        <datalist id="ins-categorias-list"></datalist>
+        <label class="field-label">Categoría (escribe para crear una nueva)</label>
+        <input type="text" id="ins-categoria" class="field" placeholder="Ej: Frutas">
+        <div id="ins-categorias-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
       </div>
       <div class="modal-field" style="flex:1">
         <label class="field-label">Tipo de medición</label>
@@ -486,9 +486,9 @@ textarea.field{height:auto}
     </div>
     <div style="display:flex;gap:10px">
       <div class="modal-field" style="flex:1">
-        <label class="field-label">Categoría</label>
-        <input type="text" id="p-categoria" class="field" list="p-categorias-list" placeholder="Ej: Waffles">
-        <datalist id="p-categorias-list"></datalist>
+        <label class="field-label">Categoría (escribe para crear una nueva)</label>
+        <input type="text" id="p-categoria" class="field" placeholder="Ej: Waffles">
+        <div id="p-categorias-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
       </div>
       <div class="modal-field" style="flex:1">
         <label>Precio de venta ($)</label>
@@ -1007,7 +1007,9 @@ function openInsumoModal(id) {
     document.getElementById('ins-delete-btn').style.display = 'none';
   }
   document.getElementById('ins-adicion-fields').style.display = document.getElementById('ins-es-adicion').checked ? 'block' : 'none';
-  document.getElementById('ins-categorias-list').innerHTML = insumoCategorias().map(c => `<option value="${esc(c)}">`).join('');
+  document.getElementById('ins-categorias-chips').innerHTML = insumoCategorias().map(c =>
+    `<button type="button" class="chip" onclick="document.getElementById('ins-categoria').value='${esc(c)}'">${esc(c)}</button>`
+  ).join('');
   openModal('modal-insumo');
 }
 function saveInsumo() {
@@ -1297,7 +1299,9 @@ function openModalProducto(id) {
   empRows = [];
   document.getElementById('prod-ings-wrap').innerHTML = '';
   document.getElementById('prod-emp-wrap').innerHTML = '';
-  document.getElementById('p-categorias-list').innerHTML = Array.from(new Set(state.productos.map(p => p.categoria).filter(Boolean))).map(c => `<option value="${esc(c)}">`).join('');
+  document.getElementById('p-categorias-chips').innerHTML = Array.from(new Set(state.productos.map(p => p.categoria).filter(Boolean))).sort().map(c =>
+    `<button type="button" class="chip" onclick="document.getElementById('p-categoria').value='${esc(c)}'">${esc(c)}</button>`
+  ).join('');
   if (id) {
     const p = state.productos.find(x => x.id === id);
     document.getElementById('modal-prod-title').textContent = 'Editar producto';
