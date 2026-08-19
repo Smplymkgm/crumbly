@@ -155,6 +155,14 @@ function mirrorCollections_(state) {
     (state.gastos || []).map(function (g) {
       return [g.id, g.fecha, g.tipo, g.categoria, g.monto, g.proveedor || '', g.descripcion || '', g.insumoTipo || '', g.insumoId || '', g.cantidad || '', g.vidaUtilMeses || ''];
     }));
+
+  // Mermas: movimiento de INVENTARIO, nunca de Caja — no aparece en la hoja
+  // "gastos" ni afecta ninguna columna de dinero. Espejo de solo lectura,
+  // igual que el resto: la fuente de verdad sigue siendo state_json.
+  writeSheet_('mermas', ['id', 'fecha', 'origenTipo', 'origenId', 'cantidad', 'costoUnitario', 'valorTotal', 'motivo', 'observaciones', 'usuario', 'stockInsuficiente'],
+    (state.mermas || []).map(function (m) {
+      return [m.id, m.fecha, m.origenTipo, m.origenId, m.cantidad, m.costoUnitario, m.valorTotal, m.motivo, m.observaciones || '', m.usuario || '', !!m.stockInsuficiente];
+    }));
 }
 
 // Aplana coleccion[].campoAnidado[] en filas [padre, ...hijo] usando `mapRow`.

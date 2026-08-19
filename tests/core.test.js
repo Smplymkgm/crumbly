@@ -1062,6 +1062,132 @@ test('getIngresosPorDia devuelve 7 días cronológicos con el total correcto por
   assert.strictEqual(dia15.total, 200);
 });
 
+console.log('\n== Mermas (pérdidas de inventario, nunca movimiento de Caja) ==');
+
+function stateConMermas() {
+  return C.migrateState({
+    materia: [{ id: 'm1', nombre: 'Harina', cantidad: 1000, costo: 10, minimo: 100 }],
+    empaques: [{ id: 'vaso', nombre: 'Vaso', cantidad: 50, costo: 250, minimo: 10 }],
+    toppings: [{ id: 't1', nombre: 'Chispas', cantidad: 30, costo: 20, precio: 500, minimo: 5 }],
+    productos: [{ id: 'p1', nombre: 'Waffle', precio: 20000, componentes: [{ tipo: 'materia', refId: 'm1', gramos: 100 }], empaquesUsados: [{ empaqueId: 'vaso', cantidad: 1 }], empaqueManual: 0 }],
+    ventas: [], gastos: [], mermas: []
+  });
+}
+
+test('registrarMerma de un insumo directo descuenta su cantidad y calcula el valor con el costo ya existente', () => {
+  const s = stateConMermas();
+  const merma = C.registrarMerma(s, { origenTipo: 'materia', origenId: 'm1', cantidad: 3, motivo: 'Vencido' });
+  assert.strictEqual(s.materia[0].cantidad, 997);
+  assert.strictEqual(merma.costoUnitario, 10);
+  assert.strictEqual(merma.valorTotal, 30);
+});
+
+test('ejemplo del enunciado: 20 unidades a $5.000, se desechan 3 -> quedan 17 y la merma vale $15.000', () => {
+  const s = C.migrateState({ toppings: [{ id: 'salsa', nombre: 'Salsa de la casa', cantidad: 20, costo: 5000, precio: 0, minimo: 1 }] });
+  const merma = C.registrarMerma(s, { origenTipo: 'toppings', origenId: 'salsa', cantidad: 3, motivo: 'Dañado' });
+  assert.strictEqual(s.toppings[0].cantidad, 17);
+  assert.strictEqual(merma.valorTotal, 15000);
+});
+
+test('registrarMerma de un producto preparado (BOM) descuenta sus insumos reales, no un stock propio del producto', () => {
+  const s = stateConMermas();
+  // Waffle: 100g harina + 1 vaso por unidad. Merma de 2 waffles no vendidos.
+  const merma = C.registrarMerma(s, { origenTipo: 'producto', origenId: 'p1', cantidad: 2, motivo: 'No vendido' });
+  assert.strictEqual(s.materia[0].cantidad, 800); // 1000 - 200g
+  assert.strictEqual(s.empaques[0].cantidad, 48); // 50 - 2 vasos
+  // costo del waffle = 100*10 (materia) + 1*250 (vaso) = 1250; x2 = 2500
+  assert.strictEqual(merma.valorTotal, 2500);
+});
+
+test('registrarMerma NUNCA crea un gasto ni una venta — no es un movimiento de Caja', () => {
+  const s = stateConMermas();
+  C.registrarMerma(s, { origenTipo: 'materia', origenId: 'm1', cantidad: 5, motivo: 'Derrame' });
+  assert.strictEqual(s.gastos.length, 0);
+  assert.strictEqual(s.ventas.length, 0);
+});
+
+test('registrarMerma valida cantidad > 0, motivo obligatorio y origen existente', () => {
+  const s = stateConMermas();
+  assert.throws(() => C.registrarMerma(s, { origenTipo: 'materia', origenId: 'm1', cantidad: 0, motivo: 'Vencido' }));
+  assert.throws(() => C.registrarMerma(s, { origenTipo: 'materia', origenId: 'm1', cantidad: 1, motivo: '' }));
+  assert.throws(() => C.registrarMerma(s, { origenTipo: 'materia', origenId: 'no-existe', cantidad: 1, motivo: 'Vencido' }));
+  assert.strictEqual(s.mermas.length, 0);
+});
+
+test('registrarMerma clampea a 0 si la cantidad supera el disponible (mismo criterio que applyVenta) y lo marca stockInsuficiente', () => {
+  const s = stateConMermas();
+  const merma = C.registrarMerma(s, { origenTipo: 'materia', origenId: 'm1', cantidad: 5000, motivo: 'Vencido', stockInsuficiente: true });
+  assert.strictEqual(s.materia[0].cantidad, 0);
+  assert.strictEqual(merma.stockInsuficiente, true);
+  assert.strictEqual(merma.consumoReal.materia['m1'], 1000); // lo que realmente se descontó, no lo pedido
+});
+
+test('eliminarMerma revierte exactamente lo descontado (consumoReal), no recalcula desde la receta actual', () => {
+  const s = stateConMermas();
+  const merma = C.registrarMerma(s, { origenTipo: 'producto', origenId: 'p1', cantidad: 2, motivo: 'Quemado' });
+  assert.strictEqual(s.materia[0].cantidad, 800);
+  assert.strictEqual(s.empaques[0].cantidad, 48);
+  C.eliminarMerma(s, merma.id);
+  assert.strictEqual(s.materia[0].cantidad, 1000);
+  assert.strictEqual(s.empaques[0].cantidad, 50);
+  assert.strictEqual(s.mermas.length, 0);
+});
+
+test('eliminarMerma de una merma con stock insuficiente no deja el inventario por encima del real (revierte lo clampeado, no lo pedido)', () => {
+  const s = stateConMermas();
+  const merma = C.registrarMerma(s, { origenTipo: 'materia', origenId: 'm1', cantidad: 5000, motivo: 'Vencido' });
+  assert.strictEqual(s.materia[0].cantidad, 0);
+  C.eliminarMerma(s, merma.id);
+  assert.strictEqual(s.materia[0].cantidad, 1000); // vuelve a lo que había, no a 5000
+});
+
+test('getCascadaUtilidad resta las mermas de la utilidad neta pero NUNCA del flujo de caja', () => {
+  const s = stateConMermas();
+  C.applyVenta(s, [{ productoId: 'p1', qty: 1, toppings: [] }], [], {});
+  // ingresos 20000, costo 1250 (100g*10 + 1 vaso*250), utilidad bruta 18750
+  C.registrarMerma(s, { origenTipo: 'materia', origenId: 'm1', cantidad: 10, motivo: 'Vencido' }); // 10*10 = $100 de merma
+  const c = C.getCascadaUtilidad(s, 'mes');
+  assert.strictEqual(c.mermas, 100);
+  assert.strictEqual(c.utilidadNeta, 18750 - 100);
+  assert.strictEqual(c.flujoCaja, 20000); // ninguna merma ni gasto — el flujo de caja no se mueve
+});
+
+test('computeCascada con la firma vieja de 3 argumentos (sin mermasValor) sigue funcionando igual que antes', () => {
+  const c = C.computeCascada([{ total: 1000, ganancia: 400 }], [], 0);
+  assert.strictEqual(c.mermas, 0);
+  assert.strictEqual(c.utilidadNeta, 400);
+});
+
+test('migrateState agrega mermas:[] a un estado viejo sin romper nada', () => {
+  const s = C.migrateState({ materia: [{ id: 'm1', nombre: 'Harina', cantidad: 100, costo: 1, minimo: 10 }] });
+  assert.deepStrictEqual(s.mermas, []);
+});
+
+test('getValorTotalMermas / agruparMermasPorMotivo / getMermaOrigenNombre / agruparMermasPorOrigen', () => {
+  const s = stateConMermas();
+  C.registrarMerma(s, { origenTipo: 'materia', origenId: 'm1', cantidad: 3, motivo: 'Vencido', fecha: '2026-08-01T10:00:00' });
+  C.registrarMerma(s, { origenTipo: 'toppings', origenId: 't1', cantidad: 2, motivo: 'Vencido', fecha: '2026-08-02T10:00:00' });
+  C.registrarMerma(s, { origenTipo: 'materia', origenId: 'm1', cantidad: 1, motivo: 'Derrame', fecha: '2026-08-03T10:00:00' });
+  assert.strictEqual(C.getValorTotalMermas(s.mermas), 30 + 40 + 10);
+  const porMotivo = C.agruparMermasPorMotivo(s.mermas);
+  assert.strictEqual(porMotivo['Vencido'], 70);
+  assert.strictEqual(porMotivo['Derrame'], 10);
+  assert.strictEqual(C.getMermaOrigenNombre(s, s.mermas[0]), 'Harina');
+  const porOrigen = C.agruparMermasPorOrigen(s, s.mermas);
+  assert.strictEqual(porOrigen['Harina'].cantidad, 4);
+  assert.strictEqual(porOrigen['Harina'].valor, 40);
+});
+
+test('getMermasByPeriod / getMermasByRange filtran por fecha igual que ventas/gastos', () => {
+  const s = stateConMermas();
+  C.registrarMerma(s, { origenTipo: 'materia', origenId: 'm1', cantidad: 1, motivo: 'Vencido', fecha: '2020-01-01T10:00:00' });
+  C.registrarMerma(s, { origenTipo: 'materia', origenId: 'm1', cantidad: 1, motivo: 'Vencido', fecha: new Date().toISOString() });
+  const hoy = C.getMermasByPeriod(s.mermas, 'dia');
+  assert.strictEqual(hoy.length, 1);
+  const rango = C.getMermasByRange(s.mermas, '2019-12-01', '2020-02-01');
+  assert.strictEqual(rango.length, 1);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);

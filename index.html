@@ -347,6 +347,34 @@ textarea.field{height:auto}
         <div class="card">
           <div id="preparaciones-list"><p class="empty">No hay preparaciones registradas</p></div>
         </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px">
+          <div class="page-title" style="font-size:13px">Mermas</div>
+          <button class="btn btn-outline" style="padding:7px 12px" onclick="openModalMerma()"><i class="ph ph-plus"></i> Registrar merma</button>
+        </div>
+        <p class="item-sub">Producto o insumo perdido, vencido, dañado o desechado — descuenta el inventario, nunca la caja.</p>
+        <div class="pill-row" id="merma-period-row" style="width:fit-content">
+          <button class="pill-btn" onclick="setMermaPeriodo('semana',this)">Semana</button>
+          <button class="pill-btn active" onclick="setMermaPeriodo('mes',this)">Mes</button>
+          <button class="pill-btn" onclick="setMermaPeriodo('anio',this)">Año</button>
+          <button class="pill-btn" onclick="setMermaPeriodo('todas',this)">Todas</button>
+        </div>
+        <div class="card">
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px">
+            <div><div style="font-size:15px;font-weight:600" id="merma-registros">0</div><div class="item-sub">Registros</div></div>
+            <div><div style="font-size:15px;font-weight:600;color:var(--danger)" id="merma-valor-total">$0</div><div class="item-sub">Valor perdido</div></div>
+            <div><div style="font-size:15px;font-weight:600" id="merma-motivo-top">—</div><div class="item-sub">Motivo principal</div></div>
+          </div>
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px">
+            <div class="card-title">Por motivo</div>
+            <button class="btn btn-outline" style="padding:6px 10px" onclick="generateMermasReportPDF()"><i class="ph ph-download-simple"></i> Reporte PDF</button>
+          </div>
+          <div id="merma-por-motivo"><p class="empty">Sin mermas en este período</p></div>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <div style="padding:14px 16px 4px"><div class="card-title">Últimas mermas</div></div>
+          <div id="merma-list"><p class="empty" style="padding:1.5rem">Sin mermas registradas</p></div>
+        </div>
       </div>
 
       <!-- PRODUCTOS -->
@@ -630,6 +658,62 @@ textarea.field{height:auto}
     <div class="modal-btns">
       <button class="btn-cancel" onclick="closeModal('modal-gasto')">Cancelar</button>
       <button class="btn-save" onclick="saveGasto()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL MERMA -->
+<div class="modal-overlay" id="modal-merma">
+  <div class="modal">
+    <button class="close-modal" onclick="closeModal('modal-merma')">✕</button>
+    <div class="modal-title">Registrar merma</div>
+    <div style="display:flex;gap:10px">
+      <div class="modal-field" style="flex:1">
+        <label>Fecha</label>
+        <input type="date" id="merma-fecha">
+      </div>
+      <div class="modal-field" style="flex:1">
+        <label>Motivo</label>
+        <select id="merma-motivo"></select>
+      </div>
+    </div>
+    <label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:6px">Origen</label>
+    <div style="display:flex;gap:10px;margin-bottom:12px">
+      <div class="modal-field" style="flex:1;margin-bottom:0">
+        <select id="merma-origen-tipo" onchange="populateMermaOrigenSelect()">
+          <option value="materia">Materia prima</option>
+          <option value="empaques">Empaque</option>
+          <option value="toppings">Topping</option>
+          <option value="producto">Producto preparado</option>
+        </select>
+      </div>
+      <div class="modal-field" style="flex:2;margin-bottom:0">
+        <select id="merma-origen-id" onchange="calcMermaValor()"></select>
+      </div>
+    </div>
+    <div class="modal-field">
+      <label id="merma-cantidad-label">Cantidad</label>
+      <input type="number" id="merma-cantidad" placeholder="0" min="0" step="0.01" oninput="calcMermaValor()">
+    </div>
+    <div class="total-row" style="margin-bottom:10px">
+      <span>Costo unitario</span>
+      <strong id="merma-costo-unitario">$0</strong>
+    </div>
+    <div class="total-row" style="margin-bottom:10px">
+      <span>Valor total de la merma</span>
+      <strong id="merma-valor-calc" style="color:var(--danger)">$0</strong>
+    </div>
+    <div class="modal-field">
+      <label>Observaciones (opcional)</label>
+      <input type="text" id="merma-observaciones" placeholder="Ej: se olvidó apagar el horno">
+    </div>
+    <div class="modal-field">
+      <label>Registrado por (opcional)</label>
+      <input type="text" id="merma-usuario" placeholder="Ej: Ana">
+    </div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal('modal-merma')">Cancelar</button>
+      <button class="btn-save" onclick="saveMerma()">Guardar</button>
     </div>
   </div>
 </div>
@@ -966,7 +1050,7 @@ function navTo(page, el) {
   closeMobileMenu();
   if (page === 'dashboard') renderReportes();
   if (page === 'caja') renderCaja();
-  if (page === 'inventario') renderInventario();
+  if (page === 'inventario') { renderInventario(); renderMermas(); }
   if (page === 'productos') renderProductos();
   if (page === 'clientes') renderClientes();
 }
@@ -2026,9 +2110,12 @@ function generateSalesReportPDF() {
   pdfSectionLabel(doc, 'Utilidad neta y flujo de caja', y); y += 7;
   y = pdfMinimalTable(doc, {
     startY: y,
-    head: [['Utilidad bruta', 'Gastos operativos', 'Depreciaci\u00f3n', 'Utilidad neta', 'Flujo de caja']],
-    body: [[fmt(casc.utilidadBruta), '-' + fmt(casc.totalOperativos), '-' + fmt(casc.depreciacion), fmt(casc.utilidadNeta), fmt(casc.flujoCaja)]],
-    columnStyles: { 0: { halign: 'right' }, 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } }
+    // Mermas resta de la utilidad neta (p\u00e9rdida econ\u00f3mica real) pero NO
+    // del flujo de caja (nunca sali\u00f3 dinero de la caja) \u2014 mismo criterio
+    // que la depreciaci\u00f3n. Ver CrumblyCore.computeCascada.
+    head: [['Utilidad bruta', 'Gastos operativos', 'Depreciaci\u00f3n', 'Mermas', 'Utilidad neta', 'Flujo de caja']],
+    body: [[fmt(casc.utilidadBruta), '-' + fmt(casc.totalOperativos), '-' + fmt(casc.depreciacion), '-' + fmt(casc.mermas), fmt(casc.utilidadNeta), fmt(casc.flujoCaja)]],
+    columnStyles: { 0: { halign: 'right' }, 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } }
   }) + 14;
 
   const gastosPeriodo = getReportGastos();
@@ -2099,11 +2186,85 @@ function generateInventoryReportPDF() {
       d.necesitaComprar ? 'Urgente' : 'OK'
     ]),
     columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } }
+  }) + 14;
+
+  // Mermas de los últimos 7 días (misma ventana móvil que el resto de este
+  // reporte, P1-2) — visibles aquí como categoría propia de salida de
+  // inventario, separada de ventas y compras.
+  const hace7 = new Date(); hace7.setDate(hace7.getDate() - 7);
+  const mermasSemana = CrumblyCore.getMermasByRange(state.mermas, hace7.toISOString().slice(0, 10), new Date().toISOString().slice(0, 10));
+  y = pdfCheckPageBreak(doc, y);
+  pdfSectionLabel(doc, 'Mermas (últimos 7 días)', y); y += 7;
+  const porMotivoInv = CrumblyCore.agruparMermasPorMotivo(mermasSemana);
+  const motivosInv = Object.entries(porMotivoInv).sort((a, b) => b[1] - a[1]);
+  pdfMinimalTable(doc, {
+    startY: y,
+    head: [['Motivo', 'Valor perdido']],
+    body: motivosInv.length ? motivosInv.map(([m, v]) => [m, fmt(v)]) : [['Sin mermas en los últimos 7 días', '—']],
+    columnStyles: { 1: { halign: 'right' } }
   });
 
   pdfFooter(doc);
   doc.save('crumbly-inventario-semana-' + new Date().toISOString().slice(0, 10) + '.pdf');
   showToast('Reporte de inventario descargado');
+}
+function generateMermasReportPDF() {
+  if (!window.jspdf) { showToast('No se pudo cargar el generador de PDF'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const mermas = getMermasPeriodoActivo();
+  const metaLeft = mermaPeriodo === 'todas' ? 'Todo el histórico' : getPeriodLabel(mermaPeriodo);
+  const metaRight = mermaPeriodo === 'todas' ? '' : getPeriodRangeLabel(mermaPeriodo);
+
+  let y = pdfHeader(doc, 'Reporte de mermas', metaLeft, metaRight);
+
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(130);
+  doc.text('Valor total perdido', PDF_RIGHT, y, { align: 'right' });
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(24); doc.setTextColor(20);
+  doc.text(fmt(CrumblyCore.getValorTotalMermas(mermas)), PDF_RIGHT, y + 11, { align: 'right' });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(90);
+  doc.text(mermas.length + (mermas.length === 1 ? ' registro' : ' registros'), PDF_MARGIN, y);
+  doc.setTextColor(20);
+  y += 22;
+
+  const porMotivo = CrumblyCore.agruparMermasPorMotivo(mermas);
+  const motivosOrdenados = Object.entries(porMotivo).sort((a, b) => b[1] - a[1]);
+  pdfSectionLabel(doc, 'Por motivo', y); y += 7;
+  y = pdfMinimalTable(doc, {
+    startY: y,
+    head: [['Motivo', 'Valor perdido']],
+    body: motivosOrdenados.length ? motivosOrdenados.map(([m, v]) => [m, fmt(v)]) : [['—', '—']],
+    columnStyles: { 1: { halign: 'right' } }
+  }) + 14;
+
+  const porOrigen = CrumblyCore.agruparMermasPorOrigen(state, mermas);
+  const origenesOrdenados = Object.entries(porOrigen).sort((a, b) => b[1].valor - a[1].valor);
+  y = pdfCheckPageBreak(doc, y);
+  pdfSectionLabel(doc, 'Por producto / insumo', y); y += 7;
+  y = pdfMinimalTable(doc, {
+    startY: y,
+    head: [['Producto / insumo', 'Cantidad', 'Valor perdido']],
+    body: origenesOrdenados.length ? origenesOrdenados.map(([n, d]) => [n, d.cantidad.toLocaleString('es-CO'), fmt(d.valor)]) : [['—', '—', '—']],
+    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' } }
+  }) + 14;
+
+  y = pdfCheckPageBreak(doc, y);
+  pdfSectionLabel(doc, 'Detalle', y); y += 7;
+  const rows = mermas.slice().sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).map(m => {
+    const d = new Date(m.fecha);
+    const fecha = d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' });
+    return [fecha, CrumblyCore.getMermaOrigenNombre(state, m), m.motivo, m.cantidad.toLocaleString('es-CO') + ' ' + mermaOrigenUnidad(m), fmt(m.valorTotal)];
+  });
+  pdfMinimalTable(doc, {
+    startY: y,
+    head: [['Fecha', 'Producto / insumo', 'Motivo', 'Cantidad', 'Valor']],
+    body: rows.length ? rows : [['—', 'Sin mermas en este período', '—', '—', '—']],
+    columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' } }
+  });
+
+  pdfFooter(doc);
+  doc.save('crumbly-mermas-' + mermaPeriodo + '-' + new Date().toISOString().slice(0, 10) + '.pdf');
+  showToast('Reporte de mermas descargado');
 }
 
 /* ─── CONFIG / CORREO ─── */
@@ -2237,6 +2398,162 @@ function eliminarGasto(id) {
 }
 const GASTO_TIPO_LABEL = { inventario: 'Inventario', operativo: 'Operativo', capex: 'Implemento' };
 
+/* ─── MERMAS ─── Inventario → Mermas. Una merma es un movimiento de
+   INVENTARIO — nunca crea un gasto ni una venta, nunca toca Caja. El
+   origen puede ser un insumo con stock propio (materia/empaques/toppings,
+   descuento directo) o un producto preparado (su receta se descuenta con
+   el mismo motor de componentes que usa una venta — CrumblyCore.
+   registrarMerma). Ver HANDOFF §20: nunca se duplica la fórmula de costeo
+   ni el motor de expansión de receta. */
+let mermaPeriodo = 'mes';
+function openModalMerma() {
+  document.getElementById('merma-fecha').value = todayLocalISO();
+  document.getElementById('merma-motivo').innerHTML = CrumblyCore.MERMA_MOTIVOS.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('');
+  document.getElementById('merma-origen-tipo').value = 'materia';
+  document.getElementById('merma-cantidad').value = '';
+  document.getElementById('merma-observaciones').value = '';
+  document.getElementById('merma-usuario').value = '';
+  populateMermaOrigenSelect();
+  openModal('modal-merma');
+}
+function populateMermaOrigenSelect() {
+  const tipo = document.getElementById('merma-origen-tipo').value;
+  const list = CrumblyCore.getMermaOrigenList(state, tipo) || [];
+  const sel = document.getElementById('merma-origen-id');
+  sel.innerHTML = list.length
+    ? list.map(x => `<option value="${x.id}">${esc(x.nombre)}</option>`).join('')
+    : '<option value="">-- No hay --</option>';
+  calcMermaValor();
+}
+function calcMermaValor() {
+  const tipo = document.getElementById('merma-origen-tipo').value;
+  const id = document.getElementById('merma-origen-id').value;
+  const cantidad = parseFloat(document.getElementById('merma-cantidad').value) || 0;
+  const list = CrumblyCore.getMermaOrigenList(state, tipo) || [];
+  const origen = list.find(x => x.id === id);
+  let costoUnitario = 0, unidad = 'unidad';
+  if (origen) {
+    if (tipo === 'producto') {
+      costoUnitario = CrumblyCore.getCostoProducto(origen, state);
+    } else {
+      costoUnitario = Number(origen.costo) || 0;
+      unidad = origen.unidad || (tipo === 'materia' ? 'g' : 'unidad');
+    }
+  }
+  document.getElementById('merma-cantidad-label').textContent = 'Cantidad (' + unidad + ')';
+  document.getElementById('merma-costo-unitario').textContent = fmtGramoCosto(costoUnitario) + '/' + unidad;
+  document.getElementById('merma-valor-calc').textContent = fmt(costoUnitario * cantidad);
+}
+function saveMerma() {
+  const fecha = document.getElementById('merma-fecha').value;
+  const motivo = document.getElementById('merma-motivo').value;
+  const origenTipo = document.getElementById('merma-origen-tipo').value;
+  const origenId = document.getElementById('merma-origen-id').value;
+  const cantidad = parseFloat(document.getElementById('merma-cantidad').value) || 0;
+  const observaciones = document.getElementById('merma-observaciones').value.trim();
+  const usuario = document.getElementById('merma-usuario').value.trim();
+
+  if (!origenId) { showToast('Selecciona el producto o insumo'); return; }
+  if (cantidad <= 0) { showToast('La cantidad debe ser mayor a 0'); return; }
+  if (!motivo) { showToast('Selecciona el motivo'); return; }
+
+  // Mismo criterio que registrarVenta (P0-3): avisa si no alcanza el
+  // stock disponible, pero no bloquea — el registro queda marcado.
+  let stockInsuficiente = false;
+  if (origenTipo === 'producto') {
+    const consumo = CrumblyCore.computeSaleConsumption([{ productoId: origenId, qty: cantidad, adiciones: [] }], [], state);
+    const faltantes = CrumblyCore.checkStockShortage(consumo, state);
+    if (faltantes.length) {
+      const detalle = faltantes.map(f => '- ' + f.nombre + ': disponible ' + f.disponible.toFixed(0) + ', necesario ' + f.necesario.toFixed(0)).join('\n');
+      if (!confirm('No hay stock suficiente para esta merma:\n\n' + detalle + '\n\n¿Registrarla de todas formas?')) return;
+      stockInsuficiente = true;
+    }
+  } else {
+    const list = CrumblyCore.getMermaOrigenList(state, origenTipo) || [];
+    const origen = list.find(x => x.id === origenId);
+    if (origen && cantidad > origen.cantidad) {
+      if (!confirm('Solo hay ' + origen.cantidad.toLocaleString('es-CO') + ' disponible — la merma dejará el stock en 0.\n\n¿Registrarla de todas formas?')) return;
+      stockInsuficiente = true;
+    }
+  }
+
+  const input = { origenTipo, origenId, cantidad, motivo, observaciones, usuario, stockInsuficiente };
+  if (fecha && fecha !== todayLocalISO()) {
+    const [y, m, d] = fecha.split('-').map(Number);
+    const now = new Date();
+    input.fecha = new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds()).toISOString();
+  }
+  try {
+    CrumblyCore.registrarMerma(state, input);
+  } catch (e) {
+    showToast(e.message);
+    return;
+  }
+  saveState();
+  closeModal('modal-merma');
+  renderMermas();
+  renderInventario(); // el stock disponible cambió
+  renderReportes(); // la cascada de utilidad incluye mermas
+  showToast('Merma registrada ✓');
+}
+function eliminarMerma(id) {
+  if (!confirm('¿Eliminar esta merma? El inventario volverá exactamente a la cantidad que tenía antes de registrarla.')) return;
+  CrumblyCore.eliminarMerma(state, id);
+  saveState();
+  renderMermas();
+  renderInventario();
+  renderReportes();
+  showToast('Merma eliminada');
+}
+function setMermaPeriodo(p, el) {
+  mermaPeriodo = p;
+  document.querySelectorAll('#merma-period-row .pill-btn').forEach(b => b.classList.remove('active'));
+  if (el) el.classList.add('active');
+  renderMermas();
+}
+function getMermasPeriodoActivo() {
+  return mermaPeriodo === 'todas' ? state.mermas : CrumblyCore.getMermasByPeriod(state.mermas, mermaPeriodo);
+}
+function mermaOrigenUnidad(m) {
+  if (m.origenTipo === 'producto') return 'unidad';
+  const list = CrumblyCore.getMermaOrigenList(state, m.origenTipo) || [];
+  const item = list.find(x => x.id === m.origenId);
+  return (item && item.unidad) || (m.origenTipo === 'materia' ? 'g' : 'unidad');
+}
+function renderMermas() {
+  const mermas = getMermasPeriodoActivo();
+  document.getElementById('merma-registros').textContent = mermas.length;
+  document.getElementById('merma-valor-total').textContent = fmt(CrumblyCore.getValorTotalMermas(mermas));
+  const porMotivo = CrumblyCore.agruparMermasPorMotivo(mermas);
+  const motivosOrdenados = Object.entries(porMotivo).sort((a, b) => b[1] - a[1]);
+  document.getElementById('merma-motivo-top').textContent = motivosOrdenados.length ? motivosOrdenados[0][0] : '—';
+
+  document.getElementById('merma-por-motivo').innerHTML = motivosOrdenados.length
+    ? motivosOrdenados.map(([motivo, valor]) => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line)">
+        <span style="font-size:12px;color:var(--text)">${esc(motivo)}</span>
+        <span style="font-size:12px;font-weight:600;color:var(--ink)">${fmt(valor)}</span>
+      </div>`).join('')
+    : '<p class="empty">Sin mermas en este período</p>';
+
+  const recientes = mermas.slice().sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).slice(0, 20);
+  document.getElementById('merma-list').innerHTML = recientes.length
+    ? recientes.map(m => {
+        const nombre = CrumblyCore.getMermaOrigenNombre(state, m);
+        const unidad = mermaOrigenUnidad(m);
+        const fecha = new Date(m.fecha).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' });
+        return `<div class="list-row" style="padding:12px 16px">
+          <div style="flex:1;min-width:0">
+            <div class="item-name">${esc(nombre)}</div>
+            <div class="item-sub">${esc(m.motivo)} · ${m.cantidad.toLocaleString('es-CO')} ${esc(unidad)} · ${fecha}${m.stockInsuficiente ? ' · <span style="color:var(--danger)">stock insuficiente</span>' : ''}</div>
+          </div>
+          <span style="font-size:12px;font-weight:600;color:var(--danger)">-${fmt(m.valorTotal)}</span>
+          <button class="btn-icon danger" style="margin-left:8px" onclick="eliminarMerma('${m.id}')"><i class="ph ph-trash"></i></button>
+        </div>`;
+      }).join('')
+    : '<p class="empty" style="padding:1.5rem">Sin mermas registradas</p>';
+}
+
 /* ─── CAJA (rediseño) — ventas + gastos en una sola lista ─── */
 let cajaFiltroTipo = 'todos', cajaFiltroCategoria = 'todas';
 function toggleCajaFiltros() {
@@ -2361,6 +2678,7 @@ function refreshAll() {
   updateHeaderDate();
   renderInventario();
   renderPreparaciones();
+  renderMermas();
   renderProductos();
   renderCaja();
   renderClientes();

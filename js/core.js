@@ -16,7 +16,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var SCHEMA_VERSION = 7;
+  var SCHEMA_VERSION = 8;
 
   // decisión del 11 ago 2026: insumos de precio volátil llevan un +8% de
   // colchón al registrar su compra, para no subcostear cuando el proveedor
@@ -130,6 +130,7 @@
       productos: [],
       ventas: [],
       gastos: [],
+      mermas: [],
       clientes: [],
       config: { email: '', backendUrl: '', backendToken: '', lastSync: null }
     };
@@ -152,6 +153,7 @@
       gastos: Array.isArray(raw.gastos) ? raw.gastos : [], // v2 -> v3
       preparaciones: Array.isArray(raw.preparaciones) ? raw.preparaciones : [], // v3 -> v4
       clientes: Array.isArray(raw.clientes) ? raw.clientes : [], // v5 -> v6
+      mermas: Array.isArray(raw.mermas) ? raw.mermas : [], // v7 -> v8
       config: (raw.config && typeof raw.config === 'object') ? raw.config : {}
     };
     if (s.config.email === undefined) s.config.email = '';
@@ -895,6 +897,149 @@
     return (gastos || []).filter(function (g) { return new Date(g.fecha) >= start; });
   }
 
+  // ─── Mermas (pérdidas de inventario: vencido, dañado, quemado, error de
+  // preparación, contaminado, derrame, rotura, no vendido, etc.) ──────────
+  //
+  // Una merma es un movimiento de INVENTARIO, nunca de Caja: nunca toca
+  // state.ventas ni state.gastos. No existía una tabla genérica de
+  // "movimientos de inventario" en el proyecto — se sigue exactamente el
+  // mismo patrón que ya usan ventas/gastos (su propio array + una función
+  // que aplica y otra que revierte, con un snapshot `consumoReal` para
+  // poder deshacer con precisión exacta, igual que P0-1 en applyVenta y el
+  // mismo snapshot en registrarGasto/eliminarGasto) en vez de inventar una
+  // tabla nueva.
+  //
+  // El origen de una merma puede ser un insumo con stock propio (materia/
+  // empaques/toppings, descuento 1:1) o un producto preparado (receta/BOM):
+  // en ese caso se reusa aplicarComponentes — el mismo motor de expansión
+  // que ya usan applyVenta/computeSaleConsumption/getConsumptionRolling —
+  // para descontar los insumos reales de la receta, sin inventar un
+  // segundo sistema de costeo ni un stock propio para "productos".
+  var MERMA_MOTIVOS = ['Vencido', 'Dañado', 'Quemado', 'Error de preparación', 'Contaminado', 'Derrame', 'Rotura', 'No vendido', 'Otro'];
+
+  function getMermaOrigenList(state, origenTipo) {
+    if (origenTipo === 'materia') return state.materia;
+    if (origenTipo === 'empaques') return state.empaques;
+    if (origenTipo === 'toppings') return state.toppings;
+    if (origenTipo === 'producto') return state.productos;
+    return null;
+  }
+
+  // Registra una merma: valida, calcula el valor con el motor de costeo que
+  // ya existe (getCostoProducto para un producto preparado; el costo propio
+  // del insumo para materia/empaques/toppings), descuenta el inventario
+  // real (clampeado a 0, nunca negativo — mismo criterio que applyVenta) y
+  // guarda `consumoReal` para poder revertir exacto. No valida el stock
+  // disponible aquí (igual que applyVenta): eso lo hace el llamador antes,
+  // por separado, para poder avisar y pedir confirmación sin bloquear el
+  // registro — la arquitectura ya contempla esto (P0-3).
+  function registrarMerma(state, input) {
+    var cantidad = Number(input.cantidad) || 0;
+    if (cantidad <= 0) throw new Error('La cantidad de la merma debe ser mayor a 0');
+    if (!input.motivo || !String(input.motivo).trim()) throw new Error('El motivo de la merma es obligatorio');
+    var origenTipo = input.origenTipo;
+    var list = getMermaOrigenList(state, origenTipo);
+    if (!list) throw new Error('Tipo de origen inválido');
+    var origen = list.find(function (x) { return x.id === input.origenId; });
+    if (!origen) throw new Error('Producto o insumo no encontrado');
+
+    var consumoReal = { materia: {}, empaques: {}, toppings: {} };
+    function deduct(bucket, id, cant) {
+      var l = state[bucket];
+      var m = (l || []).find(function (x) { return x.id === id; });
+      if (!m || cant <= 0) return;
+      var antes = m.cantidad;
+      m.cantidad = Math.max(0, m.cantidad - cant);
+      var real = antes - m.cantidad;
+      consumoReal[bucket][id] = (consumoReal[bucket][id] || 0) + real;
+    }
+
+    var costoUnitario;
+    if (origenTipo === 'producto') {
+      costoUnitario = getCostoProducto(origen, state);
+      aplicarComponentes(state, origen.componentes, cantidad, deduct);
+      (origen.empaquesUsados || []).forEach(function (e) {
+        deduct('empaques', e.empaqueId, (Number(e.cantidad) || 0) * cantidad);
+      });
+    } else {
+      costoUnitario = Number(origen.costo) || 0;
+      deduct(origenTipo, origen.id, cantidad);
+    }
+
+    var merma = {
+      id: input.id || genId(),
+      fecha: input.fecha || new Date().toISOString(),
+      origenTipo: origenTipo,
+      origenId: origen.id,
+      cantidad: cantidad,
+      costoUnitario: costoUnitario,
+      valorTotal: costoUnitario * cantidad,
+      motivo: String(input.motivo).trim(),
+      observaciones: input.observaciones || '',
+      usuario: input.usuario || '',
+      stockInsuficiente: !!input.stockInsuficiente,
+      consumoReal: consumoReal
+    };
+    state.mermas.push(merma);
+    return merma;
+  }
+
+  // Revierte una merma exacta (usa merma.consumoReal) — mismo principio que
+  // revertVenta: no recalcula desde la receta/insumo actual (que pudo
+  // cambiar desde entonces), restaura justo lo que se descontó.
+  function eliminarMerma(state, id) {
+    var merma = (state.mermas || []).find(function (m) { return m.id === id; });
+    if (!merma) return;
+    function restore(bucket) {
+      Object.keys(merma.consumoReal[bucket] || {}).forEach(function (iid) {
+        var m = (state[bucket] || []).find(function (x) { return x.id === iid; });
+        if (m) m.cantidad += merma.consumoReal[bucket][iid];
+      });
+    }
+    restore('materia');
+    restore('empaques');
+    restore('toppings');
+    state.mermas = state.mermas.filter(function (m) { return m.id !== id; });
+  }
+
+  function getMermasByPeriod(mermas, period, ref) {
+    var start = getDateStart(period, ref);
+    return (mermas || []).filter(function (m) { return new Date(m.fecha) >= start; });
+  }
+  function getMermasByRange(mermas, startISO, endISO) {
+    var b = rangeBounds(startISO, endISO);
+    return (mermas || []).filter(function (m) { var f = new Date(m.fecha); return f >= b.start && f <= b.end; });
+  }
+  function getValorTotalMermas(mermas) {
+    return (mermas || []).reduce(function (a, m) { return a + m.valorTotal; }, 0);
+  }
+  function agruparMermasPorMotivo(mermas) {
+    var out = {};
+    (mermas || []).forEach(function (m) {
+      var key = m.motivo || '(sin motivo)';
+      out[key] = (out[key] || 0) + m.valorTotal;
+    });
+    return out;
+  }
+  // Nombre del insumo/producto de origen, resuelto en vivo (no snapshot) —
+  // mismo criterio que registrarGasto/insumoId: si el ítem se borró después,
+  // se muestra "(eliminado)" en vez de fallar.
+  function getMermaOrigenNombre(state, merma) {
+    var list = getMermaOrigenList(state, merma.origenTipo);
+    var item = list && list.find(function (x) { return x.id === merma.origenId; });
+    return item ? item.nombre : '(eliminado)';
+  }
+  function agruparMermasPorOrigen(state, mermas) {
+    var out = {};
+    (mermas || []).forEach(function (m) {
+      var key = getMermaOrigenNombre(state, m);
+      if (!out[key]) out[key] = { cantidad: 0, valor: 0 };
+      out[key].cantidad += m.cantidad;
+      out[key].valor += m.valorTotal;
+    });
+    return out;
+  }
+
   // ─── Rango de fechas personalizable (Reportes) ─────────────
   // `new Date('YYYY-MM-DD')` se interpreta como medianoche UTC — en
   // cualquier huso horario detrás de UTC (Colombia, UTC-5) eso corre la
@@ -970,7 +1115,16 @@
   // por rango custom) más la depreciación ya prorrateada, y arma la
   // cascada completa. Así getCascadaUtilidad (período) y
   // getCascadaUtilidadRango (fechas custom) nunca duplican la fórmula.
-  function computeCascada(ventas, gastos, depreciacion) {
+  //
+  // `mermasValor` (opcional, default 0 — por eso no rompe a nadie que
+  // llame computeCascada con la firma vieja de 3 argumentos) resta de la
+  // utilidad neta: una merma es una pérdida económica real aunque nunca
+  // haya movido un peso de la caja. NO se resta de flujoCaja — ese campo
+  // es estrictamente efectivo que entró/salió de la caja, y una merma no
+  // es una salida de caja (mismo criterio que ya aplica la depreciación,
+  // que tampoco toca flujoCaja).
+  function computeCascada(ventas, gastos, depreciacion, mermasValor) {
+    mermasValor = Number(mermasValor) || 0;
     var ingresos = ventas.reduce(function (a, v) { return a + v.total; }, 0);
     var gananciaVentas = ventas.reduce(function (a, v) { return a + v.ganancia; }, 0);
     var costoVentas = ingresos - gananciaVentas;
@@ -978,7 +1132,7 @@
 
     var operativos = gastos.filter(function (g) { return g.tipo === 'operativo'; });
     var totalOperativos = operativos.reduce(function (a, g) { return a + g.monto; }, 0);
-    var utilidadNeta = utilidadBruta - totalOperativos - depreciacion;
+    var utilidadNeta = utilidadBruta - totalOperativos - depreciacion - mermasValor;
 
     var comprasInventario = gastos.filter(function (g) { return g.tipo === 'inventario'; }).reduce(function (a, g) { return a + g.monto; }, 0);
     var capexPeriodo = gastos.filter(function (g) { return g.tipo === 'capex'; }).reduce(function (a, g) { return a + g.monto; }, 0);
@@ -992,6 +1146,7 @@
       gastosOperativosPorCategoria: agruparGastosPorCategoria(operativos),
       totalOperativos: totalOperativos,
       depreciacion: depreciacion,
+      mermas: mermasValor,
       utilidadNeta: utilidadNeta,
       margenNetoPct: ingresos > 0 ? (utilidadNeta / ingresos * 100) : 0,
       comprasInventario: comprasInventario,
@@ -1004,7 +1159,8 @@
     var ventas = getVentasByPeriod(state.ventas, period, ref);
     var gastosPeriodo = getGastosByPeriod(state.gastos, period, ref);
     var depreciacion = getDepreciacionPeriodo(state, period, ref);
-    return computeCascada(ventas, gastosPeriodo, depreciacion);
+    var mermasValor = getValorTotalMermas(getMermasByPeriod(state.mermas, period, ref));
+    return computeCascada(ventas, gastosPeriodo, depreciacion, mermasValor);
   }
 
   // Misma cascada, para un rango de fechas elegido a mano (no uno de los
@@ -1014,7 +1170,8 @@
     var ventas = getVentasByRange(state.ventas, startISO, endISO);
     var gastosRango = getGastosByRange(state.gastos, startISO, endISO);
     var depreciacion = getDepreciacionRango(state, startISO, endISO);
-    return computeCascada(ventas, gastosRango, depreciacion);
+    var mermasValor = getValorTotalMermas(getMermasByRange(state.mermas, startISO, endISO));
+    return computeCascada(ventas, gastosRango, depreciacion, mermasValor);
   }
 
   // ─── Dependencias (P1-4: no romper recetas al borrar un insumo) ───
@@ -1063,9 +1220,20 @@
     registrarGasto: registrarGasto,
     eliminarGasto: eliminarGasto,
     getGastosByPeriod: getGastosByPeriod,
+    MERMA_MOTIVOS: MERMA_MOTIVOS,
+    getMermaOrigenList: getMermaOrigenList,
+    registrarMerma: registrarMerma,
+    eliminarMerma: eliminarMerma,
+    getMermasByPeriod: getMermasByPeriod,
+    getMermasByRange: getMermasByRange,
+    getValorTotalMermas: getValorTotalMermas,
+    agruparMermasPorMotivo: agruparMermasPorMotivo,
+    getMermaOrigenNombre: getMermaOrigenNombre,
+    agruparMermasPorOrigen: agruparMermasPorOrigen,
     getDepreciacionMensualTotal: getDepreciacionMensualTotal,
     getDepreciacionPeriodo: getDepreciacionPeriodo,
     agruparGastosPorCategoria: agruparGastosPorCategoria,
+    computeCascada: computeCascada,
     getCascadaUtilidad: getCascadaUtilidad,
     getPreparacion: getPreparacion,
     getPreparacionComposicionPorGramo: getPreparacionComposicionPorGramo,
