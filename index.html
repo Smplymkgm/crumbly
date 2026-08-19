@@ -113,7 +113,7 @@ textarea.field{height:auto}
 .badge-outline{font-size:10px;font-weight:600;padding:3px 7px;border-radius:999px;background:var(--bg);border:1px solid var(--line);color:var(--ink)}
 .dropzone{display:flex;align-items:center;gap:10px;border:1px dashed var(--soft);border-radius:14px;padding:12px;cursor:pointer;background:var(--bg)}
 .dropzone input{display:none}
-.checkbox-row{display:flex;align-items:center;gap:9px;cursor:pointer;padding:4px 0}
+.checkbox-row{display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 0}
 .checkbox-box{width:16px;height:16px;border-radius:6px;border:1px solid var(--soft);display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .checkbox-box.checked{background:var(--ink);border-color:var(--ink)}
 .checkbox-box.checked i{color:#fff;font-size:11px}
@@ -138,9 +138,9 @@ textarea.field{height:auto}
 .modal-field input:not(.field),.modal-field select:not(.field){width:100%;height:38px;padding:8px 12px;border:1px solid var(--line);border-radius:999px;font-size:12px;font-family:inherit;background:var(--white);color:var(--text);outline:none}
 .btn-save{width:100%;background:var(--ink);border:1px solid var(--ink);color:var(--white);font-weight:600;font-size:13px;padding:10px;border-radius:999px;cursor:pointer;font-family:inherit}
 .ing-row{display:flex;gap:6px;margin-bottom:8px;align-items:center}
-.ing-row select{flex:2;height:38px;padding:8px 12px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:var(--white);font-family:inherit;outline:none}
-.ing-row input{flex:1;height:38px;padding:8px 12px;font-size:12px;border:1px solid var(--line);border-radius:999px;background:var(--white);font-family:inherit;outline:none;min-width:0}
-.ing-row button{background:var(--bg);color:var(--danger);border:1px solid var(--line);border-radius:999px;padding:8px 10px;cursor:pointer;font-size:14px;flex-shrink:0}
+.ing-row select{flex:2;height:38px;padding:8px 12px;font-size:12px;border:1px solid var(--line);border-radius:10px;background:var(--white);font-family:inherit;outline:none}
+.ing-row input{flex:1;height:38px;padding:8px 12px;font-size:12px;border:1px solid var(--line);border-radius:10px;background:var(--white);font-family:inherit;outline:none;min-width:0}
+.ing-row button{background:var(--bg);color:var(--danger);border:1px solid var(--line);border-radius:10px;padding:8px 10px;cursor:pointer;font-size:14px;flex-shrink:0}
 .add-ing-btn{background:var(--white);color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:9px 14px;font-size:12px;cursor:pointer;font-family:inherit;width:100%;margin-bottom:12px}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--white);padding:10px 22px;border-radius:999px;font-size:13px;z-index:300;opacity:0;transition:opacity 0.3s;pointer-events:none;white-space:nowrap}
 .toast.show{opacity:1}
@@ -416,11 +416,11 @@ textarea.field{height:auto}
       <input type="number" id="ins-minimo" class="field" placeholder="0" min="0">
     </div>
     <label class="checkbox-row">
-      <input type="checkbox" id="ins-precio-variable" style="width:16px;height:16px;accent-color:var(--ink)">
+      <input type="checkbox" id="ins-precio-variable" style="width:18px;height:18px;accent-color:var(--ink)">
       <span style="font-size:12px;color:var(--text)">Precio variable (margen del 8%)</span>
     </label>
     <label class="checkbox-row">
-      <input type="checkbox" id="ins-es-adicion" style="width:16px;height:16px;accent-color:var(--ink)" onchange="document.getElementById('ins-adicion-fields').style.display=this.checked?'block':'none'">
+      <input type="checkbox" id="ins-es-adicion" style="width:18px;height:18px;accent-color:var(--ink)" onchange="document.getElementById('ins-adicion-fields').style.display=this.checked?'block':'none'">
       <span style="font-size:12px;color:var(--text)">Disponible como adición en ventas</span>
     </label>
     <div id="ins-adicion-fields" style="display:none">
@@ -577,17 +577,18 @@ textarea.field{height:auto}
     </div>
 
     <div id="g-campos-inventario">
-      <div class="modal-field">
-        <label>Insumo comprado</label>
-        <select id="g-insumo-tipo" onchange="populateGastoInsumoSelect()">
-          <option value="materia">Materia prima</option>
-          <option value="empaques">Empaque</option>
-          <option value="toppings">Toppings</option>
-        </select>
-      </div>
-      <div class="modal-field">
-        <label>&nbsp;</label>
-        <select id="g-insumo-id"></select>
+      <label style="font-size:11px;color:var(--muted);font-weight:600;display:block;margin-bottom:6px">Insumo comprado</label>
+      <div style="display:flex;gap:10px;margin-bottom:12px">
+        <div class="modal-field" style="flex:1;margin-bottom:0">
+          <select id="g-insumo-tipo" onchange="populateGastoInsumoSelect()">
+            <option value="materia">Materia prima</option>
+            <option value="empaques">Empaque</option>
+            <option value="toppings">Toppings</option>
+          </select>
+        </div>
+        <div class="modal-field" style="flex:2;margin-bottom:0">
+          <select id="g-insumo-id"></select>
+        </div>
       </div>
       <div class="modal-field">
         <label>Cantidad comprada</label>
@@ -604,13 +605,15 @@ textarea.field{height:auto}
       <p class="item-sub" style="margin-bottom:10px">El gasto no resta de golpe de la utilidad — se reparte (deprecia) a lo largo de estos meses.</p>
     </div>
 
-    <div class="modal-field">
-      <label>Monto pagado ($)</label>
-      <input type="number" id="g-monto" placeholder="50000" min="0" step="1">
-    </div>
-    <div class="modal-field">
-      <label>Proveedor (opcional)</label>
-      <input type="text" id="g-proveedor" placeholder="Ej: Makro, Alcaldía, Rappi Ads">
+    <div style="display:flex;gap:10px">
+      <div class="modal-field" style="flex:1">
+        <label>Monto pagado ($)</label>
+        <input type="number" id="g-monto" placeholder="50000" min="0" step="1">
+      </div>
+      <div class="modal-field" style="flex:1">
+        <label>Proveedor (opcional)</label>
+        <input type="text" id="g-proveedor" placeholder="Ej: Makro, Alcaldía">
+      </div>
     </div>
     <div class="modal-field">
       <label>Descripción (opcional)</label>
@@ -791,6 +794,14 @@ let soloTopRowCount = 0;
 // (HANDOFF.md §20) — nunca se duplican aquí.
 const fmt = CrumblyCore.formatCOP;
 const esc = CrumblyCore.escapeHtml;
+// Costo por gramo necesita hasta 4 decimales para no perder precisión en
+// productos que usan cientos de gramos (ver HANDOFF, bug de Fase D1), pero
+// mostrar siempre los 4 aunque sean $0.0000 o $12.5000 se ve saturado —
+// se recortan los ceros de sobra sin tocar el cálculo.
+function fmtGramoCosto(n) {
+  if (!n) return '$0';
+  return '$' + n.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+}
 
 function loadState() {
   let raw = null;
@@ -1232,7 +1243,7 @@ function calcPrepCosto() {
   try {
     const costo = CrumblyCore.getPreparacionCosto(preview, id);
     document.getElementById('prep-gramos-calc').textContent = costo.gramosTotal.toFixed(2) + ' g';
-    document.getElementById('prep-costo-calc').textContent = '$' + costo.costoPorGramo.toFixed(4) + '/g';
+    document.getElementById('prep-costo-calc').textContent = fmtGramoCosto(costo.costoPorGramo) + '/g';
     document.getElementById('prep-costo-calc').style.color = 'var(--success)';
   } catch (e) {
     document.getElementById('prep-gramos-calc').textContent = '—';
@@ -1292,7 +1303,7 @@ function renderPreparaciones() {
       <div style="flex:1;min-width:0">
         <div class="item-name">${esc(prep.nombre)}</div>
         <div class="item-sub">${modoLabel} · ${costo.gramosTotal.toFixed(0)}g totales</div>
-        <div class="item-sub" style="${error ? 'color:var(--danger)' : ''}">${error ? error : '$' + costo.costoPorGramo.toFixed(4) + '/g'}</div>
+        <div class="item-sub" style="${error ? 'color:var(--danger)' : ''}">${error ? error : fmtGramoCosto(costo.costoPorGramo) + '/g'}</div>
       </div>
       <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
         <button class="btn-icon" onclick="openModalPreparacion('${prep.id}')" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
