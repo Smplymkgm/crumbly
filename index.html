@@ -2884,19 +2884,35 @@ function importMenuCrumbly() {
     productosAgregados++;
   });
 
-  let toppingsAgregados = 0, toppingsOmitidos = 0;
+  // Cada complemento también queda disponible como "adición" seleccionable
+  // al armar una venta (chips en el modal de Venta, CrumblyCore.getAdiciones)
+  // — mismo precio que la venta suelta, porción 1 (consume 1 unidad de su
+  // propio stock por adición, igual que "vender un topping suelto").
+  let toppingsAgregados = 0, toppingsActualizados = 0;
   complementos.forEach(c => {
-    if (state.toppings.some(t => t.nombre === c.nombre)) { toppingsOmitidos++; return; }
+    const existente = state.toppings.find(t => t.nombre === c.nombre);
+    if (existente) {
+      if (!existente.esAdicion) {
+        existente.esAdicion = true;
+        existente.precioAdicion = existente.precio;
+        existente.porcion = 1;
+        toppingsActualizados++;
+      }
+      return;
+    }
     state.toppings.push({
       id: uid(), nombre: c.nombre, categoria: c.categoria, cantidad: 0, costo: 0, precio: c.precio, minimo: 0, unidad: 'unidad',
-      margenVariable: false, esAdicion: false, precioAdicion: 0, porcion: 0, nombreAdicion: ''
+      margenVariable: false, esAdicion: true, precioAdicion: c.precio, porcion: 1, nombreAdicion: ''
     });
     toppingsAgregados++;
   });
 
   saveState();
   refreshAll();
-  showToast(`Importado: ${productosAgregados} waffles y ${toppingsAgregados} complementos nuevos` + ((productosOmitidos || toppingsOmitidos) ? ` (${productosOmitidos + toppingsOmitidos} ya existían)` : ''));
+  const partes = [`${productosAgregados} waffles y ${toppingsAgregados} complementos nuevos`];
+  if (toppingsActualizados) partes.push(`${toppingsActualizados} complementos marcados como adición`);
+  if (productosOmitidos) partes.push(`${productosOmitidos} waffles ya existían`);
+  showToast('Importado: ' + partes.join(' · '));
 }
 function resetearDatos() {
   if (!confirm('¿Borrar TODOS los datos (insumos, productos, ventas)? Esta acción no se puede deshacer.')) return;
