@@ -227,6 +227,18 @@ A pedido explícito del usuario, tras confirmarle qué había quedado pendiente 
 
 **No se tocó:** ningún cálculo de `js/core.js` — las 3 restauraciones son puramente de `index.html` (UI + wiring), reusando funciones que ya existían (`applyVenta`, `calcInventoryNeeds`, `getCascadaUtilidad`) sin modificarlas.
 
+### Importar menú Crumbly 2026 (23 de agosto de 2026)
+
+El usuario compartió el PDF del menú (`Menu crumbly.pdf`, no versionado en el repo). Se decidió con 3 preguntas explícitas antes de tocar datos, para no fabricar costos/recetas que el menú no trae:
+
+- **12 waffles** (New York/Brasil/London/Caramel × Waffle de arroz/Belga/Croffle) — se cargan con nombre y precio de venta exactos del menú, **sin fórmula** (el PDF no trae gramos ni costos — inventar una habría violado P0-2, "el costo nunca se fabrica"). Nombres desambiguados con el tipo de base entre paréntesis (`"New York (Waffle)"`, `"New York (Croffle)"`, etc.) porque el buscador de producto en el modal de Venta hace match exacto por nombre — 3 productos llamados "New York" a secas habrían colisionado.
+- **"Arma tu Crumbly"** ($25k base + elegir base/2 toppings/2 frutas/1 salsa con recargos): **omitido a pedido del usuario** — es un producto configurable, la app no tiene un flujo de "elige N de M" en el modal de Producto. Pendiente si se quiere esa función más adelante.
+- **28 complementos a la carta** (9 salsas, 9 toppings, 7 frutas, 3 bases sueltas) — se cargan como `toppings` vendibles (mismo mecanismo de "vender un topping suelto" restaurado en esta misma ronda) con el precio de venta del menú y **costo $0** (el menú no trae costo, solo precio al cliente) — a completar por el usuario en cada uno.
+
+**Decisión de UX:** no se pudo escribir esto directamente en los datos reales del usuario — la app vive en `localStorage` del navegador de su celular/laptop, al que este entorno no tiene acceso. Se agregó un botón **"Importar menú Crumbly 2026"** en Ajustes → `importMenuCrumbly()` — el usuario lo activa una vez desde su propio dispositivo. Es idempotente (deduplica por nombre exacto): tocarlo dos veces no duplica nada, verificado en test manual (12/28 → 12/28 tras un segundo click).
+
+Verificado en navegador: los 12 productos aparecen con sus chips de categoría (Waffle/Waffle Belga/Croffle) y margen 100% (costo $0, esperado sin fórmula); los 28 complementos aparecen en Inventario con sus chips (Salsas/Toppings/Frutas/Base); una venta mixta (1 waffle + 1 Nutella suelta) generó correctamente el aviso de stock insuficiente (Nutella en 0 existencia) y, confirmado, registró ambos ítems con el total/ganancia correctos.
+
 ## Tests
 
 ```

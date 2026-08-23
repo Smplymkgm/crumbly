@@ -902,6 +902,11 @@ textarea.field{height:auto}
         <button class="btn btn-block" onclick="shareReportByEmail()"><i class="ph ph-envelope-simple"></i> Descargar y enviar por correo</button>
       </div>
       <div>
+        <div class="card-title" style="margin-bottom:10px">Importar datos</div>
+        <p class="item-sub" style="margin-bottom:10px">Carga los 12 waffles y los complementos a la carta del menú 2026. Es seguro tocarlo más de una vez — si un producto o insumo ya existe (por nombre), no lo duplica. Los waffles quedan sin fórmula (agrégala en cada uno) y los complementos con costo $0 — el menú solo trae el precio de venta.</p>
+        <button class="btn btn-outline btn-block" onclick="importMenuCrumbly()"><i class="ph ph-download-simple"></i> Importar menú Crumbly 2026</button>
+      </div>
+      <div>
         <div class="card-title" style="margin-bottom:10px;color:var(--danger)">Zona de riesgo</div>
         <p class="item-sub" style="margin-bottom:10px">Borra insumos, productos, ventas y gastos de este navegador. No afecta ningún respaldo ya exportado.</p>
         <button class="btn btn-block" style="background:#FBEAEA;border-color:#FBEAEA;color:var(--danger)" onclick="resetearDatos()"><i class="ph ph-trash"></i> Resetear datos de prueba</button>
@@ -2812,6 +2817,87 @@ function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
 // P2-6: doble confirmación porque es destructivo y no hay deshacer.
+// Importación única del menú Crumbly 2026 (PDF que compartió el usuario).
+// Los 12 waffles quedan con precio de venta pero SIN fórmula — el menú no
+// trae gramos/costos, así que no se inventa un costeo falso (P0-2: el
+// costo siempre se calcula en vivo desde la fórmula real, nunca se
+// fabrica). Los complementos a la carta (salsas/toppings/frutas/base) se
+// cargan como toppings vendibles (mismo mecanismo de "vender un topping
+// suelto" recién restaurado) con costo $0 — el menú solo trae el precio
+// al cliente, no el costo del insumo. Idempotente: si ya existe un
+// producto/topping con ese nombre exacto, no lo duplica — se puede tocar
+// el botón más de una vez sin miedo.
+function importMenuCrumbly() {
+  const waffles = [
+    { nombre: 'New York (Waffle)', categoria: 'Waffle', precio: 24000 },
+    { nombre: 'Brasil (Waffle)', categoria: 'Waffle', precio: 24000 },
+    { nombre: 'London (Waffle)', categoria: 'Waffle', precio: 24000 },
+    { nombre: 'Caramel (Waffle)', categoria: 'Waffle', precio: 20000 },
+    { nombre: 'New York (Waffle Belga)', categoria: 'Waffle Belga', precio: 18000 },
+    { nombre: 'Brasil (Waffle Belga)', categoria: 'Waffle Belga', precio: 18000 },
+    { nombre: 'London (Waffle Belga)', categoria: 'Waffle Belga', precio: 18000 },
+    { nombre: 'Caramel (Waffle Belga)', categoria: 'Waffle Belga', precio: 16000 },
+    { nombre: 'New York (Croffle)', categoria: 'Croffle', precio: 22000 },
+    { nombre: 'Brasil (Croffle)', categoria: 'Croffle', precio: 22000 },
+    { nombre: 'London (Croffle)', categoria: 'Croffle', precio: 22000 },
+    { nombre: 'Caramel (Croffle)', categoria: 'Croffle', precio: 20000 }
+  ];
+  const complementos = [
+    // Salsas
+    { nombre: 'Honey butter', categoria: 'Salsas', precio: 4500 },
+    { nombre: 'Nutella', categoria: 'Salsas', precio: 5600 },
+    { nombre: 'Chocolate 43%', categoria: 'Salsas', precio: 4500 },
+    { nombre: 'Arequipe', categoria: 'Salsas', precio: 1500 },
+    { nombre: 'Ganache chocolate', categoria: 'Salsas', precio: 2000 },
+    { nombre: 'Chocolate blanco', categoria: 'Salsas', precio: 2600 },
+    { nombre: 'Frutos rojos (mermelada)', categoria: 'Salsas', precio: 3500 },
+    { nombre: 'Frutos amarillos (mermelada)', categoria: 'Salsas', precio: 3500 },
+    { nombre: 'Caramelo salado', categoria: 'Salsas', precio: 2500 },
+    // Toppings
+    { nombre: 'Marañón', categoria: 'Toppings', precio: 3000 },
+    { nombre: 'Maní', categoria: 'Toppings', precio: 2000 },
+    { nombre: 'Crocante de pistacho', categoria: 'Toppings', precio: 2000 },
+    { nombre: 'Nuez de brasil', categoria: 'Toppings', precio: 2800 },
+    { nombre: 'Almendra laminada', categoria: 'Toppings', precio: 2500 },
+    { nombre: 'Miel', categoria: 'Toppings', precio: 2000 },
+    { nombre: 'Helado de vainilla', categoria: 'Toppings', precio: 4900 },
+    { nombre: 'Crumble de galleta', categoria: 'Toppings', precio: 2000 },
+    { nombre: 'Crema', categoria: 'Toppings', precio: 3500 },
+    // Frutas
+    { nombre: 'Kiwi', categoria: 'Frutas', precio: 2000 },
+    { nombre: 'Fresas', categoria: 'Frutas', precio: 2000 },
+    { nombre: 'Banano', categoria: 'Frutas', precio: 1000 },
+    { nombre: 'Zarzamoras', categoria: 'Frutas', precio: 7500 },
+    { nombre: 'Frambuesas', categoria: 'Frutas', precio: 6500 },
+    { nombre: 'Arándanos', categoria: 'Frutas', precio: 3800 },
+    { nombre: 'Mango', categoria: 'Frutas', precio: 2000 },
+    // Base (waffle solo, sin armar)
+    { nombre: 'Waffle belga (base)', categoria: 'Base', precio: 5000 },
+    { nombre: 'Croffle (base)', categoria: 'Base', precio: 7200 },
+    { nombre: 'Waffle de arroz (base)', categoria: 'Base', precio: 7000 }
+  ];
+
+  let productosAgregados = 0, productosOmitidos = 0;
+  waffles.forEach(w => {
+    if (state.productos.some(p => p.nombre === w.nombre)) { productosOmitidos++; return; }
+    state.productos.push({ id: uid(), nombre: w.nombre, categoria: w.categoria, precio: w.precio, componentes: [], empaquesUsados: [], empaqueManual: 0, foto: '' });
+    productosAgregados++;
+  });
+
+  let toppingsAgregados = 0, toppingsOmitidos = 0;
+  complementos.forEach(c => {
+    if (state.toppings.some(t => t.nombre === c.nombre)) { toppingsOmitidos++; return; }
+    state.toppings.push({
+      id: uid(), nombre: c.nombre, categoria: c.categoria, cantidad: 0, costo: 0, precio: c.precio, minimo: 0, unidad: 'unidad',
+      margenVariable: false, esAdicion: false, precioAdicion: 0, porcion: 0, nombreAdicion: ''
+    });
+    toppingsAgregados++;
+  });
+
+  saveState();
+  refreshAll();
+  showToast(`Importado: ${productosAgregados} waffles y ${toppingsAgregados} complementos nuevos` + ((productosOmitidos || toppingsOmitidos) ? ` (${productosOmitidos + toppingsOmitidos} ya existían)` : ''));
+}
 function resetearDatos() {
   if (!confirm('¿Borrar TODOS los datos (insumos, productos, ventas)? Esta acción no se puede deshacer.')) return;
   if (!confirm('Confirma de nuevo: se perderá todo lo que no hayas exportado a CSV o PDF. ¿Continuar?')) return;
