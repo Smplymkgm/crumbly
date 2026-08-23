@@ -94,11 +94,11 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
    scroll — versión más compacta que el resto de pantallas (que sí pueden
    crecer y scrollear libremente). */
 @media (min-width:861px){
-  #page-dashboard.active{gap:12px}
-  #page-dashboard .card{padding:13px}
+  #page-dashboard.active{gap:10px}
+  #page-dashboard .card{padding:11px}
   #page-dashboard .kpi-card{padding:11px}
   #page-dashboard .kpi-value{margin-top:6px;font-size:18px}
-  .app-content:has(#page-dashboard.active){padding:14px 26px 16px}
+  .app-content:has(#page-dashboard.active){padding:14px 26px 10px}
 }
 .field-label{font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:6px}
 .field{width:100%;height:38px;border:1px solid var(--line);border-radius:999px;padding:9px 14px;font-size:12px;color:var(--text);background:var(--white)}
@@ -295,6 +295,28 @@ textarea.field{height:auto}
             <div id="dash-alertas-list" style="display:flex;flex-direction:column;gap:8px;margin-top:12px"></div>
           </div>
         </div>
+
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleDetalleFinanciero()">
+            <div style="display:flex;align-items:center;gap:7px">
+              <i class="ph ph-chart-line" style="font-size:14px;color:var(--ink)"></i>
+              <span style="font-weight:600;font-size:13px;color:var(--ink)">Detalle financiero del período</span>
+            </div>
+            <i class="ph ph-caret-down" id="dash-detalle-caret" style="font-size:13px;color:var(--muted)"></i>
+          </div>
+          <div id="dash-detalle-financiero" style="display:none;margin-top:14px">
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px">
+              <div><div style="font-size:15px;font-weight:600" id="df-utilidad-bruta">$0</div><div class="item-sub">Utilidad bruta</div></div>
+              <div><div style="font-size:15px;font-weight:600" id="df-gastos-operativos">$0</div><div class="item-sub">Gastos operativos</div></div>
+              <div><div style="font-size:15px;font-weight:600" id="df-depreciacion">$0</div><div class="item-sub">Depreciación</div></div>
+              <div><div style="font-size:15px;font-weight:600;color:var(--danger)" id="df-mermas">$0</div><div class="item-sub">Mermas</div></div>
+              <div><div style="font-size:15px;font-weight:600" id="df-utilidad-neta">$0</div><div class="item-sub">Utilidad neta</div></div>
+              <div><div style="font-size:15px;font-weight:600" id="df-flujo-caja">$0</div><div class="item-sub">Flujo de caja</div></div>
+            </div>
+            <div class="card-title" style="margin-bottom:8px">Productos más rentables</div>
+            <div id="dash-productos-rentables"></div>
+          </div>
+        </div>
       </div>
 
       <!-- CAJA -->
@@ -339,6 +361,19 @@ textarea.field{height:auto}
         <div class="card" style="padding:0;overflow:hidden">
           <div id="inv-list"><p class="empty" style="padding:1.5rem">No hay insumos registrados</p></div>
         </div>
+
+        <div class="card">
+          <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleNecesidadesCompra()">
+            <div style="display:flex;align-items:center;gap:7px">
+              <i class="ph ph-shopping-cart-simple" style="font-size:14px;color:var(--ink)"></i>
+              <span style="font-weight:600;font-size:13px;color:var(--ink)">Necesidades de compra (semana)</span>
+              <span class="badge" id="inv-necesidades-count">0</span>
+            </div>
+            <i class="ph ph-caret-down" id="inv-necesidades-caret" style="font-size:13px;color:var(--muted)"></i>
+          </div>
+          <div id="inv-necesidades-list" style="display:none;flex-direction:column;gap:8px;margin-top:12px"></div>
+        </div>
+
         <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px">
           <div class="page-title" style="font-size:13px">Preparaciones</div>
           <button class="btn btn-outline" style="padding:7px 12px" onclick="openModalPreparacion()"><i class="ph ph-plus"></i> Agregar preparación</button>
@@ -759,6 +794,22 @@ textarea.field{height:auto}
       </div>
       <div id="venta-draft-adiciones" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
       <button class="btn btn-block" onclick="addLineToCart()"><i class="ph ph-plus"></i> Agregar a la venta</button>
+    </div>
+
+    <button type="button" onclick="toggleToppingSueltoForm()" style="background:transparent;border:none;color:var(--muted);font-size:11px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;margin:-8px 0 14px">
+      <i class="ph ph-plus-circle"></i> Vender un topping suelto (sin producto)
+    </button>
+    <div id="venta-topping-suelto-form" style="display:none;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px;background:var(--bg)">
+      <div style="display:flex;gap:8px">
+        <input type="text" id="venta-draft-topping" class="field" style="background:var(--white)" list="toppings-datalist" placeholder="Buscar o seleccionar topping">
+        <datalist id="toppings-datalist"></datalist>
+        <div style="display:flex;align-items:center;border:1px solid var(--line);border-radius:8px;background:var(--white);overflow:hidden">
+          <button type="button" onclick="decDraftToppingQty()" style="width:28px;height:36px;border:none;background:transparent;color:var(--ink);cursor:pointer;font-size:14px">−</button>
+          <span style="width:26px;text-align:center;font-size:12px;font-weight:600;color:var(--ink)" id="venta-draft-topping-qty">1</span>
+          <button type="button" onclick="incDraftToppingQty()" style="width:28px;height:36px;border:none;background:transparent;color:var(--ink);cursor:pointer;font-size:14px">+</button>
+        </div>
+      </div>
+      <button class="btn btn-block" style="margin-top:12px" onclick="addToppingSueltoToCart()"><i class="ph ph-plus"></i> Agregar a la venta</button>
     </div>
 
     <div style="margin-bottom:16px">
@@ -1198,7 +1249,29 @@ function setInventarioCategoria(cat, el) {
   el.classList.add('active');
   renderInventario();
 }
+let invNecesidadesOpen = false;
+function toggleNecesidadesCompra() {
+  invNecesidadesOpen = !invNecesidadesOpen;
+  renderNecesidadesCompra();
+}
+function renderNecesidadesCompra() {
+  const data = calcInventoryNeeds().filter(d => d.necesitaComprar);
+  document.getElementById('inv-necesidades-count').textContent = data.length;
+  document.getElementById('inv-necesidades-caret').className = 'ph ' + (invNecesidadesOpen ? 'ph-caret-up' : 'ph-caret-down');
+  const el = document.getElementById('inv-necesidades-list');
+  el.style.display = invNecesidadesOpen ? 'flex' : 'none';
+  el.innerHTML = data.length
+    ? data.map(d => `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 9px;background:var(--bg);border-radius:7px">
+        <div>
+          <div style="font-size:12px;color:var(--text);font-weight:500">${esc(d.nombre + TIPO_LABEL[d.tipo])}</div>
+          <div style="font-size:11px;color:var(--muted)">${d.semanasRestantes === Infinity ? 'sin consumo reciente' : d.semanasRestantes.toFixed(1) + ' semanas restantes'}</div>
+        </div>
+        <span style="font-size:12px;color:var(--muted);font-weight:600">Comprar ${d.sugerido.toFixed(0)}${esc(d.unidadLabel)}</span>
+      </div>`).join('')
+    : '<p class="empty">Todo el inventario está en buen nivel</p>';
+}
 function renderInventario() {
+  renderNecesidadesCompra();
   const todos = CrumblyCore.getInsumosUnificados(state);
   const cats = insumoCategorias();
   document.getElementById('inv-chips').innerHTML = ['todos', ...cats].map(c =>
@@ -1631,6 +1704,7 @@ function renderProductos() {
 let ventaCart = [];
 let ventaDraftQty = 1;
 let ventaDraftAdiciones = [];
+let ventaDraftToppingQty = 1;
 let ventaMetodoPago = 'efectivo';
 let ventaComprobante = '';
 
@@ -1650,7 +1724,12 @@ function openSaleModal() {
   document.getElementById('venta-fecha').value = todayLocalISO();
   document.getElementById('venta-comprobante-label').textContent = 'Subir comprobante';
   document.getElementById('productos-datalist').innerHTML = state.productos.map(p => `<option value="${esc(p.nombre)} — ${fmt(p.precio)}">`).join('');
+  document.getElementById('toppings-datalist').innerHTML = state.toppings.map(t => `<option value="${esc(t.nombre)} — ${fmt(t.precio)}">`).join('');
   document.getElementById('clientes-datalist').innerHTML = state.clientes.map(c => `<option value="${esc(c.nombre)}">`).join('');
+  ventaDraftToppingQty = 1;
+  document.getElementById('venta-draft-topping').value = '';
+  document.getElementById('venta-draft-topping-qty').textContent = '1';
+  document.getElementById('venta-topping-suelto-form').style.display = 'none';
   renderVentaMetodoPago();
   renderDraftAdiciones();
   renderCartLines();
@@ -1709,6 +1788,35 @@ function addLineToCart() {
   renderCartLines();
 }
 function removeLineFromCart(id) { ventaCart = ventaCart.filter(l => l.id !== id); renderCartLines(); }
+function toggleToppingSueltoForm() {
+  const el = document.getElementById('venta-topping-suelto-form');
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+function decDraftToppingQty() { ventaDraftToppingQty = Math.max(1, ventaDraftToppingQty - 1); document.getElementById('venta-draft-topping-qty').textContent = ventaDraftToppingQty; }
+function incDraftToppingQty() { ventaDraftToppingQty++; document.getElementById('venta-draft-topping-qty').textContent = ventaDraftToppingQty; }
+function findToppingFromDraftInput() {
+  const nombre = document.getElementById('venta-draft-topping').value.split(' — ')[0].trim();
+  return state.toppings.find(t => t.nombre === nombre) || null;
+}
+// Topping vendido suelto (sin ir dentro de un producto) — línea de carrito
+// distinta a una de producto: trae toppingId en vez de productoId, sin
+// adiciones (las adiciones son un extra sobre un producto, no sobre un
+// topping suelto). registrarVenta() separa ambos tipos de línea antes de
+// llamar a CrumblyCore.applyVenta, que ya soporta `toppingsSueltos` desde
+// antes del rediseño — no hizo falta tocar core.js.
+function addToppingSueltoToCart() {
+  const t = findToppingFromDraftInput();
+  if (!t) { showToast('Selecciona un topping de la lista'); return; }
+  ventaCart.push({
+    id: 'line-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+    toppingId: t.id, nombre: t.nombre + ' (suelto)', precio: t.precio, qty: ventaDraftToppingQty,
+    adiciones: []
+  });
+  ventaDraftToppingQty = 1;
+  document.getElementById('venta-draft-topping').value = '';
+  document.getElementById('venta-draft-topping-qty').textContent = '1';
+  renderCartLines();
+}
 function cartLineSubtotal(l) { return (l.precio + l.adiciones.reduce((a, x) => a + x.precio, 0)) * l.qty; }
 function renderCartLines() {
   document.getElementById('venta-cart-count').textContent = ventaCart.length;
@@ -1718,7 +1826,7 @@ function renderCartLines() {
     : ventaCart.map(l => `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:10px;background:var(--bg)">
         <div style="display:flex;align-items:center;gap:10px;min-width:0">
           <div style="width:30px;height:30px;border-radius:8px;background:var(--white);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:11px;font-weight:600;color:var(--ink)">${l.qty}×</div>
-          <div style="min-width:0"><div style="font-size:12px;font-weight:600;color:var(--ink)">${esc(l.nombre)}</div><div style="font-size:11px;color:var(--muted);margin-top:1px">${l.adiciones.length ? esc(l.adiciones.map(a => a.label).join(', ')) : 'Sin adiciones'}</div></div>
+          <div style="min-width:0"><div style="font-size:12px;font-weight:600;color:var(--ink)">${esc(l.nombre)}</div><div style="font-size:11px;color:var(--muted);margin-top:1px">${l.adiciones.length ? esc(l.adiciones.map(a => a.label).join(', ')) : (l.toppingId ? 'Topping suelto' : 'Sin adiciones')}</div></div>
         </div>
         <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
           <span style="font-size:12px;font-weight:600;color:var(--ink)">${fmt(cartLineSubtotal(l))}</span>
@@ -1730,10 +1838,11 @@ function renderCartLines() {
 
 function registrarVenta() {
   if (!ventaCart.length) { showToast('Agrega al menos un producto'); return; }
-  const lineas = ventaCart.map(l => ({ productoId: l.productoId, qty: l.qty, adiciones: l.adiciones.map(a => a.id) }));
+  const lineas = ventaCart.filter(l => l.productoId).map(l => ({ productoId: l.productoId, qty: l.qty, adiciones: l.adiciones.map(a => a.id) }));
+  const toppingsSueltos = ventaCart.filter(l => l.toppingId).map(l => ({ toppingId: l.toppingId, qty: l.qty }));
 
   // P0-3: valida el consumo total contra el stock ANTES de tocar nada.
-  const consumo = CrumblyCore.computeSaleConsumption(lineas, [], state);
+  const consumo = CrumblyCore.computeSaleConsumption(lineas, toppingsSueltos, state);
   const faltantes = CrumblyCore.checkStockShortage(consumo, state);
   let stockInsuficiente = false;
   if (faltantes.length) {
@@ -1759,11 +1868,12 @@ function registrarVenta() {
     opts.fecha = new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds()).toISOString();
   }
 
-  const venta = CrumblyCore.applyVenta(state, lineas, [], opts);
+  const venta = CrumblyCore.applyVenta(state, lineas, toppingsSueltos, opts);
   if (!venta) { showToast('Error al registrar la venta'); return; }
   saveState();
   closeSaleModal();
   renderCaja();
+  renderInventario();
   renderReportes();
   showToast('Venta registrada · ' + fmt(venta.total) + (stockInsuficiente ? ' ⚠ stock insuficiente' : ' ✓'));
 }
@@ -1806,6 +1916,18 @@ function getReportGastos() { return hasCustomRange() ? CrumblyCore.getGastosByRa
 function getReportCascada() { return hasCustomRange() ? CrumblyCore.getCascadaUtilidadRango(state, reportRangeStart, reportRangeEnd) : CrumblyCore.getCascadaUtilidad(state, reportPeriod); }
 function getReportLabel() { return hasCustomRange() ? (reportRangeStart + ' a ' + reportRangeEnd) : getPeriodLabel(reportPeriod); }
 function getReportRangeLabel() { return hasCustomRange() ? (reportRangeStart + ' — ' + reportRangeEnd) : getPeriodRangeLabel(reportPeriod); }
+// Ranking de productos por ganancia del período — usado por el reporte PDF
+// de ventas y por la card "Detalle financiero" del Dashboard, para no
+// calcular esto dos veces.
+function getProductosMasRentables(ventas) {
+  const prod = {};
+  ventas.forEach(v => v.items.forEach(i => {
+    if (!prod[i.nombre]) prod[i.nombre] = { gan: 0, qty: 0 };
+    prod[i.nombre].gan += (i.precio - i.costo) * i.qty;
+    prod[i.nombre].qty += i.qty;
+  }));
+  return Object.entries(prod).sort((a, b) => b[1].gan - a[1].gan);
+}
 
 /* ─── REPORTES / DASHBOARD ─── */
 function setReportPeriod(p, el) {
@@ -1916,6 +2038,7 @@ function renderReportes() {
   renderDonut(ventas);
   renderDashboardAlerts();
   renderCierreCaja();
+  renderDetalleFinanciero();
 }
 
 /* ─── CIERRE DE CAJA DIARIO — solo reporte, no bloquea datos ─── */
@@ -1931,6 +2054,38 @@ function renderCierreCaja() {
   document.getElementById('cc-gastos').textContent = '-' + fmt(totalGastos);
   document.getElementById('cc-utilidad-neta').textContent = fmt(casc.utilidadNeta);
   document.getElementById('cc-ticket-promedio').textContent = fmt(CrumblyCore.getTicketPromedio(ventas));
+}
+
+/* ─── Detalle financiero (cascada de utilidad + productos más rentables)
+   del período activo del Dashboard — colapsada por defecto para no
+   romper el "sin scroll" del Dashboard; se calcula solo mientras está
+   abierta. Mismos datos que ya se usan en el reporte PDF de ventas
+   (getReportCascada/getProductosMasRentables), nunca se duplica la
+   fórmula. ─── */
+let dashDetalleOpen = false;
+function toggleDetalleFinanciero() {
+  dashDetalleOpen = !dashDetalleOpen;
+  renderDetalleFinanciero();
+}
+function renderDetalleFinanciero() {
+  document.getElementById('dash-detalle-caret').className = 'ph ' + (dashDetalleOpen ? 'ph-caret-up' : 'ph-caret-down');
+  document.getElementById('dash-detalle-financiero').style.display = dashDetalleOpen ? 'block' : 'none';
+  if (!dashDetalleOpen) return;
+  const casc = getReportCascada();
+  document.getElementById('df-utilidad-bruta').textContent = fmt(casc.utilidadBruta);
+  document.getElementById('df-gastos-operativos').textContent = '-' + fmt(casc.totalOperativos);
+  document.getElementById('df-depreciacion').textContent = '-' + fmt(casc.depreciacion);
+  document.getElementById('df-mermas').textContent = '-' + fmt(casc.mermas);
+  document.getElementById('df-utilidad-neta').textContent = fmt(casc.utilidadNeta);
+  document.getElementById('df-flujo-caja').textContent = fmt(casc.flujoCaja);
+
+  const sorted = getProductosMasRentables(getReportVentas());
+  document.getElementById('dash-productos-rentables').innerHTML = sorted.length
+    ? sorted.map(([nombre, d]) => `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line)">
+        <span style="font-size:12px;color:var(--text)">${esc(nombre)}</span>
+        <span style="font-size:12px;color:var(--muted)">${d.qty} u · <strong style="color:var(--ink)">${fmt(d.gan)}</strong></span>
+      </div>`).join('')
+    : '<p class="empty">Sin ventas en este período</p>';
 }
 function generateCierreCajaPDF() {
   if (!window.jspdf) { showToast('No se pudo cargar el generador de PDF'); return; }
@@ -2086,13 +2241,7 @@ function generateSalesReportPDF() {
     columnStyles: { 1: { cellWidth: 74 }, 2: { halign: 'right' }, 3: { halign: 'right' } }
   }) + 14;
 
-  const prod = {};
-  ventas.forEach(v => v.items.forEach(i => {
-    if (!prod[i.nombre]) prod[i.nombre] = { gan: 0, qty: 0 };
-    prod[i.nombre].gan += (i.precio - i.costo) * i.qty;
-    prod[i.nombre].qty += i.qty;
-  }));
-  const sorted = Object.entries(prod).sort((a, b) => b[1].gan - a[1].gan);
+  const sorted = getProductosMasRentables(ventas);
   if (sorted.length) {
     y = pdfCheckPageBreak(doc, y);
     pdfSectionLabel(doc, 'Productos m\u00e1s rentables', y); y += 7;

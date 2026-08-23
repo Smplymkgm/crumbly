@@ -193,10 +193,7 @@ A partir del prototipo de alta fidelidad `design_handoff_crumbly_dashboard/` (`.
 
 **Código muerto eliminado en el mismo pase** (detectado con un sweep de `getElementById` contra los `id` existentes en el HTML): `renderInventoryNeeds()` y `renderCascadaUtilidad()` — ambas ya no tenían el elemento DOM que rellenaban (`#r-inventario-needs` no existe en el nuevo shell) y no se llamaban desde ningún lado. `calcInventoryNeeds()` y `getCascadaUtilidad()` (el cálculo, no el render) se conservan — se siguen usando en el PDF.
 
-**Reducciones funcionales de esta ronda, no pedidas explícitamente — a validar con el usuario:**
-1. Las cards "Utilidad neta y flujo de caja" y "Cobertura de costos fijos" (Fase C/D2) y "Productos más rentables" ya no aparecen en ninguna pantalla — el cálculo (`getCascadaUtilidad`, `getMargenProducto`) sigue intacto y se usa en el PDF, pero no hay UI que lo muestre en pantalla. El diseño nuevo no incluía esas tarjetas.
-2. La card "Necesidades de compra (semana)" (`calcInventoryNeeds`, P1-1/P1-2) tampoco tiene pantalla — mismo caso, el cálculo se conserva (usado en PDF) pero no se renderiza.
-3. El flujo de "vender un topping suelto" (sin ir dentro de un producto) que existía en la versión anterior no está en el modal de Venta nuevo — el diseño solo contempla adiciones *sobre* un producto, no una venta de insumo standalone. Si el negocio todavía vende toppings sueltos, esto es una regresión real, no solo estética.
+**Reducciones funcionales de esta ronda, no pedidas explícitamente:** las 3 quedaron restauradas el 23 ago 2026 a pedido del usuario — ver sección propia abajo.
 
 ### Mermas — Inventario → Mermas (19 de agosto de 2026)
 
@@ -216,6 +213,19 @@ A pedido explícito: registrar pérdidas de inventario (vencido, dañado, quemad
 | `state.mermas` (schemaVersion 7→8) | ✅ DONE | Migración aditiva y no destructiva, mismo patrón que `clientes` (v5→v6). Sincroniza automáticamente con el backend (Fase E) porque `push`/`pull` mandan el `state` completo — se agregó además una hoja espejo `mermas` en `backend/Code.gs` para consistencia con el resto de colecciones (de solo lectura; **requiere que el usuario vuelva a pegar/desplegar el script actualizado**, igual que los cambios anteriores al backend). |
 
 **No se tocó:** ningún flujo de venta, compra o caja existente — `registrarMerma`/`eliminarMerma` son funciones nuevas que no modifican `applyVenta`, `revertVenta`, `registrarGasto` ni `eliminarGasto`.
+
+### Restauración de 3 funciones caídas en el rediseño (23 de agosto de 2026)
+
+A pedido explícito del usuario, tras confirmarle qué había quedado pendiente de la reconstrucción de `index.html`.
+
+| Pieza | Estado | Verificación |
+|---|---|---|
+| "Vender un topping suelto" en el modal de Venta | ✅ DONE | Sección plegable ("Vender un topping suelto (sin producto)") con su propio selector+cantidad, agrega una línea de carrito con `toppingId` en vez de `productoId`. `registrarVenta` separa `ventaCart` en `lineas`/`toppingsSueltos` antes de llamar a `CrumblyCore.applyVenta` — ese soporte ya existía en core.js desde antes del rediseño (`toppingsSueltos` nunca se tocó), solo faltaba la UI. Verificado en navegador: 3 chispas de chocolate sueltas descontaron stock (100→97) y crearon una venta con `items:[{toppingId,...}]`, `total:$3.000`, `ganancia:$2.940`. |
+| Card "Necesidades de compra (semana)" | ✅ DONE | Sección plegable nueva en Inventario (mismo patrón que "Inventario bajo" del Dashboard), usa `calcInventoryNeeds()` ya existente — ningún cálculo nuevo. Verificado: insumo con stock bajo mostró "Comprar 95und" con el badge de conteo correcto. |
+| Cards "Utilidad neta y flujo de caja" + "Productos más rentables" | ✅ DONE | Card plegable "Detalle financiero del período" en el Dashboard (colapsada por defecto — solo calcula mientras está abierta, para no tocar de nuevo el "sin scroll"). Reusa `getReportCascada()`/`getReportVentas()` (ya atados a los pills de período existentes) y un helper nuevo `getProductosMasRentables(ventas)` extraído del reporte PDF de ventas (antes calculado inline ahí, ahora se usa desde los dos lugares — ninguna fórmula duplicada). Verificado con una venta real: Utilidad bruta $6.400, Gastos operativos -$5.000, Utilidad neta $1.400 y Flujo de caja $5.000 — coincide exacto con la card "Cierre de caja — hoy" de al lado. |
+| Ajuste fino de espaciado del Dashboard | ✅ DONE | Agregar la card colapsada de detalle financiero metía 11px de scroll de más a 1280×700. Se recortó un poco más el padding/gap ya comprimido en la ronda anterior (`gap` 12→10px, `.card` padding 13→11px, `app-content` padding-bottom 16→10px) — verificado sin scrollbar de nuevo hasta 1280×650. |
+
+**No se tocó:** ningún cálculo de `js/core.js` — las 3 restauraciones son puramente de `index.html` (UI + wiring), reusando funciones que ya existían (`applyVenta`, `calcInventoryNeeds`, `getCascadaUtilidad`) sin modificarlas.
 
 ## Tests
 
