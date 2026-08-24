@@ -2884,25 +2884,27 @@ function importMenuCrumbly() {
     productosAgregados++;
   });
 
-  // Cada complemento también queda disponible como "adición" seleccionable
-  // al armar una venta (chips en el modal de Venta, CrumblyCore.getAdiciones)
-  // — mismo precio que la venta suelta, porción 1 (consume 1 unidad de su
-  // propio stock por adición, igual que "vender un topping suelto").
+  // Cada complemento se vende como su propia línea de venta (igual que un
+  // producto) vía "Vender un topping suelto" — NO como adición: marcarlos
+  // esAdicion mostraba los 28 como una pared de chips debajo de CADA
+  // producto en el modal de Venta, antes incluso de elegir un producto.
+  // Si un import anterior ya los había marcado como adición, se revierte
+  // aquí (upsert en los dos sentidos, sigue siendo idempotente).
   let toppingsAgregados = 0, toppingsActualizados = 0;
   complementos.forEach(c => {
     const existente = state.toppings.find(t => t.nombre === c.nombre);
     if (existente) {
-      if (!existente.esAdicion) {
-        existente.esAdicion = true;
-        existente.precioAdicion = existente.precio;
-        existente.porcion = 1;
+      if (existente.esAdicion) {
+        existente.esAdicion = false;
+        existente.precioAdicion = 0;
+        existente.porcion = 0;
         toppingsActualizados++;
       }
       return;
     }
     state.toppings.push({
       id: uid(), nombre: c.nombre, categoria: c.categoria, cantidad: 0, costo: 0, precio: c.precio, minimo: 0, unidad: 'unidad',
-      margenVariable: false, esAdicion: true, precioAdicion: c.precio, porcion: 1, nombreAdicion: ''
+      margenVariable: false, esAdicion: false, precioAdicion: 0, porcion: 0, nombreAdicion: ''
     });
     toppingsAgregados++;
   });
@@ -2910,7 +2912,7 @@ function importMenuCrumbly() {
   saveState();
   refreshAll();
   const partes = [`${productosAgregados} waffles y ${toppingsAgregados} complementos nuevos`];
-  if (toppingsActualizados) partes.push(`${toppingsActualizados} complementos marcados como adición`);
+  if (toppingsActualizados) partes.push(`${toppingsActualizados} complementos corregidos`);
   if (productosOmitidos) partes.push(`${productosOmitidos} waffles ya existían`);
   showToast('Importado: ' + partes.join(' · '));
 }
