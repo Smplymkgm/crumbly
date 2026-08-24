@@ -105,6 +105,8 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 .field-sm{height:34px;border-radius:999px;padding:7px 12px}
 textarea.field{height:auto}
 .list-row{display:flex;align-items:center;justify-content:space-between;padding:10px 2px;border-bottom:1px solid var(--line)}
+.venta-sugerencia:hover{background:var(--bg)}
+.venta-sugerencia:last-child{border-bottom:none !important}
 .list-row:last-child{border-bottom:none}
 .empty{text-align:center;color:var(--muted);font-size:12px;padding:1.5rem 0}
 .item-name{font-size:14px;font-weight:500;color:var(--ink)}
@@ -781,11 +783,13 @@ textarea.field{height:auto}
 
     <div style="border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px;background:var(--bg)">
       <div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:var(--muted);margin-bottom:10px">
-        <i class="ph ph-plus-circle"></i> Agregar producto
+        <i class="ph ph-plus-circle"></i> Agregar producto o complemento
       </div>
-      <div style="display:flex;gap:8px;margin-bottom:12px">
-        <input type="text" id="venta-draft-producto" class="field" style="background:var(--white)" list="productos-datalist" placeholder="Buscar o seleccionar producto">
-        <datalist id="productos-datalist"></datalist>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <div style="flex:1;position:relative">
+          <input type="text" id="venta-draft-producto" class="field" style="background:var(--white)" placeholder="Buscar producto o complemento" autocomplete="off" oninput="onVentaBuscarInput()" onfocus="onVentaBuscarInput()">
+          <div id="venta-buscar-sugerencias" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--white);border:1px solid var(--line);border-radius:9px;box-shadow:0 8px 20px rgba(17,17,17,.10);max-height:220px;overflow-y:auto;z-index:20"></div>
+        </div>
         <div style="display:flex;align-items:center;border:1px solid var(--line);border-radius:8px;background:var(--white);overflow:hidden">
           <button onclick="decDraftQty()" style="width:28px;height:36px;border:none;background:transparent;color:var(--ink);cursor:pointer;font-size:14px">−</button>
           <span style="width:26px;text-align:center;font-size:12px;font-weight:600;color:var(--ink)" id="venta-draft-qty">1</span>
@@ -794,22 +798,6 @@ textarea.field{height:auto}
       </div>
       <div id="venta-draft-adiciones" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
       <button class="btn btn-block" onclick="addLineToCart()"><i class="ph ph-plus"></i> Agregar a la venta</button>
-    </div>
-
-    <button type="button" onclick="toggleToppingSueltoForm()" style="background:transparent;border:none;color:var(--muted);font-size:11px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;margin:-8px 0 14px">
-      <i class="ph ph-plus-circle"></i> Vender un topping suelto (sin producto)
-    </button>
-    <div id="venta-topping-suelto-form" style="display:none;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px;background:var(--bg)">
-      <div style="display:flex;gap:8px">
-        <input type="text" id="venta-draft-topping" class="field" style="background:var(--white)" list="toppings-datalist" placeholder="Buscar o seleccionar topping">
-        <datalist id="toppings-datalist"></datalist>
-        <div style="display:flex;align-items:center;border:1px solid var(--line);border-radius:8px;background:var(--white);overflow:hidden">
-          <button type="button" onclick="decDraftToppingQty()" style="width:28px;height:36px;border:none;background:transparent;color:var(--ink);cursor:pointer;font-size:14px">−</button>
-          <span style="width:26px;text-align:center;font-size:12px;font-weight:600;color:var(--ink)" id="venta-draft-topping-qty">1</span>
-          <button type="button" onclick="incDraftToppingQty()" style="width:28px;height:36px;border:none;background:transparent;color:var(--ink);cursor:pointer;font-size:14px">+</button>
-        </div>
-      </div>
-      <button class="btn btn-block" style="margin-top:12px" onclick="addToppingSueltoToCart()"><i class="ph ph-plus"></i> Agregar a la venta</button>
     </div>
 
     <div style="margin-bottom:16px">
@@ -1709,7 +1697,7 @@ function renderProductos() {
 let ventaCart = [];
 let ventaDraftQty = 1;
 let ventaDraftAdiciones = [];
-let ventaDraftToppingQty = 1;
+let ventaDraftSelected = null; // { tipo: 'producto'|'topping', id }
 let ventaMetodoPago = 'efectivo';
 let ventaComprobante = '';
 
@@ -1718,7 +1706,7 @@ function todayLocalISO() {
   return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0');
 }
 function openSaleModal() {
-  ventaCart = []; ventaDraftQty = 1; ventaDraftAdiciones = [];
+  ventaCart = []; ventaDraftQty = 1; ventaDraftAdiciones = []; ventaDraftSelected = null;
   ventaMetodoPago = 'efectivo'; ventaComprobante = '';
   document.getElementById('venta-cliente-nombre').value = '';
   document.getElementById('venta-cliente-telefono').value = '';
@@ -1726,15 +1714,10 @@ function openSaleModal() {
   document.getElementById('venta-cliente-nuevo-form').style.display = 'none';
   document.getElementById('venta-draft-producto').value = '';
   document.getElementById('venta-draft-qty').textContent = '1';
+  document.getElementById('venta-buscar-sugerencias').style.display = 'none';
   document.getElementById('venta-fecha').value = todayLocalISO();
   document.getElementById('venta-comprobante-label').textContent = 'Subir comprobante';
-  document.getElementById('productos-datalist').innerHTML = state.productos.map(p => `<option value="${esc(p.nombre)} — ${fmt(p.precio)}">`).join('');
-  document.getElementById('toppings-datalist').innerHTML = state.toppings.map(t => `<option value="${esc(t.nombre)} — ${fmt(t.precio)}">`).join('');
   document.getElementById('clientes-datalist').innerHTML = state.clientes.map(c => `<option value="${esc(c.nombre)}">`).join('');
-  ventaDraftToppingQty = 1;
-  document.getElementById('venta-draft-topping').value = '';
-  document.getElementById('venta-draft-topping-qty').textContent = '1';
-  document.getElementById('venta-topping-suelto-form').style.display = 'none';
   renderVentaMetodoPago();
   renderDraftAdiciones();
   renderCartLines();
@@ -1765,63 +1748,76 @@ function toggleDraftAdicion(id) {
   ventaDraftAdiciones = ventaDraftAdiciones.includes(id) ? ventaDraftAdiciones.filter(x => x !== id) : [...ventaDraftAdiciones, id];
   renderDraftAdiciones();
 }
+// Las "adiciones" (extras marcados esAdicion) solo tienen sentido sobre un
+// producto (ej: nutella extra en un waffle) — al elegir un complemento
+// suelto no se muestran.
 function renderDraftAdiciones() {
   const wrap = document.getElementById('venta-draft-adiciones');
+  if (!ventaDraftSelected || ventaDraftSelected.tipo !== 'producto') { wrap.innerHTML = ''; return; }
   const adiciones = CrumblyCore.getAdiciones(state);
   wrap.innerHTML = adiciones.map(a => {
     const active = ventaDraftAdiciones.includes(a.id);
     return `<button type="button" class="chip ${active ? 'active' : ''}" onclick="toggleDraftAdicion('${a.id}')">${esc(a.nombreAdicion || a.nombre)} +${fmt(a.precioAdicion)}</button>`;
   }).join('');
 }
-function findProductoFromDraftInput() {
-  const nombre = document.getElementById('venta-draft-producto').value.split(' — ')[0].trim();
-  return state.productos.find(p => p.nombre === nombre) || null;
+// Buscador único de "Agregar producto o complemento" — reemplaza el
+// <input list="datalist"> nativo (poco confiable en navegadores móviles,
+// mismo problema ya visto con el campo Categoría) por una lista filtrada
+// propia. Combina productos y toppings/complementos vendibles en una sola
+// búsqueda — un complemento se agrega como su propia línea de venta, igual
+// que un producto (CrumblyCore.applyVenta ya soporta toppingsSueltos).
+function getVentaBuscables() {
+  return [
+    ...state.productos.map(p => ({ id: p.id, tipo: 'producto', nombre: p.nombre, precio: p.precio })),
+    ...state.toppings.map(t => ({ id: t.id, tipo: 'topping', nombre: t.nombre, precio: t.precio }))
+  ];
+}
+function onVentaBuscarInput() {
+  if (ventaDraftSelected) { ventaDraftSelected = null; renderDraftAdiciones(); }
+  const q = document.getElementById('venta-draft-producto').value.trim().toLowerCase();
+  const wrap = document.getElementById('venta-buscar-sugerencias');
+  if (!q) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
+  const matches = getVentaBuscables().filter(x => x.nombre.toLowerCase().includes(q)).slice(0, 30);
+  wrap.innerHTML = matches.length
+    ? matches.map(m => `<button type="button" class="venta-sugerencia" onclick="selectVentaBuscado('${m.tipo}','${m.id}')" style="display:block;width:100%;text-align:left;padding:9px 12px;border:none;border-bottom:1px solid var(--line);background:transparent;cursor:pointer;font-size:12px;color:var(--text)">${esc(m.nombre)} — ${fmt(m.precio)}</button>`).join('')
+    : '<div style="padding:10px 12px;font-size:12px;color:var(--muted)">Sin resultados</div>';
+  wrap.style.display = 'block';
+}
+function selectVentaBuscado(tipo, id) {
+  const item = (tipo === 'producto' ? state.productos : state.toppings).find(x => x.id === id);
+  if (!item) return;
+  ventaDraftSelected = { tipo, id };
+  document.getElementById('venta-draft-producto').value = item.nombre + ' — ' + fmt(item.precio);
+  document.getElementById('venta-buscar-sugerencias').style.display = 'none';
+  renderDraftAdiciones();
 }
 function addLineToCart() {
-  const p = findProductoFromDraftInput();
-  if (!p) { showToast('Selecciona un producto de la lista'); return; }
-  const adiciones = CrumblyCore.getAdiciones(state).filter(a => ventaDraftAdiciones.includes(a.id));
-  ventaCart.push({
-    id: 'line-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-    productoId: p.id, nombre: p.nombre, precio: p.precio, qty: ventaDraftQty,
-    adiciones: adiciones.map(a => ({ id: a.id, label: a.nombreAdicion || a.nombre, precio: a.precioAdicion }))
-  });
-  ventaDraftQty = 1; ventaDraftAdiciones = [];
+  if (!ventaDraftSelected) { showToast('Busca y selecciona un producto o complemento'); return; }
+  if (ventaDraftSelected.tipo === 'producto') {
+    const p = state.productos.find(x => x.id === ventaDraftSelected.id);
+    if (!p) { showToast('Producto no encontrado'); return; }
+    const adiciones = CrumblyCore.getAdiciones(state).filter(a => ventaDraftAdiciones.includes(a.id));
+    ventaCart.push({
+      id: 'line-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      productoId: p.id, nombre: p.nombre, precio: p.precio, qty: ventaDraftQty,
+      adiciones: adiciones.map(a => ({ id: a.id, label: a.nombreAdicion || a.nombre, precio: a.precioAdicion }))
+    });
+  } else {
+    const t = state.toppings.find(x => x.id === ventaDraftSelected.id);
+    if (!t) { showToast('Complemento no encontrado'); return; }
+    ventaCart.push({
+      id: 'line-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      toppingId: t.id, nombre: t.nombre, precio: t.precio, qty: ventaDraftQty,
+      adiciones: []
+    });
+  }
+  ventaDraftQty = 1; ventaDraftAdiciones = []; ventaDraftSelected = null;
   document.getElementById('venta-draft-producto').value = '';
   document.getElementById('venta-draft-qty').textContent = '1';
   renderDraftAdiciones();
   renderCartLines();
 }
 function removeLineFromCart(id) { ventaCart = ventaCart.filter(l => l.id !== id); renderCartLines(); }
-function toggleToppingSueltoForm() {
-  const el = document.getElementById('venta-topping-suelto-form');
-  el.style.display = el.style.display === 'none' ? 'block' : 'none';
-}
-function decDraftToppingQty() { ventaDraftToppingQty = Math.max(1, ventaDraftToppingQty - 1); document.getElementById('venta-draft-topping-qty').textContent = ventaDraftToppingQty; }
-function incDraftToppingQty() { ventaDraftToppingQty++; document.getElementById('venta-draft-topping-qty').textContent = ventaDraftToppingQty; }
-function findToppingFromDraftInput() {
-  const nombre = document.getElementById('venta-draft-topping').value.split(' — ')[0].trim();
-  return state.toppings.find(t => t.nombre === nombre) || null;
-}
-// Topping vendido suelto (sin ir dentro de un producto) — línea de carrito
-// distinta a una de producto: trae toppingId en vez de productoId, sin
-// adiciones (las adiciones son un extra sobre un producto, no sobre un
-// topping suelto). registrarVenta() separa ambos tipos de línea antes de
-// llamar a CrumblyCore.applyVenta, que ya soporta `toppingsSueltos` desde
-// antes del rediseño — no hizo falta tocar core.js.
-function addToppingSueltoToCart() {
-  const t = findToppingFromDraftInput();
-  if (!t) { showToast('Selecciona un topping de la lista'); return; }
-  ventaCart.push({
-    id: 'line-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-    toppingId: t.id, nombre: t.nombre + ' (suelto)', precio: t.precio, qty: ventaDraftToppingQty,
-    adiciones: []
-  });
-  ventaDraftToppingQty = 1;
-  document.getElementById('venta-draft-topping').value = '';
-  document.getElementById('venta-draft-topping-qty').textContent = '1';
-  renderCartLines();
-}
 function cartLineSubtotal(l) { return (l.precio + l.adiciones.reduce((a, x) => a + x.precio, 0)) * l.qty; }
 function renderCartLines() {
   document.getElementById('venta-cart-count').textContent = ventaCart.length;

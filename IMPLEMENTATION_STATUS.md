@@ -239,6 +239,11 @@ El usuario compartió el PDF del menú (`Menu crumbly.pdf`, no versionado en el 
 
 Verificado en navegador: los 12 productos aparecen con sus chips de categoría (Waffle/Waffle Belga/Croffle) y margen 100% (costo $0, esperado sin fórmula); los 28 complementos aparecen en Inventario con sus chips (Salsas/Toppings/Frutas/Base); una venta mixta (1 waffle + 1 Nutella suelta) generó correctamente el aviso de stock insuficiente (Nutella en 0 existencia) y, confirmado, registró ambos ítems con el total/ganancia correctos.
 
+**Dos correcciones sobre la marcha, mismo día:**
+
+1. Un primer intento marcó los 28 complementos como "adición" (`esAdicion:true`) para que aparecieran como chips seleccionables sobre un producto. El usuario mostró una captura: eso llenaba el modal de Venta con una pared de 28 chips debajo de "Agregar producto", visible incluso antes de elegir nada. Se revirtió — `importMenuCrumbly()` ahora los deja `esAdicion:false` (y corrige en el lugar los que ya se hubieran marcado mal en un import anterior, sin duplicar).
+2. El usuario reportó en su navegador real que la lista de productos no aparecía y que los complementos tampoco aparecían ahí. Causa: el buscador de "Agregar producto" usaba `<input list="datalist">` nativo — el mismo problema de confiabilidad en navegadores móviles que ya se había encontrado y corregido para el campo Categoría (commit `0e0fc2c`) pero no se había aplicado aquí. Se reemplazó por un buscador propio (`getVentaBuscables()` + `onVentaBuscarInput()`/`selectVentaBuscado()`): un solo campo de texto que filtra en vivo sobre productos **y** toppings/complementos juntos, mostrando los resultados en una lista propia (no nativa) debajo del campo. Esto también resolvió el pedido de que un complemento "simplemente se agregue como un producto más a la factura" — se eliminó el flujo separado y colapsado de "Vender un topping suelto", ahora unificado en la misma búsqueda. Verificado en navegador de escritorio y en viewport móvil (375px): la búsqueda "croffle" devuelve los 4 waffles Croffle y el complemento "Croffle (base)" en la misma lista.
+
 ## Tests
 
 ```
