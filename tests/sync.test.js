@@ -104,6 +104,40 @@ test('propaga ok:false del backend (ej. token inválido) sin lanzar', async () =
   assert.strictEqual(r.error, 'token inválido');
 });
 
+group('uploadFile');
+
+test('usa POST con Content-Type text/plain, igual que push (evita el preflight)', async () => {
+  const f = mockFetch([{ body: { ok: true, url: 'https://drive.google.com/x', fileId: 'f1' } }]);
+  await Sync.uploadFile('https://x.com/exec', 'tok', 'comprobante.jpg', 'image/jpeg', 'QUJD', f);
+  assert.strictEqual(f.calls[0].opts.method, 'POST');
+  assert.strictEqual(f.calls[0].opts.headers['Content-Type'], 'text/plain;charset=utf-8');
+});
+
+test('el body es JSON con token, action=uploadComprobante, filename, mimeType y data en base64', async () => {
+  const f = mockFetch([{ body: { ok: true, url: 'https://drive.google.com/x' } }]);
+  await Sync.uploadFile('https://x.com/exec', 'tok-secreto', 'foto.png', 'image/png', 'QUJD', f);
+  const body = JSON.parse(f.calls[0].opts.body);
+  assert.strictEqual(body.token, 'tok-secreto');
+  assert.strictEqual(body.action, 'uploadComprobante');
+  assert.strictEqual(body.filename, 'foto.png');
+  assert.strictEqual(body.mimeType, 'image/png');
+  assert.strictEqual(body.data, 'QUJD');
+});
+
+test('devuelve la url de Drive que responde el backend', async () => {
+  const f = mockFetch([{ body: { ok: true, url: 'https://drive.google.com/file/d/abc/view', fileId: 'abc' } }]);
+  const r = await Sync.uploadFile('https://x.com/exec', 'tok', 'a.jpg', 'image/jpeg', 'QUJD', f);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.url, 'https://drive.google.com/file/d/abc/view');
+});
+
+test('propaga ok:false del backend (ej. falta filename) sin lanzar', async () => {
+  const f = mockFetch([{ body: { ok: false, error: 'falta filename o data' } }]);
+  const r = await Sync.uploadFile('https://x.com/exec', 'tok', '', 'image/jpeg', '', f);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.error, 'falta filename o data');
+});
+
 (async () => {
   for (const [name, fn] of tests) {
     if (name === null) { fn(); continue; }

@@ -58,10 +58,25 @@
     }).then(parseResponse);
   }
 
+  // Sube un comprobante (foto/PDF de pago) a Drive vía el backend — data
+  // ya viene en base64 (index.html la arma con FileReader). Devuelve
+  // { ok, url, fileId } — url es lo que se guarda en venta.comprobante /
+  // gasto.comprobante en vez de solo el nombre del archivo.
+  function uploadFile(backendUrl, token, filename, mimeType, base64Data, fetchImpl) {
+    var f = resolveFetch(fetchImpl);
+    var body = JSON.stringify({ token: token, action: 'uploadComprobante', filename: filename, mimeType: mimeType, data: base64Data });
+    return f(backendUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: body
+    }).then(parseResponse);
+  }
+
   return {
     isConfigured: isConfigured,
     ping: ping,
     pull: pull,
-    push: push
+    push: push,
+    uploadFile: uploadFile
   };
 });

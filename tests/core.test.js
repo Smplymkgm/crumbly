@@ -366,6 +366,13 @@ test('registrarGasto tipo inventario aumenta stock y actualiza costo (promedio p
   assert.strictEqual(gasto.cantidadAntes, 1000);
 });
 
+test('registrarGasto guarda comprobante (bug real: se perdía, applyVenta sí lo guardaba)', () => {
+  const s = stateConGastos();
+  const gasto = C.registrarGasto(s, { tipo: 'operativo', categoria: 'Publicidad', monto: 5000, comprobante: 'https://drive.google.com/file/d/abc/view' });
+  assert.strictEqual(gasto.comprobante, 'https://drive.google.com/file/d/abc/view');
+  assert.strictEqual(s.gastos[0].comprobante, 'https://drive.google.com/file/d/abc/view');
+});
+
 test('registrarGasto tipo operativo NO toca ningún insumo', () => {
   const s = stateConGastos();
   C.registrarGasto(s, { tipo: 'operativo', categoria: 'Publicidad', monto: 50000, descripcion: 'Instagram Ads' });

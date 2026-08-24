@@ -1735,12 +1735,53 @@ function renderVentaMetodoPago() {
   document.getElementById('venta-comprobante-wrap').style.display = ventaMetodoPago !== 'efectivo' ? 'block' : 'none';
 }
 function setVentaMetodoPago(m) { ventaMetodoPago = m; renderVentaMetodoPago(); }
-function onComprobanteChange(e, labelId) {
+function setComprobanteValor(labelId, valor) {
+  if (labelId === 'venta-comprobante-label') ventaComprobante = valor;
+  if (labelId === 'g-comprobante-label') gastoComprobanteNombre = valor;
+}
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+    reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
+    reader.readAsDataURL(file);
+  });
+}
+// Sube el comprobante a Drive vía el backend (CrumblySync.uploadFile) y
+// guarda la URL devuelta en vez de solo el nombre del archivo — así queda
+// un link real que se puede abrir después, no solo un texto suelto. Si la
+// sincronización no está configurada, cae de vuelta al comportamiento
+// anterior (guardar solo el nombre) para no bloquear la venta/gasto.
+async function onComprobanteChange(e, labelId) {
   const f = e.target.files && e.target.files[0];
-  const nombre = f ? f.name : 'Subir comprobante';
-  document.getElementById(labelId).textContent = nombre;
-  if (labelId === 'venta-comprobante-label') ventaComprobante = f ? f.name : '';
-  if (labelId === 'g-comprobante-label') gastoComprobanteNombre = f ? f.name : '';
+  const label = document.getElementById(labelId);
+  if (!f) { label.textContent = 'Subir comprobante'; setComprobanteValor(labelId, ''); return; }
+
+  if (!CrumblySync.isConfigured(state.config.backendUrl, state.config.backendToken)) {
+    label.textContent = f.name;
+    setComprobanteValor(labelId, f.name);
+    showToast('Configura la sincronización en Ajustes para guardar el comprobante en Drive — por ahora solo se guarda el nombre');
+    return;
+  }
+  if (f.size > 10 * 1024 * 1024) {
+    label.textContent = 'Subir comprobante';
+    setComprobanteValor(labelId, '');
+    showToast('El archivo pesa más de 10MB — elige uno más liviano');
+    return;
+  }
+
+  label.textContent = 'Subiendo ' + f.name + '...';
+  try {
+    const base64 = await fileToBase64(f);
+    const res = await CrumblySync.uploadFile(state.config.backendUrl, state.config.backendToken, f.name, f.type, base64);
+    if (!res.ok) throw new Error(res.error || 'error desconocido');
+    label.textContent = f.name + ' ✓';
+    setComprobanteValor(labelId, res.url);
+  } catch (err) {
+    label.textContent = 'Subir comprobante';
+    setComprobanteValor(labelId, '');
+    showToast('No se pudo subir el comprobante: ' + err.message);
+  }
 }
 function decDraftQty() { ventaDraftQty = Math.max(1, ventaDraftQty - 1); document.getElementById('venta-draft-qty').textContent = ventaDraftQty; }
 function incDraftQty() { ventaDraftQty++; document.getElementById('venta-draft-qty').textContent = ventaDraftQty; }
@@ -2741,6 +2782,12 @@ function renderCaja() {
     const delBtn = m.tipo === 'venta'
       ? `<button class="btn-icon danger" onclick="eliminarVenta('${m.ref.id}')" title="Eliminar"><i class="ph ph-trash"></i></button>`
       : `<button class="btn-icon danger" onclick="eliminarGasto('${m.ref.id}')" title="Eliminar"><i class="ph ph-trash"></i></button>`;
+    // comprobante solo es un link real si se subió a Drive (backend
+    // configurado al momento de guardar) — si no, quedó como texto suelto
+    // (el nombre del archivo) y no hay nada que abrir.
+    const comprobanteBtn = /^https?:\/\//.test(m.ref.comprobante || '')
+      ? `<a class="btn-icon" href="${esc(m.ref.comprobante)}" target="_blank" rel="noopener" title="Ver comprobante"><i class="ph ph-receipt"></i></a>`
+      : '';
     return `<div class="list-row">
       <div style="display:flex;align-items:center;gap:10px;min-width:0">
         <div style="width:26px;height:26px;border-radius:50%;background:var(--bg);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ph ${icon}" style="font-size:12px;color:var(--ink)"></i></div>
@@ -2751,6 +2798,7 @@ function renderCaja() {
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
         <span style="font-size:12px;font-weight:600;color:var(--ink)">${m.signo} ${fmt(m.monto)}</span>
+        ${comprobanteBtn}
         ${delBtn}
       </div>
     </div>`;

@@ -15,6 +15,10 @@
  * llevar IDs y diffs — si algún día el volumen lo justifica, se cambia
  * aquí sin tocar el resto de la app.
  *
+ * También sube comprobantes (fotos/PDF de pago) a una carpeta de Drive
+ * del dueño del script (acción "uploadComprobante") — no son públicos,
+ * el link solo funciona logueado con la cuenta que desplegó el script.
+ *
  * Instalación: ver backend/SETUP.md.
  */
 
@@ -61,7 +65,39 @@ function doPost(e) {
       lock.releaseLock();
     }
   }
+  if (body.action === 'uploadComprobante') {
+    return uploadComprobante_(body);
+  }
   return json_({ ok: false, error: 'acción desconocida: ' + body.action });
+}
+
+// ─── Comprobantes (fotos/PDF de pago, ventas y gastos) ─────────────────
+// Sube el archivo (base64) a una carpeta de Drive del dueño del script —
+// NO se comparte públicamente: el archivo queda visible solo para la
+// cuenta de Google que desplegó el script (misma cuenta que ya lee/escribe
+// la hoja), igual que cualquier archivo que crees a mano en tu Drive. Si
+// quieres compartir uno puntual, hazlo desde Drive normalmente.
+var COMPROBANTES_FOLDER = 'Crumbly - Comprobantes';
+
+function uploadComprobante_(body) {
+  if (!body.filename || !body.data) {
+    return json_({ ok: false, error: 'falta filename o data' });
+  }
+  try {
+    var bytes = Utilities.base64Decode(body.data);
+    var blob = Utilities.newBlob(bytes, body.mimeType || 'application/octet-stream', body.filename);
+    var folder = getOrCreateComprobantesFolder_();
+    var file = folder.createFile(blob);
+    return json_({ ok: true, url: file.getUrl(), fileId: file.getId() });
+  } catch (err) {
+    return json_({ ok: false, error: String(err) });
+  }
+}
+
+function getOrCreateComprobantesFolder_() {
+  var folders = DriveApp.getFoldersByName(COMPROBANTES_FOLDER);
+  if (folders.hasNext()) return folders.next();
+  return DriveApp.createFolder(COMPROBANTES_FOLDER);
 }
 
 function isValidToken_(token) {

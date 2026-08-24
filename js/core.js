@@ -835,7 +835,8 @@
       categoria: input.categoria || '',
       descripcion: input.descripcion || '',
       monto: monto,
-      proveedor: input.proveedor || ''
+      proveedor: input.proveedor || '',
+      comprobante: input.comprobante || ''
     };
 
     if (input.tipo === 'inventario') {
