@@ -163,6 +163,27 @@ textarea.field{height:auto}
 </head>
 <body>
 
+<!-- LOGIN -->
+<div id="login-gate" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:500;align-items:center;justify-content:center;padding:20px">
+  <div style="width:100%;max-width:340px;text-align:center">
+    <div style="width:56px;height:56px;border-radius:16px;background:var(--ink);color:var(--white);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:22px;margin:0 auto 18px">C</div>
+    <div style="font-weight:600;font-size:20px;color:var(--ink);margin-bottom:4px">Crumbly</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:28px">Ingresá la contraseña para continuar</div>
+    <input type="email" id="login-email" class="field" placeholder="Correo" autocomplete="username" style="text-align:center;margin-bottom:10px" onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
+    <input type="password" id="login-password" class="field" placeholder="Contraseña" autocomplete="current-password" style="text-align:center;margin-bottom:12px" onkeydown="if(event.key==='Enter')doLogin()">
+    <div id="login-error" style="display:none;color:var(--danger);font-size:12px;margin-bottom:12px"></div>
+    <button class="btn btn-block" onclick="doLogin()" id="login-btn">Ingresar</button>
+    <button type="button" onclick="toggleLoginAvanzado()" style="background:transparent;border:none;color:var(--muted);font-size:11px;font-weight:500;cursor:pointer;margin-top:16px;text-decoration:underline">¿Problemas para entrar?</button>
+    <div id="login-avanzado" style="display:none;margin-top:14px;text-align:left">
+      <label class="field-label">URL de la aplicación web</label>
+      <input type="text" id="login-adv-url" class="field" placeholder="https://script.google.com/macros/s/.../exec" style="margin-bottom:10px">
+      <label class="field-label">Token</label>
+      <input type="text" id="login-adv-token" class="field" placeholder="Token del script" style="margin-bottom:10px">
+      <button class="btn btn-outline btn-block" onclick="doLoginAvanzado()">Conectar con token</button>
+    </div>
+  </div>
+</div>
+
 <!-- APP -->
 <div id="app">
   <div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeMobileMenu()"></div>
@@ -877,10 +898,11 @@ textarea.field{height:auto}
           <input type="password" id="cfg-backend-token" class="field" placeholder="Token del script" oninput="saveSyncConfig()">
         </div>
         <p class="item-sub" id="sync-status" style="margin-bottom:10px">Sin configurar — ver <code>backend/SETUP.md</code>.</p>
-        <div style="display:flex;gap:8px">
+        <div style="display:flex;gap:8px;margin-bottom:8px">
           <button class="btn btn-outline" style="flex:1;justify-content:center" onclick="testSyncConnection()">Probar conexión</button>
           <button class="btn" style="flex:1;justify-content:center" onclick="syncNow()">Sincronizar ahora</button>
         </div>
+        <button class="btn-cancel" onclick="cerrarSesion()">Cerrar sesión en este dispositivo</button>
       </div>
       <div>
         <div class="card-title" style="margin-bottom:10px">Correo de la marca</div>
@@ -1008,6 +1030,92 @@ function fillSyncInputs() {
   const tokenInput = document.getElementById('cfg-backend-token');
   if (tokenInput) tokenInput.value = state.config.backendToken;
 }
+// Guarda backendUrl+backendToken, trae el state real del backend y
+// refresca la pantalla — usado tanto por el login normal (doLogin) como
+// por el link mágico (?token=) y el modo avanzado, para no repetir esta
+// secuencia 3 veces.
+function connectWithToken(token, successMsg) {
+  state.config.backendUrl = state.config.backendUrl || DEFAULT_BACKEND_URL;
+  state.config.backendToken = token;
+  saveState();
+  fillSyncInputs();
+  const url = state.config.backendUrl;
+  return CrumblySync.pull(url, token).then(r => {
+    if (!r.ok || !r.state) { showToast('No se pudo traer los datos: ' + (r.error || 'revisa el token')); return false; }
+    state = CrumblyCore.migrateState(r.state);
+    state.config.backendUrl = url;
+    state.config.backendToken = token;
+    state.config.lastSync = new Date().toISOString();
+    saveState();
+    refreshAll();
+    fillSyncInputs();
+    updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
+    showToast(successMsg);
+    return true;
+  });
+}
+function showLoginGate() {
+  document.getElementById('login-gate').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+}
+function hideLoginGate() {
+  document.getElementById('login-gate').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+}
+async function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const pwd = document.getElementById('login-password').value.trim();
+  const errEl = document.getElementById('login-error');
+  errEl.style.display = 'none';
+  if (!email || !pwd) { errEl.textContent = 'Ingresá el correo y la contraseña'; errEl.style.display = 'block'; return; }
+  const btn = document.getElementById('login-btn');
+  btn.textContent = 'Ingresando…'; btn.disabled = true;
+  try {
+    const res = await CrumblySync.login(DEFAULT_BACKEND_URL, email, pwd);
+    if (!res.ok) throw new Error(res.error === 'correo o contraseña incorrectos' ? 'Correo o contraseña incorrectos' : (res.error || 'No se pudo iniciar sesión'));
+    document.getElementById('login-password').value = '';
+    hideLoginGate();
+    await connectWithToken(res.token, 'Sesión iniciada ✓');
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.style.display = 'block';
+  } finally {
+    btn.textContent = 'Ingresar'; btn.disabled = false;
+  }
+}
+// Escape hatch: si CRUMBLY_LOGIN_PASSWORD todavía no está configurado en
+// el backend (o hay algún otro problema), conectar igual pegando la
+// URL+token técnicos — mismo mecanismo que Ajustes, para no dejar a nadie
+// completamente bloqueado por la pantalla de login.
+function toggleLoginAvanzado() {
+  const el = document.getElementById('login-avanzado');
+  const show = el.style.display === 'none';
+  el.style.display = show ? 'block' : 'none';
+  if (show) document.getElementById('login-adv-url').value = DEFAULT_BACKEND_URL;
+}
+async function doLoginAvanzado() {
+  const url = document.getElementById('login-adv-url').value.trim();
+  const token = document.getElementById('login-adv-token').value.trim();
+  const errEl = document.getElementById('login-error');
+  errEl.style.display = 'none';
+  if (!url || !token) { errEl.textContent = 'Completa la URL y el token'; errEl.style.display = 'block'; return; }
+  state.config.backendUrl = url;
+  hideLoginGate();
+  try {
+    await connectWithToken(token, 'Conectado ✓');
+  } catch (e) {
+    showLoginGate();
+    errEl.textContent = 'No se pudo conectar';
+    errEl.style.display = 'block';
+  }
+}
+function cerrarSesion() {
+  if (!confirm('¿Cerrar sesión? Vas a tener que ingresar la contraseña de nuevo para usar la app en este dispositivo.')) return;
+  closeModal('modal-ajustes');
+  state.config.backendToken = '';
+  saveState();
+  showLoginGate();
+}
 function applySetupLinkIfPresent() {
   const params = new URLSearchParams(location.search);
   const token = params.get('token');
@@ -1015,25 +1123,8 @@ function applySetupLinkIfPresent() {
   // El token no debe quedar visible en la URL/historial del navegador una
   // vez usado.
   history.replaceState({}, '', location.pathname);
-  state.config.backendUrl = state.config.backendUrl || DEFAULT_BACKEND_URL;
-  state.config.backendToken = token.trim();
-  saveState();
-  fillSyncInputs();
   showToast('Configurando este dispositivo…');
-  CrumblySync.pull(state.config.backendUrl, state.config.backendToken)
-    .then(r => {
-      if (!r.ok || !r.state) { showToast('No se pudo traer los datos: ' + (r.error || 'revisa el token')); return; }
-      const url = state.config.backendUrl, tok = state.config.backendToken;
-      state = CrumblyCore.migrateState(r.state);
-      state.config.backendUrl = url;
-      state.config.backendToken = tok;
-      state.config.lastSync = new Date().toISOString();
-      saveState();
-      refreshAll();
-      fillSyncInputs();
-      updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
-      showToast('Dispositivo conectado ✓ — datos actualizados');
-    })
+  connectWithToken(token.trim(), 'Dispositivo conectado ✓ — datos actualizados')
     .catch(() => showToast('No se pudo conectar con el backend — revisa tu conexión'));
 }
 function testSyncConnection() {
@@ -3020,9 +3111,18 @@ function refreshAll() {
 }
 
 loadState();
-refreshAll();
-applySetupLinkIfPresent();
-pullOnLoad();
+if (state.config.backendToken) {
+  // Ya hay sesión guardada en este dispositivo — arranca directo.
+  refreshAll();
+  pullOnLoad();
+} else if (new URLSearchParams(location.search).get('token')) {
+  // Sin sesión pero llegó con un link mágico (?token=) — se resuelve solo.
+  refreshAll();
+  applySetupLinkIfPresent();
+} else {
+  // Sin sesión y sin link: pedir la contraseña antes de mostrar la app.
+  showLoginGate();
+}
 </script>
 </body>
 </html>

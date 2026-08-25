@@ -271,6 +271,24 @@ Al verificar el punto anterior, el usuario tuvo que configurar `Ajustes → Sinc
 
 Se decidió explícitamente **no** construir un sistema de login completo (usuario/contraseña con servidor propio) — sería mucho más trabajo y superficie de ataque nueva (guardar contraseñas) para resolver el mismo problema que ya resuelve el link de un toque, en una app de 1-2 dispositivos. Verificado en navegador con `CrumblySync.pull` mockeado: el link configura, limpia la URL, trae los datos remotos y llena los campos de Ajustes correctamente.
 
+### Login con correo y contraseña (25 de agosto de 2026)
+
+El usuario insistió en ir más allá del link de un toque: quería que cualquier dispositivo nuevo solo necesitara "ingresar y todo esté listo, nada local" — sin copiar URL/token a mano ni depender de un link guardado. Se construyó un login real, con la decisión explícita del usuario de usar una contraseña **corta y separada** del token real (no reutilizar el token largo como contraseña), y luego, a pedido suyo, se le agregó también un campo de correo.
+
+| Pieza | Estado | Verificación |
+|---|---|---|
+| `login_(body)` en `backend/Code.gs` | ✅ DONE | Acción `login`, resuelta en `doPost` **antes** del chequeo de token (es la única acción que no lo requiere — es la que lo entrega). Compara `email`/`password` contra `CRUMBLY_LOGIN_EMAIL`/`CRUMBLY_LOGIN_PASSWORD` (Propiedades del script) y, si coinciden, devuelve el `CRUMBLY_TOKEN` real una vez. El token real nunca vive en el código público del frontend. |
+| `CrumblySync.login()` en `js/sync.js` | ✅ DONE | POST `action=login` con `email`+`password`, sin `token` (todavía no lo tiene). 3 tests en `tests/sync.test.js` (mandar los campos correctos, devolver el token, propagar `ok:false` si las credenciales no coinciden). |
+| Pantalla de login (`#login-gate`) en `index.html` | ✅ DONE | Pantalla completa que tapa la app hasta que hay sesión. Campos correo+contraseña, `doLogin()` llama a `CrumblySync.login` con la `DEFAULT_BACKEND_URL` fija, y si es correcto usa el token devuelto para conectar (`connectWithToken`) y traer los datos. Enlace **"¿Problemas para entrar?"** abre los campos técnicos (URL+token) como alternativa (`doLoginAvanzado`), para no dejar a nadie bloqueado si el backend real todavía no tiene las propiedades de login configuradas. |
+| `connectWithToken(token, successMsg)` | ✅ DONE | Extraído como helper compartido (guardar config + `pull` + refrescar UI + toast) — lo usan el login normal, el login avanzado y el link mágico (`applySetupLinkIfPresent`), evitando triplicar la misma lógica (`HANDOFF.md` §20). |
+| Arranque condicional | ✅ DONE | Si ya hay `backendToken` guardado en el dispositivo, arranca directo (sin pedir login de nuevo). Si no, pero llegó con `?token=` en la URL, se resuelve solo (link mágico). Si no hay ninguno, muestra la pantalla de login. |
+| "Cerrar sesión" en Ajustes | ✅ DONE | Borra `backendToken` del dispositivo y vuelve a mostrar la pantalla de login — para reconectar con otra cuenta o revocar el acceso local sin tocar el backend. |
+| Comprobantes reales a Google Drive | ✅ DONE | Acción `uploadComprobante` en el backend (antes de este bloque de login) sube el archivo a una carpeta privada de Drive del dueño del script y devuelve la URL real, guardada en `venta.comprobante`/`gasto.comprobante` en vez de solo el nombre del archivo. `CrumblySync.uploadFile()` con 4 tests. Bug real encontrado al probar el flujo completo: `registrarGasto` en `js/core.js` no incluía `comprobante` en el objeto devuelto (a diferencia de `applyVenta`, que sí) — corregido, con test de regresión. |
+
+Nota de seguridad: la contraseña corta es deliberadamente más débil que el token real — si alguien la adivina, solo puede iniciar sesión (y quedaría con el mismo acceso que cualquier dispositivo legítimo), no puede saltarse el paso y usar el token directamente sin pasar por el backend. El diseño offline-first (todo se cachea en `localStorage` tras el login) se mantiene a propósito: es lo que permite que la app siga funcionando en el local sin señal, no es un descuido de seguridad.
+
+**Pendiente del lado del usuario:** agregar `CRUMBLY_LOGIN_EMAIL` a las Propiedades del script y desplegar una nueva versión de `backend/Code.gs` (la versión ya desplegada por el usuario, "Versión 2", solo tiene la contraseña sin correo) — documentado en `backend/SETUP.md`.
+
 ## Tests
 
 ```

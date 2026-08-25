@@ -29,8 +29,10 @@ Todo el código ya está listo en `backend/Code.gs`. Aquí solo copias y pegas.
 El token es la única contraseña que protege tus datos — sin él, nadie puede leer ni escribir en la hoja aunque encuentre la URL. El ID le dice al script sobre qué hoja trabajar (este proyecto no vive "dentro" de la hoja, así que hay que decírselo).
 
 1. En el editor de Apps Script, ve a **Configuración del proyecto** (ícono de engranaje, panel izquierdo).
-2. Baja hasta **Propiedades del script** → **Añadir propiedad del script**. Agrega dos:
-   - Propiedad: `CRUMBLY_TOKEN` — Valor: **inventa una cadena larga y aleatoria** (ej. genera una en [1password.com/password-generator](https://1password.com/password-generator/), 32+ caracteres). Guárdala en un lugar seguro — es la que vas a pegar en la app en el paso 5.
+2. Baja hasta **Propiedades del script** → **Añadir propiedad del script**. Agrega cuatro:
+   - Propiedad: `CRUMBLY_TOKEN` — Valor: **inventa una cadena larga y aleatoria** (ej. genera una en [1password.com/password-generator](https://1password.com/password-generator/), 32+ caracteres). Este es el secreto real que protege tus datos — no se escribe a mano en ningún dispositivo, la app lo obtiene sola al iniciar sesión (ver `CRUMBLY_LOGIN_EMAIL`/`CRUMBLY_LOGIN_PASSWORD` abajo).
+   - Propiedad: `CRUMBLY_LOGIN_EMAIL` — Valor: el correo con el que vas a iniciar sesión en la app (no tiene que existir como cuenta de Google real, es solo un dato más que hay que acertar).
+   - Propiedad: `CRUMBLY_LOGIN_PASSWORD` — Valor: **una contraseña más corta y fácil de recordar/escribir** (la que vas a usar día a día para entrar a la app en cada dispositivo, junto con el correo de arriba). Distinta del token de arriba — si alguien la adivina, solo puede iniciar sesión, no puede saltarse el login pegando directamente el token real (que nunca sale de acá). Igual, elegí algo que no sea trivial (no "1234").
    - Propiedad: `CRUMBLY_SHEET_ID` — Valor: el ID que copiaste en el paso 1.3.
 3. Guarda.
 
@@ -48,28 +50,34 @@ El token es la única contraseña que protege tus datos — sin él, nadie puede
 
 ## 5. Conectar la app
 
-1. Abre Crumbly en el navegador → **Ajustes** (ícono ⚙️) → tarjeta **"Sincronización (Google Sheets)"**.
-2. Pega la URL del paso 4 y el token del paso 3.
-3. Botón **"Probar conexión"** — debería decir "Conectado ✓".
-4. Botón **"Sincronizar ahora"** — sube tus datos actuales a la hoja por primera vez.
+La app pide **correo + contraseña** al abrirla por primera vez en cada dispositivo (los que pusiste en `CRUMBLY_LOGIN_EMAIL`/`CRUMBLY_LOGIN_PASSWORD` en el paso 3) — no hace falta copiar la URL ni el token técnico a mano.
 
-A partir de aquí, cada cambio que hagas en la app (venta, gasto, insumo nuevo, etc.) se sube solo a la hoja en segundo plano. Si abres la app en otro dispositivo con la misma URL y token, al cargar trae los datos más recientes de la hoja.
+1. Abre Crumbly en el navegador. Va a mostrar una pantalla de login.
+2. Escribe el correo y la contraseña del paso 3.
+3. **Ingresar** — trae todos tus datos y queda conectado en ese dispositivo para siempre (no vuelve a pedirlo, salvo que cierres sesión desde Ajustes).
 
-### Conectar un dispositivo nuevo con un solo link
+A partir de aquí, cada cambio que hagas en la app (venta, gasto, insumo nuevo, etc.) se sube solo a la hoja en segundo plano.
 
-Copiar la URL y el token a mano en cada celular/computadora nuevo es tedioso. Como atajo: la URL del backend ya vive fija en el código de la app (no es secreta — sin el token, el backend responde "token inválido" a cualquiera). Armá un link así, una sola vez, guardalo donde quieras (notas, un mensaje fijado):
+### Si el login con correo/contraseña no funciona todavía
+
+Si todavía no configuraste `CRUMBLY_LOGIN_EMAIL`/`CRUMBLY_LOGIN_PASSWORD`, o hay algún problema, la pantalla de login tiene un enlace **"¿Problemas para entrar?"** que despliega los campos técnicos (URL + token real del paso 3/4) como alternativa — funciona igual de bien, solo que hay que copiar y pegar a mano.
+
+### Conectar un dispositivo nuevo con un link (alternativa al login)
+
+También existe un link de un solo uso que hace lo mismo que el login pero con el token real en vez de la contraseña — útil si por alguna razón no querés usar correo/contraseña en un dispositivo puntual:
 
 ```
-https://smplymkgm.github.io/crumbly/?token=TU_TOKEN_AQUI
+https://smplymkgm.github.io/crumbly/?token=TU_TOKEN_REAL_AQUI
 ```
 
-Abrilo en cualquier dispositivo nuevo — configura la sincronización y trae todos los datos automáticamente, sin tocar Ajustes a mano. El token desaparece de la barra de direcciones apenas se usa (no queda en el historial del navegador). Seguí guardando ese link en un lugar privado — funciona como una contraseña.
+Abrilo en el dispositivo nuevo — configura la sincronización y trae todos los datos automáticamente. El token desaparece de la barra de direcciones apenas se usa (no queda en el historial del navegador). Guardalo en un lugar privado — funciona como una contraseña.
 
 ---
 
 ## Si algo falla
 
 - **"token inválido"** — revisa que copiaste el token exacto (sin espacios) en ambos lados (Script Properties y la app).
+- **"Correo o contraseña incorrectos"** al iniciar sesión — revisa que `CRUMBLY_LOGIN_EMAIL`/`CRUMBLY_LOGIN_PASSWORD` estén bien escritos en Script Properties (sin espacios de más), y que el correo se escriba igual (no distingue mayúsculas/minúsculas, pero sí todo lo demás).
 - **"Probar conexión" no responde / error de red** — vuelve a Implementar → Administrar implementaciones y confirma que "Quién tiene acceso" quedó en "Cualquier usuario", no "Solo yo".
 - **Cambiaste el código de `Code.gs` después de desplegar** — tienes que crear una **nueva versión** de la implementación (Implementar → Administrar implementaciones → ✏️ → Versión: Nueva versión → Implementar). Guardar el archivo en el editor no actualiza la URL ya publicada.
 - **Actualizaste a la versión que sube comprobantes a Drive** — la primera vez que se ejecute te va a pedir autorizar un permiso nuevo (acceso a Drive, antes solo pedía Sheets). Es normal — vuelve a pasar por el flujo de "Implementar" y acepta el nuevo permiso, es tu propio script actuando sobre tu propio Drive.

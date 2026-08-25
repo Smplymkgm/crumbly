@@ -138,6 +138,32 @@ test('propaga ok:false del backend (ej. falta filename) sin lanzar', async () =>
   assert.strictEqual(r.error, 'falta filename o data');
 });
 
+group('login');
+
+test('manda POST con action=login, email y password, sin token (todavía no lo tiene)', async () => {
+  const f = mockFetch([{ body: { ok: true, token: 'tok-real-secreto' } }]);
+  await Sync.login('https://x.com/exec', 'crumbly@correo.com', 'clave123', f);
+  const body = JSON.parse(f.calls[0].opts.body);
+  assert.strictEqual(body.action, 'login');
+  assert.strictEqual(body.email, 'crumbly@correo.com');
+  assert.strictEqual(body.password, 'clave123');
+  assert.strictEqual(body.token, undefined);
+});
+
+test('devuelve el token real que entrega el backend', async () => {
+  const f = mockFetch([{ body: { ok: true, token: 'tok-real-secreto' } }]);
+  const r = await Sync.login('https://x.com/exec', 'crumbly@correo.com', 'clave123', f);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.token, 'tok-real-secreto');
+});
+
+test('propaga ok:false si el correo o la contraseña son incorrectos', async () => {
+  const f = mockFetch([{ body: { ok: false, error: 'correo o contraseña incorrectos' } }]);
+  const r = await Sync.login('https://x.com/exec', 'otro@correo.com', 'clave-mala', f);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.error, 'correo o contraseña incorrectos');
+});
+
 (async () => {
   for (const [name, fn] of tests) {
     if (name === null) { fn(); continue; }

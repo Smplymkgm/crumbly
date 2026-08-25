@@ -19,10 +19,17 @@
  * del dueño del script (acción "uploadComprobante") — no son públicos,
  * el link solo funciona logueado con la cuenta que desplegó el script.
  *
+ * Login: la app pide correo + contraseña corta (CRUMBLY_LOGIN_EMAIL /
+ * CRUMBLY_LOGIN_PASSWORD) en vez del token real — la acción "login" los
+ * valida y devuelve el token real una sola vez. El token real nunca vive
+ * en el código público.
+ *
  * Instalación: ver backend/SETUP.md.
  */
 
 var TOKEN_PROPERTY = 'CRUMBLY_TOKEN';
+var LOGIN_PASSWORD_PROPERTY = 'CRUMBLY_LOGIN_PASSWORD';
+var LOGIN_EMAIL_PROPERTY = 'CRUMBLY_LOGIN_EMAIL';
 var SHEET_ID_PROPERTY = 'CRUMBLY_SHEET_ID';
 var STATE_SHEET = 'state_json';
 
@@ -46,6 +53,14 @@ function doPost(e) {
   } catch (err) {
     return json_({ ok: false, error: 'body inválido (se esperaba JSON)' });
   }
+
+  // "login" es la única acción que NO pide el token real — es justamente
+  // la que lo entrega, a cambio de la contraseña corta. Por eso se resuelve
+  // antes del chequeo de token, no después.
+  if (body.action === 'login') {
+    return login_(body);
+  }
+
   if (!isValidToken_(body.token)) return json_({ ok: false, error: 'token inválido' });
 
   if (body.action === 'push') {
@@ -103,6 +118,25 @@ function getOrCreateComprobantesFolder_() {
 function isValidToken_(token) {
   var expected = PropertiesService.getScriptProperties().getProperty(TOKEN_PROPERTY);
   return !!expected && token === expected;
+}
+
+// ─── Login (correo + contraseña corta → token real) ─────────────────────
+// El token real (CRUMBLY_TOKEN) nunca vive en el código público de la app
+// — solo acá, en las Propiedades del script. La app pide un correo y una
+// contraseña más simples de recordar; este endpoint los valida y, si
+// coinciden, devuelve el token real UNA vez, que la app guarda localmente
+// para todo lo demás (ping/pull/push/uploadComprobante). Configurar
+// CRUMBLY_LOGIN_EMAIL y CRUMBLY_LOGIN_PASSWORD en las Propiedades del
+// script — ver backend/SETUP.md.
+function login_(body) {
+  var expectedEmail = PropertiesService.getScriptProperties().getProperty(LOGIN_EMAIL_PROPERTY);
+  var expectedPassword = PropertiesService.getScriptProperties().getProperty(LOGIN_PASSWORD_PROPERTY);
+  if (!expectedEmail || !expectedPassword) return json_({ ok: false, error: 'falta configurar CRUMBLY_LOGIN_EMAIL o CRUMBLY_LOGIN_PASSWORD' });
+  var email = String(body.email || '').trim().toLowerCase();
+  if (email !== expectedEmail.trim().toLowerCase()) return json_({ ok: false, error: 'correo o contraseña incorrectos' });
+  if (!body.password || body.password !== expectedPassword) return json_({ ok: false, error: 'correo o contraseña incorrectos' });
+  var token = PropertiesService.getScriptProperties().getProperty(TOKEN_PROPERTY);
+  return json_({ ok: true, token: token });
 }
 
 function json_(obj) {
