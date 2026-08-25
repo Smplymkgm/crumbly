@@ -946,10 +946,7 @@ function loadState() {
   state = CrumblyCore.migrateState(parsed);
   const emailInput = document.getElementById('cfg-email');
   if (emailInput) emailInput.value = state.config.email;
-  const backendUrlInput = document.getElementById('cfg-backend-url');
-  if (backendUrlInput) backendUrlInput.value = state.config.backendUrl;
-  const backendTokenInput = document.getElementById('cfg-backend-token');
-  if (backendTokenInput) backendTokenInput.value = state.config.backendToken;
+  fillSyncInputs();
   if (state.config.lastSync) updateSyncStatus('Última sincronización: ' + formatSyncTime(state.config.lastSync));
 }
 
@@ -998,6 +995,46 @@ function saveSyncConfig() {
   state.config.backendUrl = document.getElementById('cfg-backend-url').value.trim();
   state.config.backendToken = document.getElementById('cfg-backend-token').value.trim();
   saveState();
+}
+// URL fija del backend desplegado — no es secreta (sin el token, el
+// backend responde "token inválido" a cualquier pedido, ver Code.gs), así
+// que puede vivir en el código público. Deja configurar un dispositivo
+// nuevo con un solo link (…?token=EL_TOKEN) en vez de copiar la URL y el
+// token a mano entre dos pestañas — a pedido explícito del usuario.
+const DEFAULT_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwh-0SpF-QLYnvq50b2RjM_sKqQTbCuOvkS7Gn6NQUDQDeB-jP1f7G9kkS75-AcVhGxxA/exec';
+function fillSyncInputs() {
+  const urlInput = document.getElementById('cfg-backend-url');
+  if (urlInput) urlInput.value = state.config.backendUrl;
+  const tokenInput = document.getElementById('cfg-backend-token');
+  if (tokenInput) tokenInput.value = state.config.backendToken;
+}
+function applySetupLinkIfPresent() {
+  const params = new URLSearchParams(location.search);
+  const token = params.get('token');
+  if (!token) return;
+  // El token no debe quedar visible en la URL/historial del navegador una
+  // vez usado.
+  history.replaceState({}, '', location.pathname);
+  state.config.backendUrl = state.config.backendUrl || DEFAULT_BACKEND_URL;
+  state.config.backendToken = token.trim();
+  saveState();
+  fillSyncInputs();
+  showToast('Configurando este dispositivo…');
+  CrumblySync.pull(state.config.backendUrl, state.config.backendToken)
+    .then(r => {
+      if (!r.ok || !r.state) { showToast('No se pudo traer los datos: ' + (r.error || 'revisa el token')); return; }
+      const url = state.config.backendUrl, tok = state.config.backendToken;
+      state = CrumblyCore.migrateState(r.state);
+      state.config.backendUrl = url;
+      state.config.backendToken = tok;
+      state.config.lastSync = new Date().toISOString();
+      saveState();
+      refreshAll();
+      fillSyncInputs();
+      updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
+      showToast('Dispositivo conectado ✓ — datos actualizados');
+    })
+    .catch(() => showToast('No se pudo conectar con el backend — revisa tu conexión'));
 }
 function testSyncConnection() {
   const url = document.getElementById('cfg-backend-url').value.trim();
@@ -2984,6 +3021,7 @@ function refreshAll() {
 
 loadState();
 refreshAll();
+applySetupLinkIfPresent();
 pullOnLoad();
 </script>
 </body>

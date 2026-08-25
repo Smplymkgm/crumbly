@@ -48,12 +48,22 @@ El token es la única contraseña que protege tus datos — sin él, nadie puede
 
 ## 5. Conectar la app
 
-1. Abre Crumbly en el navegador → **Reportes** → tarjeta **"Sincronización (Google Sheets)"**.
+1. Abre Crumbly en el navegador → **Ajustes** (ícono ⚙️) → tarjeta **"Sincronización (Google Sheets)"**.
 2. Pega la URL del paso 4 y el token del paso 3.
 3. Botón **"Probar conexión"** — debería decir "Conectado ✓".
 4. Botón **"Sincronizar ahora"** — sube tus datos actuales a la hoja por primera vez.
 
 A partir de aquí, cada cambio que hagas en la app (venta, gasto, insumo nuevo, etc.) se sube solo a la hoja en segundo plano. Si abres la app en otro dispositivo con la misma URL y token, al cargar trae los datos más recientes de la hoja.
+
+### Conectar un dispositivo nuevo con un solo link
+
+Copiar la URL y el token a mano en cada celular/computadora nuevo es tedioso. Como atajo: la URL del backend ya vive fija en el código de la app (no es secreta — sin el token, el backend responde "token inválido" a cualquiera). Armá un link así, una sola vez, guardalo donde quieras (notas, un mensaje fijado):
+
+```
+https://smplymkgm.github.io/crumbly/?token=TU_TOKEN_AQUI
+```
+
+Abrilo en cualquier dispositivo nuevo — configura la sincronización y trae todos los datos automáticamente, sin tocar Ajustes a mano. El token desaparece de la barra de direcciones apenas se usa (no queda en el historial del navegador). Seguí guardando ese link en un lugar privado — funciona como una contraseña.
 
 ---
 

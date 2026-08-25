@@ -258,7 +258,18 @@ El usuario preguntó si el campo "Comprobante" (Venta con transferencia, Gasto) 
 
 Verificado en navegador con `CrumblySync.uploadFile` mockeado (sin depender del backend real desplegado): sube y guarda la URL, cae de vuelta a solo-nombre sin backend configurado, rechaza archivos >10MB, y el ícono "Ver comprobante" aparece en Caja con el link correcto.
 
-**Pendiente del lado del usuario:** repegar `backend/Code.gs` en Apps Script y crear una nueva versión de la implementación (mismo proceso ya documentado en `backend/SETUP.md`) — sin eso, la app sigue guardando solo el nombre del archivo (cae al fallback, no rompe nada, pero no sube nada a Drive hasta que se redespliegue).
+**Pendiente del lado del usuario:** repegar `backend/Code.gs` en Apps Script y crear una nueva versión de la implementación (mismo proceso ya documentado en `backend/SETUP.md`) — sin eso, la app sigue guardando solo el nombre del archivo (cae al fallback, no rompe nada, pero no sube nada a Drive hasta que se redespliegue). **✅ Hecho por el usuario el mismo día** (Versión 2, 25 ago 2026, verificado con captura de "Se actualizó correctamente la implementación").
+
+### Link de configuración de un solo toque (25 de agosto de 2026)
+
+Al verificar el punto anterior, el usuario tuvo que configurar `Ajustes → Sincronización` a mano (URL + token, copiando entre dos pestañas) y preguntó por qué no queda guardado en un solo lugar para todos los dispositivos. Se le explicó la razón real (la config de conexión no puede vivir *dentro* del backend al que sirve para conectarse — problema de bootstrapping inherente a cualquier app sin login centralizado) y, a su pedido de simplificarlo (ofreció incluso construir un login completo si hacía falta), se implementó una alternativa mucho más liviana:
+
+| Pieza | Estado | Verificación |
+|---|---|---|
+| `DEFAULT_BACKEND_URL` fija en `index.html` | ✅ DONE | La URL del deployment no es secreta (sin el token, el backend siempre responde "token inválido") — vive en el código público, así un dispositivo nuevo ya no necesita que se la copien. |
+| Link mágico `?token=...` | ✅ DONE | `applySetupLinkIfPresent()`, llamado al cargar la app: si hay `?token=` en la URL, guarda `backendUrl` (el fijo) + `backendToken` (del link), limpia el token de la barra de direcciones/historial (`history.replaceState`) y hace un `pull` inmediato para traer los datos reales — todo con un solo toque, sin tocar Ajustes a mano. Documentado en `backend/SETUP.md` § "Conectar un dispositivo nuevo con un solo link". |
+
+Se decidió explícitamente **no** construir un sistema de login completo (usuario/contraseña con servidor propio) — sería mucho más trabajo y superficie de ataque nueva (guardar contraseñas) para resolver el mismo problema que ya resuelve el link de un toque, en una app de 1-2 dispositivos. Verificado en navegador con `CrumblySync.pull` mockeado: el link configura, limpia la URL, trae los datos remotos y llena los campos de Ajustes correctamente.
 
 ## Tests
 
