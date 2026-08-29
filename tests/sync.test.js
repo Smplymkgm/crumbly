@@ -138,56 +138,9 @@ test('propaga ok:false del backend (ej. falta filename) sin lanzar', async () =>
   assert.strictEqual(r.error, 'falta filename o data');
 });
 
-group('loginGoogle');
-
-test('manda POST con action=loginGoogle e idToken, sin token (todavía no lo tiene)', async () => {
-  const f = mockFetch([{ body: { ok: true, token: 'tok-real-secreto' } }]);
-  await Sync.loginGoogle('https://x.com/exec', 'jwt-de-google', f);
-  const body = JSON.parse(f.calls[0].opts.body);
-  assert.strictEqual(body.action, 'loginGoogle');
-  assert.strictEqual(body.idToken, 'jwt-de-google');
-  assert.strictEqual(body.token, undefined);
-});
-
-test('devuelve el token real que entrega el backend', async () => {
-  const f = mockFetch([{ body: { ok: true, token: 'tok-real-secreto' } }]);
-  const r = await Sync.loginGoogle('https://x.com/exec', 'jwt-de-google', f);
-  assert.strictEqual(r.ok, true);
-  assert.strictEqual(r.token, 'tok-real-secreto');
-});
-
-test('propaga ok:false si el correo de Google no es el autorizado', async () => {
-  const f = mockFetch([{ body: { ok: false, error: 'correo no autorizado' } }]);
-  const r = await Sync.loginGoogle('https://x.com/exec', 'jwt-de-otra-cuenta', f);
-  assert.strictEqual(r.ok, false);
-  assert.strictEqual(r.error, 'correo no autorizado');
-});
-
-group('login (correo + contraseña)');
-
-test('manda POST con action=login, email y password, sin token (todavía no lo tiene)', async () => {
-  const f = mockFetch([{ body: { ok: true, token: 'tok-real-secreto' } }]);
-  await Sync.login('https://x.com/exec', 'crumbly@correo.com', 'clave123', f);
-  const body = JSON.parse(f.calls[0].opts.body);
-  assert.strictEqual(body.action, 'login');
-  assert.strictEqual(body.email, 'crumbly@correo.com');
-  assert.strictEqual(body.password, 'clave123');
-  assert.strictEqual(body.token, undefined);
-});
-
-test('devuelve el token real que entrega el backend', async () => {
-  const f = mockFetch([{ body: { ok: true, token: 'tok-real-secreto' } }]);
-  const r = await Sync.login('https://x.com/exec', 'crumbly@correo.com', 'clave123', f);
-  assert.strictEqual(r.ok, true);
-  assert.strictEqual(r.token, 'tok-real-secreto');
-});
-
-test('propaga ok:false si el correo o la contraseña son incorrectos', async () => {
-  const f = mockFetch([{ body: { ok: false, error: 'correo o contraseña incorrectos' } }]);
-  const r = await Sync.login('https://x.com/exec', 'otro@correo.com', 'clave-mala', f);
-  assert.strictEqual(r.ok, false);
-  assert.strictEqual(r.error, 'correo o contraseña incorrectos');
-});
+// El login (Google y correo+contraseña) se movió por completo a
+// js/auth.js — ver tests/auth.test.js. sync.js ya no sabe nada de cómo
+// se consigue un token, solo lo transporta (ping/pull/push/uploadFile).
 
 (async () => {
   for (const [name, fn] of tests) {

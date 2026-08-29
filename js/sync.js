@@ -4,6 +4,11 @@
  * parsea las respuestas. index.html decide cuándo llamarlo y qué hacer
  * con el resultado (igual que js/core.js con la lógica de negocio).
  *
+ * `token` en cada función es el token de SESIÓN que entrega js/auth.js
+ * tras iniciar sesión (Google o correo+contraseña) — este archivo no
+ * sabe nada de cómo se consigue, solo lo transporta. El login en sí vive
+ * en auth.js, no acá.
+ *
  * POST va con Content-Type: text/plain — Apps Script no responde bien a
  * un preflight OPTIONS, así que se evita a propósito (HANDOFF.md §12.4).
  */
@@ -72,42 +77,11 @@
     }).then(parseResponse);
   }
 
-  // Cambia un ID token de Google (JWT firmado, obtenido con Google Identity
-  // Services en el navegador) por el token real del backend — a diferencia
-  // de las demás funciones, NO manda token (es justo lo que todavía no
-  // tiene). El backend verifica el JWT contra Google antes de confiar en
-  // él; esta función solo lo transporta. Devuelve { ok, token } o
-  // { ok:false, error }.
-  function loginGoogle(backendUrl, idToken, fetchImpl) {
-    var f = resolveFetch(fetchImpl);
-    var body = JSON.stringify({ action: 'loginGoogle', idToken: idToken });
-    return f(backendUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: body
-    }).then(parseResponse);
-  }
-
-  // Cambia correo + contraseña corta por el token real — camino
-  // alternativo a loginGoogle. Tampoco manda token (todavía no lo tiene).
-  // Devuelve { ok, token } o { ok:false, error }.
-  function login(backendUrl, email, password, fetchImpl) {
-    var f = resolveFetch(fetchImpl);
-    var body = JSON.stringify({ action: 'login', email: email, password: password });
-    return f(backendUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: body
-    }).then(parseResponse);
-  }
-
   return {
     isConfigured: isConfigured,
     ping: ping,
     pull: pull,
     push: push,
-    uploadFile: uploadFile,
-    loginGoogle: loginGoogle,
-    login: login
+    uploadFile: uploadFile
   };
 });

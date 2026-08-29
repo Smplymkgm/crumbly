@@ -266,7 +266,7 @@ Todos en alcance. Los IDs son estables — úsalos para referirte a ellos entre 
 
 | Fase | Qué | Depende de | Esfuerzo | Estado |
 |---|---|---|---|---|
-| **A** | Consolidar en GitHub (§8) | — | Bajo | ✅ Hecho — [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (privado) |
+| **A** | Consolidar en GitHub (§8) | — | Bajo | ✅ Hecho — [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (público, ver §8.4) |
 | **B** | Arreglar P0-1…P0-4, P1-1…P1-5, P2-1…P2-9 | A | Medio | ✅ Hecho y verificado en navegador. Detalle en `IMPLEMENTATION_STATUS.md` |
 | **C** | Módulo de gastos (§9) | B | Medio | ✅ Hecho y verificado en navegador. Detalle en `IMPLEMENTATION_STATUS.md` |
 | **D1** | Preparaciones intermedias + costeo por porcentaje panadero (§10.2, §10.3) | B, P1-3 | **Alto** | ✅ Hecho y verificado en navegador. Detalle en `IMPLEMENTATION_STATUS.md` |
@@ -325,7 +325,7 @@ localStorage.setItem('crumbly-state', '<pegar>')     // consola del nuevo origen
 
 El login se retiró (11 ago 2026) — la app ya no tiene ninguna puerta, ni siquiera decorativa. Hoy el riesgo es bajo porque los datos son locales de cada navegador, sin importar quién abra el archivo. **Eso cambia en la fase E:** en cuanto haya backend compartido, hará falta algún control de acceso real (token de Apps Script como mínimo — ver §12.4), porque ya no hay ni la barrera simbólica de antes.
 
-**Repo privado.** No es negociable si se va a conectar el Sheet — más aún ahora, sin login.
+**Repo público** (decisión del usuario, en algún momento entre el 25 y el 29 de agosto de 2026 — no quedó registrada la fecha exacta acá). Seguro porque ningún secreto que proteja los datos vive en el código fuente: la URL del backend es pública a propósito (§12.4), y desde el 29 de agosto la identidad se verifica en cada pedido contra una sesión real, no con un token fijo escondido en el HTML.
 
 ---
 
@@ -753,7 +753,7 @@ Google Sheet — una hoja por colección
 ### 12.4 Detalles técnicos que muerden
 
 - **CORS.** Apps Script no responde a `OPTIONS`. Los `POST` deben ir con `Content-Type: text/plain` para evitar el preflight, y parsear con `JSON.parse(e.postData.contents)`. Con `application/json` el navegador bloquea la petición.
-- **Autenticación.** Publicado como "cualquiera puede acceder", la URL **es** la credencial. Mínimo: token compartido validado en el script. Ese token queda en el código fuente del HTML → repo privado (§8.4).
+- **Autenticación.** Publicado como "cualquiera puede acceder" — sin sesión válida, cualquier pedido responde "sesión inválida". Desde el 29 de agosto de 2026 no hay ningún token fijo compartido: se entra con Google o correo+contraseña (`js/auth.js`), el script verifica la identidad y entrega una sesión propia de cada dispositivo (hoja `sesiones`, ver "Estado real del proyecto" en §14) — reemplaza el modelo anterior de un `CRUMBLY_TOKEN` fijo que sí quedaba en el código fuente. El repo es público (§8.4) — ya no depende de que ningún secreto viva en el HTML, porque ya no hay ninguno ahí.
 - **Concurrencia.** Dos dispositivos escribiendo a la vez se pisan. Usar `LockService` en toda escritura.
 - **Cuotas.** Hay límites diarios de ejecución. Para tu volumen no es problema, pero no sincronices en cada tecla: agrupa y escribe al confirmar.
 - **Modelo de escritura.** `append` para ventas y gastos (solo crecen); reescritura por hoja para insumos, productos y preparaciones (pocos y editables).
@@ -872,7 +872,7 @@ A pedido explícito, en paralelo a que el usuario trabaja el rediseño visual (`
 2. **Restauración de 3 funciones caídas en el rediseño visual** (23 ago) — el rediseño de UI del 18 ago había dejado sin cablear: detalle financiero del período en Dashboard, necesidades de compra semanal en Inventario, y el botón de importar menú. Reconectadas sobre la lógica existente de `core.js`, sin reescribir nada.
 3. **Importar menú Crumbly 2026** (23 ago) — botón en Ajustes que carga los 12 waffles y 28 complementos del menú real (sin fórmula, precios reales). Los complementos se marcaron `esAdicion:false` (línea de producto normal en la factura, no un chip de adición) tras corrección explícita del usuario sobre cómo se veía en el modal de Venta.
 4. **Comprobantes reales a Google Drive** (24 ago) — `uploadComprobante` en el backend sube fotos/PDF de pago a una carpeta privada de Drive del dueño del script; `venta.comprobante`/`gasto.comprobante` guardan la URL real en vez de solo el nombre del archivo. Bug real encontrado al verificar: `registrarGasto` no incluía `comprobante` en el objeto devuelto — corregido.
-5. **Login** (25 ago) — la razón de esta ronda: "cada dispositivo nuevo necesita que le copien URL+token a mano" (queja explícita del usuario, dado que el backend existe justamente para no depender de `localStorage`). Se probaron tres diseños en la misma sesión, cada uno a pedido explícito del usuario tras ver el anterior:
+5. **Login** (25 ago, ⚠️ superado el 29 ago — ver la entrada siguiente) — la razón de esta ronda: "cada dispositivo nuevo necesita que le copien URL+token a mano" (queja explícita del usuario, dado que el backend existe justamente para no depender de `localStorage`). Se probaron tres diseños en la misma sesión, cada uno a pedido explícito del usuario tras ver el anterior:
    - Link mágico de un toque (`?token=...` en la URL) — se descartó como *suficiente* cuando el usuario pidió ir más allá, pero **se mantiene** como alternativa técnica.
    - Login con correo + contraseña corta (`CRUMBLY_LOGIN_PASSWORD`, distinta del token real) — construido primero.
    - Login con Google (Google Identity Services, verificado server-side contra `oauth2.googleapis.com/tokeninfo`) — pedido después, con el trade-off (requiere un Client ID de OAuth en Google Cloud Console) explicado y confirmado antes de construirlo.
@@ -884,3 +884,17 @@ A pedido explícito, en paralelo a que el usuario trabaja el rediseño visual (`
 Verificado: 133/133 tests automatizados (`node tests/core.test.js` + `node tests/sync.test.js`) y flujo manual en navegador para cada pieza (servidor local, no `file://`).
 
 **Pendiente del lado del usuario, único bloqueante para que el login funcione contra el backend real:** agregar `CRUMBLY_LOGIN_EMAIL`/`CRUMBLY_LOGIN_PASSWORD`/`CRUMBLY_GOOGLE_CLIENT_ID` a las Script Properties, crear el Client ID de OAuth en Google Cloud Console si se quiere usar el botón de Google, y desplegar una nueva versión de `backend/Code.gs` — la que está en producción ("Versión 2") es previa a todo este bloque, solo tiene Drive + login de contraseña sin correo. Runbook completo en `backend/SETUP.md`. Mientras tanto, ningún dispositivo ya conectado pierde acceso — el login solo lo ve un dispositivo sin sesión guardada.
+
+### Estado real del proyecto (29 de agosto de 2026) — autenticación real, sin token fijo
+
+El usuario pidió, con instrucciones técnicas propias y detalladas (contexto del stack, qué eliminar exactamente, la forma de la pantalla, el flujo paso a paso, y `window.auth` como módulo separado de `js/core.js`/`js/sync.js`), reemplazar por completo el modelo de token del punto 5 anterior. La instrucción fue explícita en no introducir React/Vite/Webpack/TypeScript ni ningún framework — la app sigue siendo HTML+JS puro, sin build step, servida tal cual en GitHub Pages.
+
+**Qué cambió, en una frase:** ya no existe ningún secreto fijo (`CRUMBLY_TOKEN`) que un dispositivo obtenga una vez y use para siempre. Cada login (Google o correo+contraseña) crea una **sesión** nueva — una fila en una hoja `sesiones` del backend, con su propio token aleatorio y su propia fecha de expiración (90 días) — y push/pull/uploadComprobante validan esa fila en cada pedido. Cerrar sesión en un dispositivo (o borrar su fila a mano en la hoja) no afecta a los demás, algo que el modelo de token único no podía ofrecer.
+
+Piezas nuevas: `js/auth.js` (módulo de autenticación, `window.auth`, con sus propios 11 tests), la hoja `usuarios` (email, nombre, foto, **rol** — el primer usuario que entra queda `dueño` automáticamente, editable a mano), la hoja `sesiones`, y una pantalla de login rediseñada (logo, botón de Google, "Continuar con correo" opcional y colapsado) sin ningún campo técnico visible — se eliminaron el campo de URL, el campo de Token, el botón "Conectar con token", el panel de configuración avanzada, y el link mágico `?token=...` del punto 5 (dejó de tener sentido: ya no hay un secreto fijo que compartir por URL). Detalle pieza por pieza, con la tabla completa de verificación, en `IMPLEMENTATION_STATUS.md` § "Autenticación real, sin token fijo".
+
+**Bug/smell real encontrado al diseñar esto (no reportado por el usuario, surgido de leer con cuidado el código existente antes de tocarlo):** antes de este cambio, `state.config.backendUrl`/`backendToken` vivían dentro de `state`, el mismo objeto que se sube completo en cada `push` — es decir, el token de sesión de cada dispositivo terminaba guardado en la celda `state_json` de la hoja de cálculo. La sesión ahora vive en su propia llave de `localStorage` (`crumbly-session`), gestionada solo por `auth.js`, y nunca entra a `state`.
+
+Verificado: 138/138 tests automatizados (112 core + 15 sync + 11 auth) y flujo manual completo en navegador: pantalla de login limpia, login por correo+contraseña de punta a punta con `fetch` simulado, sesión sobreviviendo a recargar la página, "Cerrar sesión" volviendo a la pantalla de login, y el botón de Google renderizando correctamente.
+
+**Pendiente del lado del usuario:** redesplegar `backend/Code.gs` como nueva versión — es el paso que activa todo este bloque; sin él, el backend real sigue corriendo el modelo de token viejo. Runbook actualizado en `backend/SETUP.md`.

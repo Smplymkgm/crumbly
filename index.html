@@ -168,24 +168,14 @@ textarea.field{height:auto}
   <div class="card" style="width:100%;max-width:340px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.06)">
     <div style="width:56px;height:56px;border-radius:16px;background:var(--ink);color:var(--white);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:22px;margin:4px auto 18px">C</div>
     <div style="font-weight:600;font-size:20px;color:var(--ink);margin-bottom:4px">Crumbly</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:24px">Ingresá para continuar</div>
-    <div id="google-signin-btn" style="display:flex;justify-content:center;margin-bottom:20px"></div>
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px">
-      <div style="flex:1;height:1px;background:var(--line)"></div>
-      <span style="font-size:11px;color:var(--muted)">o con tu correo</span>
-      <div style="flex:1;height:1px;background:var(--line)"></div>
-    </div>
-    <input type="email" id="login-email" class="field" placeholder="Correo" autocomplete="username" style="text-align:center;margin-bottom:10px" onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
-    <input type="password" id="login-password" class="field" placeholder="Contraseña" autocomplete="current-password" style="text-align:center;margin-bottom:12px" onkeydown="if(event.key==='Enter')doLogin()">
+    <div style="font-size:13px;color:var(--muted);margin-bottom:24px">Bienvenido</div>
+    <div id="google-signin-btn" style="display:flex;justify-content:center;margin-bottom:14px"></div>
     <div id="login-error" style="display:none;color:var(--danger);font-size:12px;margin-bottom:12px"></div>
-    <button class="btn btn-block" onclick="doLogin()" id="login-btn">Ingresar</button>
-    <button type="button" onclick="toggleLoginAvanzado()" style="background:transparent;border:none;color:var(--muted);font-size:11px;font-weight:500;cursor:pointer;margin-top:18px;text-decoration:underline">¿Problemas para entrar?</button>
-    <div id="login-avanzado" style="display:none;margin-top:14px;text-align:left">
-      <label class="field-label">URL de la aplicación web</label>
-      <input type="text" id="login-adv-url" class="field" placeholder="https://script.google.com/macros/s/.../exec" style="margin-bottom:10px">
-      <label class="field-label">Token</label>
-      <input type="text" id="login-adv-token" class="field" placeholder="Token del script" style="margin-bottom:10px">
-      <button class="btn btn-outline btn-block" onclick="doLoginAvanzado()">Conectar con token</button>
+    <button type="button" onclick="toggleLoginCorreo()" style="background:transparent;border:none;color:var(--muted);font-size:11px;font-weight:500;cursor:pointer;margin-top:4px;text-decoration:underline">Continuar con correo</button>
+    <div id="login-correo-form" style="display:none;margin-top:14px;text-align:left">
+      <input type="email" id="login-email" class="field" placeholder="Correo" autocomplete="username" style="text-align:center;margin-bottom:10px" onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
+      <input type="password" id="login-password" class="field" placeholder="Contraseña" autocomplete="current-password" style="text-align:center;margin-bottom:12px" onkeydown="if(event.key==='Enter')doLoginEmail()">
+      <button class="btn btn-block" onclick="doLoginEmail()" id="login-email-btn">Ingresar</button>
     </div>
   </div>
 </div>
@@ -895,15 +885,8 @@ textarea.field{height:auto}
       </div>
       <div>
         <div class="card-title" style="margin-bottom:10px">Sincronización (Google Sheets)</div>
-        <div class="modal-field">
-          <label class="field-label">URL de la aplicación web</label>
-          <input type="text" id="cfg-backend-url" class="field" placeholder="https://script.google.com/macros/s/.../exec" oninput="saveSyncConfig()">
-        </div>
-        <div class="modal-field">
-          <label class="field-label">Token</label>
-          <input type="password" id="cfg-backend-token" class="field" placeholder="Token del script" oninput="saveSyncConfig()">
-        </div>
-        <p class="item-sub" id="sync-status" style="margin-bottom:10px">Sin configurar — ver <code>backend/SETUP.md</code>.</p>
+        <p class="item-sub" id="ajustes-usuario" style="margin-bottom:6px"></p>
+        <p class="item-sub" id="sync-status" style="margin-bottom:10px">Sin sincronizar todavía.</p>
         <div style="display:flex;gap:8px;margin-bottom:8px">
           <button class="btn btn-outline" style="flex:1;justify-content:center" onclick="testSyncConnection()">Probar conexión</button>
           <button class="btn" style="flex:1;justify-content:center" onclick="syncNow()">Sincronizar ahora</button>
@@ -938,6 +921,7 @@ textarea.field{height:auto}
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="js/core.js"></script>
 <script src="js/sync.js"></script>
+<script src="js/auth.js"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -975,7 +959,6 @@ function loadState() {
   state = CrumblyCore.migrateState(parsed);
   const emailInput = document.getElementById('cfg-email');
   if (emailInput) emailInput.value = state.config.email;
-  fillSyncInputs();
   if (state.config.lastSync) updateSyncStatus('Última sincronización: ' + formatSyncTime(state.config.lastSync));
 }
 
@@ -999,19 +982,20 @@ function saveState() {
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 
 /* ─── Sincronización con Google Sheets (Fase E, HANDOFF.md §12) ───
-   El auto-sync en segundo plano solo se activa DESPUÉS del primer
-   "Sincronizar ahora" manual exitoso (lastSync queda guardado) — así
-   pegar/editar la URL o el token no dispara una subida sorpresa antes
-   de que el usuario confirme que quiere sincronizar. */
+   auth.js es el dueño de la sesión (token + URL del backend) — acá solo
+   se lee con auth.getToken()/auth.getBackendUrl(). Nada de eso vive en
+   `state`, así que nunca viaja dentro de un push/pull (ver js/auth.js).
+   El auto-sync en segundo plano solo se activa DESPUÉS de la primera
+   sincronización exitosa (lastSync queda guardado). */
 let syncPushTimer = null;
 function schedulePush() {
   if (!state.config.lastSync) return;
-  if (!CrumblySync.isConfigured(state.config.backendUrl, state.config.backendToken)) return;
+  if (!auth.isAuthenticated()) return;
   clearTimeout(syncPushTimer);
   syncPushTimer = setTimeout(pushInBackground, 900);
 }
 function pushInBackground() {
-  CrumblySync.push(state.config.backendUrl, state.config.backendToken, state)
+  CrumblySync.push(auth.getBackendUrl(), auth.getToken(), state)
     .then(r => {
       if (!r.ok) { updateSyncStatus('Error al sincronizar: ' + (r.error || 'desconocido'), true); return; }
       state.config.lastSync = r.ts || new Date().toISOString();
@@ -1020,51 +1004,12 @@ function pushInBackground() {
     })
     .catch(() => updateSyncStatus('Sin conexión con el backend — los cambios quedan solo en este navegador por ahora', true));
 }
-function saveSyncConfig() {
-  state.config.backendUrl = document.getElementById('cfg-backend-url').value.trim();
-  state.config.backendToken = document.getElementById('cfg-backend-token').value.trim();
-  saveState();
-}
-// URL fija del backend desplegado — no es secreta (sin el token, el
-// backend responde "token inválido" a cualquier pedido, ver Code.gs), así
-// que puede vivir en el código público. Deja configurar un dispositivo
-// nuevo con un solo link (…?token=EL_TOKEN) en vez de copiar la URL y el
-// token a mano entre dos pestañas — a pedido explícito del usuario.
-const DEFAULT_BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwh-0SpF-QLYnvq50b2RjM_sKqQTbCuOvkS7Gn6NQUDQDeB-jP1f7G9kkS75-AcVhGxxA/exec';
-function fillSyncInputs() {
-  const urlInput = document.getElementById('cfg-backend-url');
-  if (urlInput) urlInput.value = state.config.backendUrl;
-  const tokenInput = document.getElementById('cfg-backend-token');
-  if (tokenInput) tokenInput.value = state.config.backendToken;
-}
-// Guarda backendUrl+backendToken, trae el state real del backend y
-// refresca la pantalla — usado tanto por el login normal (doLogin) como
-// por el link mágico (?token=) y el modo avanzado, para no repetir esta
-// secuencia 3 veces.
-function connectWithToken(token, successMsg) {
-  state.config.backendUrl = state.config.backendUrl || DEFAULT_BACKEND_URL;
-  state.config.backendToken = token;
-  saveState();
-  fillSyncInputs();
-  const url = state.config.backendUrl;
-  return CrumblySync.pull(url, token).then(r => {
-    if (!r.ok || !r.state) { showToast('No se pudo traer los datos: ' + (r.error || 'revisa el token')); return false; }
-    state = CrumblyCore.migrateState(r.state);
-    state.config.backendUrl = url;
-    state.config.backendToken = token;
-    state.config.lastSync = new Date().toISOString();
-    saveState();
-    refreshAll();
-    fillSyncInputs();
-    updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
-    showToast(successMsg);
-    return true;
-  });
-}
+
 // Client ID de OAuth de Google Cloud Console — público (va en el HTML,
 // no es secreto: el backend igual verifica el token contra Google antes
 // de confiar en él). Reemplazar tras crear el proyecto — ver
-// backend/SETUP.md § "Ingresar con Google".
+// backend/SETUP.md § "Ingresar con Google". Vive acá y no en auth.js
+// porque solo hace falta para dibujar el botón de Google en esta página.
 const GOOGLE_CLIENT_ID = 'TU_CLIENT_ID.apps.googleusercontent.com';
 
 function showLoginGate() {
@@ -1084,104 +1029,89 @@ function initGoogleSignIn() {
   google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleGoogleCredential });
   google.accounts.id.renderButton(document.getElementById('google-signin-btn'), { theme: 'outline', size: 'large', width: 280 });
 }
-// Google entrega un JWT firmado (response.credential) — el backend lo
-// verifica contra Google (oauth2.googleapis.com/tokeninfo) y chequea que
-// el correo sea el autorizado (CRUMBLY_LOGIN_EMAIL) antes de entregar el
-// token real. La app nunca valida el JWT por su cuenta.
+// Punto de entrada único tras CUALQUIER login exitoso (Google, correo, o
+// una sesión ya guardada al abrir la app): muestra la app, pone el
+// nombre/foto de quien entró en el encabezado, y trae los datos reales
+// del backend.
+async function afterLogin_(successMsg) {
+  hideLoginGate();
+  applyUsuarioHeader_(auth.getCurrentUser());
+  refreshAll();
+  const r = await CrumblySync.pull(auth.getBackendUrl(), auth.getToken());
+  if (!r.ok || !r.state) { showToast('No se pudo traer los datos: ' + (r.error || 'revisá tu conexión')); return; }
+  state = CrumblyCore.migrateState(r.state);
+  state.config.lastSync = new Date().toISOString();
+  saveState();
+  refreshAll();
+  updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
+  if (successMsg) showToast(successMsg);
+}
+function applyUsuarioHeader_(user) {
+  if (!user) return;
+  const greeting = document.querySelector('.header-greeting');
+  if (greeting) greeting.textContent = 'Hola, ' + (user.nombre || user.email).split(' ')[0];
+  const avatar = document.querySelector('.avatar-ink');
+  if (avatar && user.foto) avatar.innerHTML = '<img src="' + user.foto + '" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover">';
+  const ajustesUsuario = document.getElementById('ajustes-usuario');
+  if (ajustesUsuario) ajustesUsuario.textContent = 'Conectado como ' + user.email + (user.rol ? ' · ' + user.rol : '');
+}
+// Google entrega un JWT firmado (response.credential) — auth.js lo
+// cambia por una sesión real: el backend lo verifica contra Google
+// (oauth2.googleapis.com/tokeninfo) antes de confiar en él. La app nunca
+// valida el JWT por su cuenta.
 async function handleGoogleCredential(response) {
   const errEl = document.getElementById('login-error');
   errEl.style.display = 'none';
   try {
-    const res = await CrumblySync.loginGoogle(DEFAULT_BACKEND_URL, response.credential);
-    if (!res.ok) throw new Error(res.error || 'No se pudo iniciar sesión');
-    hideLoginGate();
-    await connectWithToken(res.token, 'Sesión iniciada ✓');
+    await auth.loginGoogle(response.credential);
+    await afterLogin_('Sesión iniciada ✓');
   } catch (err) {
     errEl.textContent = err.message;
     errEl.style.display = 'block';
   }
 }
-// Camino alternativo al botón de Google — correo + contraseña corta.
-async function doLogin() {
+// Camino opcional al botón de Google — correo + contraseña, colapsado
+// detrás de "Continuar con correo" hasta que se pide.
+function toggleLoginCorreo() {
+  const el = document.getElementById('login-correo-form');
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+async function doLoginEmail() {
   const email = document.getElementById('login-email').value.trim();
   const pwd = document.getElementById('login-password').value.trim();
   const errEl = document.getElementById('login-error');
   errEl.style.display = 'none';
   if (!email || !pwd) { errEl.textContent = 'Ingresá el correo y la contraseña'; errEl.style.display = 'block'; return; }
-  const btn = document.getElementById('login-btn');
+  const btn = document.getElementById('login-email-btn');
   btn.textContent = 'Ingresando…'; btn.disabled = true;
   try {
-    const res = await CrumblySync.login(DEFAULT_BACKEND_URL, email, pwd);
-    if (!res.ok) throw new Error(res.error === 'correo o contraseña incorrectos' ? 'Correo o contraseña incorrectos' : (res.error || 'No se pudo iniciar sesión'));
+    await auth.loginEmail(email, pwd);
     document.getElementById('login-password').value = '';
-    hideLoginGate();
-    await connectWithToken(res.token, 'Sesión iniciada ✓');
+    await afterLogin_('Sesión iniciada ✓');
   } catch (err) {
-    errEl.textContent = err.message;
+    errEl.textContent = err.message === 'correo o contraseña incorrectos' ? 'Correo o contraseña incorrectos' : err.message;
     errEl.style.display = 'block';
   } finally {
     btn.textContent = 'Ingresar'; btn.disabled = false;
   }
 }
-// Escape hatch: si ni Google ni correo+contraseña están configurados en
-// el backend todavía (o hay algún otro problema), conectar igual pegando
-// la URL+token técnicos — mismo mecanismo que Ajustes, para no dejar a
-// nadie completamente bloqueado por la pantalla de login.
-function toggleLoginAvanzado() {
-  const el = document.getElementById('login-avanzado');
-  const show = el.style.display === 'none';
-  el.style.display = show ? 'block' : 'none';
-  if (show) document.getElementById('login-adv-url').value = DEFAULT_BACKEND_URL;
-}
-async function doLoginAvanzado() {
-  const url = document.getElementById('login-adv-url').value.trim();
-  const token = document.getElementById('login-adv-token').value.trim();
-  const errEl = document.getElementById('login-error');
-  errEl.style.display = 'none';
-  if (!url || !token) { errEl.textContent = 'Completa la URL y el token'; errEl.style.display = 'block'; return; }
-  state.config.backendUrl = url;
-  hideLoginGate();
-  try {
-    await connectWithToken(token, 'Conectado ✓');
-  } catch (e) {
-    showLoginGate();
-    errEl.textContent = 'No se pudo conectar';
-    errEl.style.display = 'block';
-  }
-}
 function cerrarSesion() {
   if (!confirm('¿Cerrar sesión? Vas a tener que ingresar de nuevo para usar la app en este dispositivo.')) return;
   closeModal('modal-ajustes');
-  state.config.backendToken = '';
-  saveState();
+  auth.logout();
   showLoginGate();
 }
-function applySetupLinkIfPresent() {
-  const params = new URLSearchParams(location.search);
-  const token = params.get('token');
-  if (!token) return;
-  // El token no debe quedar visible en la URL/historial del navegador una
-  // vez usado.
-  history.replaceState({}, '', location.pathname);
-  showToast('Configurando este dispositivo…');
-  connectWithToken(token.trim(), 'Dispositivo conectado ✓ — datos actualizados')
-    .catch(() => showToast('No se pudo conectar con el backend — revisa tu conexión'));
-}
 function testSyncConnection() {
-  const url = document.getElementById('cfg-backend-url').value.trim();
-  const token = document.getElementById('cfg-backend-token').value.trim();
-  if (!CrumblySync.isConfigured(url, token)) { updateSyncStatus('Completa la URL y el token primero', true); return; }
+  if (!auth.isAuthenticated()) { updateSyncStatus('Iniciá sesión primero', true); return; }
   updateSyncStatus('Probando…');
-  CrumblySync.ping(url, token)
-    .then(r => updateSyncStatus(r.ok ? 'Conectado ✓' : 'Error: ' + (r.error || 'token inválido'), !r.ok))
-    .catch(() => updateSyncStatus('No se pudo conectar — revisa la URL', true));
+  CrumblySync.ping(auth.getBackendUrl(), auth.getToken())
+    .then(r => updateSyncStatus(r.ok ? 'Conectado ✓' : 'Error: ' + (r.error || 'sesión inválida'), !r.ok))
+    .catch(() => updateSyncStatus('No se pudo conectar — revisá tu conexión', true));
 }
 function syncNow() {
-  state.config.backendUrl = document.getElementById('cfg-backend-url').value.trim();
-  state.config.backendToken = document.getElementById('cfg-backend-token').value.trim();
-  if (!CrumblySync.isConfigured(state.config.backendUrl, state.config.backendToken)) { updateSyncStatus('Completa la URL y el token primero', true); return; }
+  if (!auth.isAuthenticated()) { updateSyncStatus('Iniciá sesión primero', true); return; }
   updateSyncStatus('Sincronizando…');
-  CrumblySync.push(state.config.backendUrl, state.config.backendToken, state)
+  CrumblySync.push(auth.getBackendUrl(), auth.getToken(), state)
     .then(r => {
       if (!r.ok) { updateSyncStatus('Error: ' + (r.error || 'desconocido'), true); return; }
       state.config.lastSync = r.ts || new Date().toISOString();
@@ -1193,8 +1123,8 @@ function syncNow() {
 }
 function pullOnLoad() {
   if (!state.config.lastSync) return;
-  if (!CrumblySync.isConfigured(state.config.backendUrl, state.config.backendToken)) return;
-  CrumblySync.pull(state.config.backendUrl, state.config.backendToken)
+  if (!auth.isAuthenticated()) return;
+  CrumblySync.pull(auth.getBackendUrl(), auth.getToken())
     .then(r => {
       if (!r.ok || !r.state) return;
       state = CrumblyCore.migrateState(r.state);
@@ -1925,10 +1855,10 @@ async function onComprobanteChange(e, labelId) {
   const label = document.getElementById(labelId);
   if (!f) { label.textContent = 'Subir comprobante'; setComprobanteValor(labelId, ''); return; }
 
-  if (!CrumblySync.isConfigured(state.config.backendUrl, state.config.backendToken)) {
+  if (!auth.isAuthenticated()) {
     label.textContent = f.name;
     setComprobanteValor(labelId, f.name);
-    showToast('Configura la sincronización en Ajustes para guardar el comprobante en Drive — por ahora solo se guarda el nombre');
+    showToast('Iniciá sesión para guardar el comprobante en Drive — por ahora solo se guarda el nombre');
     return;
   }
   if (f.size > 10 * 1024 * 1024) {
@@ -1941,7 +1871,7 @@ async function onComprobanteChange(e, labelId) {
   label.textContent = 'Subiendo ' + f.name + '...';
   try {
     const base64 = await fileToBase64(f);
-    const res = await CrumblySync.uploadFile(state.config.backendUrl, state.config.backendToken, f.name, f.type, base64);
+    const res = await CrumblySync.uploadFile(auth.getBackendUrl(), auth.getToken(), f.name, f.type, base64);
     if (!res.ok) throw new Error(res.error || 'error desconocido');
     label.textContent = f.name + ' ✓';
     setComprobanteValor(labelId, res.url);
@@ -3151,16 +3081,14 @@ function refreshAll() {
 }
 
 loadState();
-if (state.config.backendToken) {
+auth.restoreSession();
+if (auth.isAuthenticated()) {
   // Ya hay sesión guardada en este dispositivo — arranca directo.
+  applyUsuarioHeader_(auth.getCurrentUser());
   refreshAll();
   pullOnLoad();
-} else if (new URLSearchParams(location.search).get('token')) {
-  // Sin sesión pero llegó con un link mágico (?token=) — se resuelve solo.
-  refreshAll();
-  applySetupLinkIfPresent();
 } else {
-  // Sin sesión y sin link: pedir la contraseña antes de mostrar la app.
+  // Sin sesión: pedir login antes de mostrar la app.
   showLoginGate();
 }
 </script>

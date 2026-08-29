@@ -19,25 +19,34 @@
  * del dueño del script (acción "uploadComprobante") — no son públicos,
  * el link solo funciona logueado con la cuenta que desplegó el script.
  *
- * Login: dos caminos, a elección de quien entra — "Iniciar sesión con
- * Google" (acción "loginGoogle", verifica el ID token CONTRA GOOGLE) o
- * correo + contraseña corta (acción "login", CRUMBLY_LOGIN_EMAIL /
- * CRUMBLY_LOGIN_PASSWORD). Ambas devuelven el mismo token real una sola
- * vez — el token real nunca vive en el código público.
+ * Autenticación (29 ago 2026 — reemplaza el token manual por completo):
+ * no hay ningún token fijo que copiar y pegar. "Iniciar sesión con
+ * Google" (acción "authGoogle") verifica el ID token CONTRA GOOGLE,
+ * revisa que el correo esté en CRUMBLY_LOGIN_EMAIL, y busca/crea al
+ * usuario en la hoja "usuarios". El camino opcional de correo+contraseña
+ * (acción "login", CRUMBLY_LOGIN_PASSWORD) hace lo mismo sin pasar por
+ * Google. Ambos caminos terminan en mintSession_(): un token de SESIÓN
+ * aleatorio (no un secreto fijo de la app) que se guarda como una fila
+ * nueva en la hoja "sesiones" — cada dispositivo tiene el suyo, cerrar
+ * sesión en uno no afecta a los demás. push/pull/uploadComprobante
+ * validan ese token de sesión contra esa hoja en cada pedido
+ * (isValidSession_) en vez de comparar contra un secreto fijo.
  *
  * Instalación: ver backend/SETUP.md.
  */
 
-var TOKEN_PROPERTY = 'CRUMBLY_TOKEN';
-var LOGIN_EMAIL_PROPERTY = 'CRUMBLY_LOGIN_EMAIL';
-var LOGIN_PASSWORD_PROPERTY = 'CRUMBLY_LOGIN_PASSWORD';
+var LOGIN_EMAIL_PROPERTY = 'CRUMBLY_LOGIN_EMAIL'; // uno o más correos separados por coma
+var LOGIN_PASSWORD_PROPERTY = 'CRUMBLY_LOGIN_PASSWORD'; // opcional — camino de correo+contraseña
 var GOOGLE_CLIENT_ID_PROPERTY = 'CRUMBLY_GOOGLE_CLIENT_ID';
 var SHEET_ID_PROPERTY = 'CRUMBLY_SHEET_ID';
 var STATE_SHEET = 'state_json';
+var USUARIOS_SHEET = 'usuarios';
+var SESIONES_SHEET = 'sesiones';
+var SESION_DIAS_VALIDEZ = 90;
 
 function doGet(e) {
   var params = (e && e.parameter) || {};
-  if (!isValidToken_(params.token)) return json_({ ok: false, error: 'token inválido' });
+  if (!isValidSession_(params.token)) return json_({ ok: false, error: 'sesión inválida — iniciá sesión de nuevo' });
 
   if (params.action === 'ping') {
     return json_({ ok: true, ts: new Date().toISOString() });
@@ -56,18 +65,21 @@ function doPost(e) {
     return json_({ ok: false, error: 'body inválido (se esperaba JSON)' });
   }
 
-  // "loginGoogle" y "login" son las únicas acciones que NO piden el token
-  // real — son justamente las que lo entregan, a cambio de un login válido
-  // (de Google o correo+contraseña). Por eso se resuelven antes del
-  // chequeo de token, no después.
-  if (body.action === 'loginGoogle') {
-    return loginGoogle_(body);
+  // "authGoogle" y "login" son las únicas acciones que NO piden una sesión
+  // ya abierta — son justamente las que la abren. "logout" tampoco: solo
+  // necesita el token para saber qué sesión cerrar, no que siga siendo
+  // válida. Por eso las tres se resuelven antes del chequeo de sesión.
+  if (body.action === 'authGoogle') {
+    return authGoogle_(body);
   }
   if (body.action === 'login') {
     return login_(body);
   }
+  if (body.action === 'logout') {
+    return logoutSession_(body);
+  }
 
-  if (!isValidToken_(body.token)) return json_({ ok: false, error: 'token inválido' });
+  if (!isValidSession_(body.token)) return json_({ ok: false, error: 'sesión inválida — iniciá sesión de nuevo' });
 
   if (body.action === 'push') {
     if (!body.state || typeof body.state !== 'object') {
@@ -121,59 +133,148 @@ function getOrCreateComprobantesFolder_() {
   return DriveApp.createFolder(COMPROBANTES_FOLDER);
 }
 
-function isValidToken_(token) {
-  var expected = PropertiesService.getScriptProperties().getProperty(TOKEN_PROPERTY);
-  return !!expected && token === expected;
+// ─── Sesiones — reemplaza el token fijo por completo ──────────────────
+// No hay ningún secreto compartido que copiar y pegar. Cada login exitoso
+// (Google o correo+contraseña) crea una fila nueva en "sesiones" con un
+// token aleatorio propio de ESE dispositivo — cerrar sesión en uno no
+// afecta a los demás, a diferencia de un único CRUMBLY_TOKEN para toda la
+// app. push/pull/uploadComprobante validan ese token en cada pedido.
+function isValidSession_(token) {
+  if (!token) return false;
+  var row = findRowByValue_(getSesionesSheet_(), 0, token);
+  if (!row) return false;
+  var expira = new Date(row.data[3]);
+  return expira.getTime() > Date.now();
 }
 
-// ─── Login (Google Sign-In → token real) ─────────────────────────────────
-// El token real (CRUMBLY_TOKEN) nunca vive en el código público de la app
-// — solo acá, en las Propiedades del script. La app obtiene un ID token
-// de Google en el navegador (Google Identity Services) y lo manda acá;
-// este endpoint lo verifica CONTRA GOOGLE (no confía en el JWT solo por
-// decodificarlo) y chequea que el correo sea el autorizado
-// (CRUMBLY_LOGIN_EMAIL) antes de devolver el token real UNA vez.
-// Configurar CRUMBLY_LOGIN_EMAIL y CRUMBLY_GOOGLE_CLIENT_ID en las
-// Propiedades del script — ver backend/SETUP.md.
-function loginGoogle_(body) {
-  var expectedEmail = PropertiesService.getScriptProperties().getProperty(LOGIN_EMAIL_PROPERTY);
+function mintSession_(email) {
+  var sh = getSesionesSheet_();
+  var token = Utilities.getUuid() + Utilities.getUuid(); // 2x UUID: más entropía que un solo v4
+  var ahora = new Date();
+  var expira = new Date(ahora.getTime() + SESION_DIAS_VALIDEZ * 24 * 60 * 60 * 1000);
+  sh.appendRow([token, email, ahora.toISOString(), expira.toISOString()]);
+  return token;
+}
+
+function logoutSession_(body) {
+  if (!body.token) return json_({ ok: false, error: 'falta token' });
+  var sh = getSesionesSheet_();
+  var row = findRowByValue_(sh, 0, body.token);
+  if (row) sh.deleteRow(row.row); // no importa si ya no existe/expiró — el resultado que le importa al cliente es el mismo
+  return json_({ ok: true });
+}
+
+// ─── Login con Google (ID token → sesión) ──────────────────────────────
+// La app obtiene un ID token de Google en el navegador (Google Identity
+// Services) y lo manda acá; este endpoint lo verifica CONTRA GOOGLE (no
+// confía en decodificarlo solo) y chequea que el correo esté autorizado
+// (CRUMBLY_LOGIN_EMAIL, uno o más separados por coma) antes de crear/
+// actualizar el usuario y abrir una sesión. Configurar CRUMBLY_LOGIN_EMAIL
+// y CRUMBLY_GOOGLE_CLIENT_ID en las Propiedades del script — SETUP.md.
+function authGoogle_(body) {
   var clientId = PropertiesService.getScriptProperties().getProperty(GOOGLE_CLIENT_ID_PROPERTY);
-  if (!expectedEmail || !clientId) return json_({ ok: false, error: 'falta configurar CRUMBLY_LOGIN_EMAIL o CRUMBLY_GOOGLE_CLIENT_ID' });
-  if (!body.idToken) return json_({ ok: false, error: 'falta idToken' });
+  if (!clientId) return json_({ success: false, error: 'falta configurar CRUMBLY_GOOGLE_CLIENT_ID' });
+  if (!body.idToken) return json_({ success: false, error: 'falta idToken' });
 
   var info;
   try {
     var res = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(body.idToken), { muteHttpExceptions: true });
     info = JSON.parse(res.getContentText());
   } catch (err) {
-    return json_({ ok: false, error: 'no se pudo verificar el token de Google' });
+    return json_({ success: false, error: 'no se pudo verificar el token de Google' });
   }
   // aud debe ser nuestro Client ID (si no, el token es de otra app) y el
   // correo debe venir verificado por Google — así no confiamos en un JWT
   // cualquiera, solo en uno que Google mismo certifica como válido y
   // recién emitido para nuestra app.
-  if (!info || info.aud !== clientId) return json_({ ok: false, error: 'token de Google inválido' });
-  if (info.email_verified !== 'true' && info.email_verified !== true) return json_({ ok: false, error: 'correo de Google no verificado' });
-  if (String(info.email || '').trim().toLowerCase() !== expectedEmail.trim().toLowerCase()) return json_({ ok: false, error: 'correo no autorizado' });
+  if (!info || info.aud !== clientId) return json_({ success: false, error: 'token de Google inválido' });
+  if (info.email_verified !== 'true' && info.email_verified !== true) return json_({ success: false, error: 'correo de Google no verificado' });
+  var email = String(info.email || '').trim().toLowerCase();
+  if (!isEmailAllowed_(email)) return json_({ success: false, error: 'correo no autorizado' });
 
-  var token = PropertiesService.getScriptProperties().getProperty(TOKEN_PROPERTY);
-  return json_({ ok: true, token: token });
+  var usuario = findOrCreateUsuario_(email, { id: info.sub || '', nombre: info.name || email, foto: info.picture || '' });
+  var token = mintSession_(email);
+  return json_({ success: true, user: usuario, token: token });
 }
 
-// ─── Login (correo + contraseña corta → token real) ─────────────────────
+// ─── Login con correo + contraseña (opcional) ──────────────────────────
 // Camino alternativo a "Iniciar sesión con Google" para cuando no se
-// quiere/puede usar esa cuenta en el dispositivo. Configurar
-// CRUMBLY_LOGIN_EMAIL y CRUMBLY_LOGIN_PASSWORD en las Propiedades del
-// script — ver backend/SETUP.md.
+// quiere/puede usar esa cuenta en el dispositivo. La contraseña es un
+// secreto propio de la app (CRUMBLY_LOGIN_PASSWORD) — nada que ver con
+// contraseñas de Google. El correo debe estar en CRUMBLY_LOGIN_EMAIL,
+// igual que el camino de Google. Configurar ambas Propiedades del script
+// — ver backend/SETUP.md.
 function login_(body) {
-  var expectedEmail = PropertiesService.getScriptProperties().getProperty(LOGIN_EMAIL_PROPERTY);
   var expectedPassword = PropertiesService.getScriptProperties().getProperty(LOGIN_PASSWORD_PROPERTY);
-  if (!expectedEmail || !expectedPassword) return json_({ ok: false, error: 'falta configurar CRUMBLY_LOGIN_EMAIL o CRUMBLY_LOGIN_PASSWORD' });
+  if (!expectedPassword) return json_({ success: false, error: 'falta configurar CRUMBLY_LOGIN_PASSWORD' });
   var email = String(body.email || '').trim().toLowerCase();
-  if (email !== expectedEmail.trim().toLowerCase()) return json_({ ok: false, error: 'correo o contraseña incorrectos' });
-  if (!body.password || body.password !== expectedPassword) return json_({ ok: false, error: 'correo o contraseña incorrectos' });
-  var token = PropertiesService.getScriptProperties().getProperty(TOKEN_PROPERTY);
-  return json_({ ok: true, token: token });
+  if (!isEmailAllowed_(email)) return json_({ success: false, error: 'correo o contraseña incorrectos' });
+  if (!body.password || body.password !== expectedPassword) return json_({ success: false, error: 'correo o contraseña incorrectos' });
+
+  var usuario = findOrCreateUsuario_(email, { nombre: email });
+  var token = mintSession_(email);
+  return json_({ success: true, user: usuario, token: token });
+}
+
+// ─── Usuarios — quién puede entrar y quién ya entró ────────────────────
+// CRUMBLY_LOGIN_EMAIL sostiene la lista de correos autorizados (uno o
+// más, separados por coma) — se revisa en CADA login, no solo al crear
+// la cuenta, así que sacar un correo de la lista le corta el acceso en
+// su próximo intento de iniciar sesión (las sesiones ya abiertas siguen
+// vivas hasta que expiren o se cierren a mano — revocación inmediata
+// sería el siguiente paso si hace falta).
+function isEmailAllowed_(email) {
+  var raw = PropertiesService.getScriptProperties().getProperty(LOGIN_EMAIL_PROPERTY);
+  if (!raw || !email) return false;
+  var permitidos = raw.split(',').map(function (e) { return e.trim().toLowerCase(); }).filter(Boolean);
+  return permitidos.indexOf(email) !== -1;
+}
+
+// El primer usuario que se registra queda como 'dueño'; los siguientes,
+// 'staff'. Es un default automático, no una decisión final — el rol es
+// una celda más de la hoja "usuarios" y se puede corregir a mano ahí
+// mismo en cualquier momento, igual que cualquier otro dato de este
+// backend (no hay pantalla de administración, a propósito: la hoja ya
+// es esa pantalla).
+function findOrCreateUsuario_(email, datos) {
+  var sh = getUsuariosSheet_();
+  var row = findRowByValue_(sh, 0, email);
+  var ahora = new Date().toISOString();
+  if (row) {
+    var rol = row.data[4];
+    sh.getRange(row.row, 2, 1, 4).setValues([[datos.id || row.data[1], datos.nombre || row.data[2], datos.foto || row.data[3], rol]]);
+    sh.getRange(row.row, 6).setValue(ahora);
+    return { id: datos.id || row.data[1], email: email, nombre: datos.nombre || row.data[2], foto: datos.foto || row.data[3], rol: rol };
+  }
+  var esElPrimero = sh.getLastRow() <= 1; // <=1: solo la fila de encabezado, o vacía
+  var rolNuevo = esElPrimero ? 'dueño' : 'staff';
+  sh.appendRow([email, datos.id || '', datos.nombre || email, datos.foto || '', rolNuevo, ahora]);
+  return { id: datos.id || '', email: email, nombre: datos.nombre || email, foto: datos.foto || '', rol: rolNuevo };
+}
+
+function getUsuariosSheet_() {
+  var sh = getOrCreateSheet_(USUARIOS_SHEET);
+  if (sh.getLastRow() === 0) sh.appendRow(['email', 'id', 'nombre', 'foto', 'rol', 'ultimoAcceso']);
+  return sh;
+}
+
+function getSesionesSheet_() {
+  var sh = getOrCreateSheet_(SESIONES_SHEET);
+  if (sh.getLastRow() === 0) sh.appendRow(['token', 'email', 'creado', 'expira']);
+  return sh;
+}
+
+// Escaneo lineal desde la fila 2 (fila 1 = encabezado) — a este volumen
+// (un puñado de usuarios/sesiones de un solo negocio) es más simple y
+// suficientemente rápido que indexar; si algún día esto crece mucho, se
+// cambia acá sin tocar el resto del archivo.
+function findRowByValue_(sheet, colIndex, value) {
+  if (sheet.getLastRow() < 2) return null;
+  var data = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
+  for (var i = 0; i < data.length; i++) {
+    if (data[i][colIndex] === value) return { row: i + 2, data: data[i] };
+  }
+  return null;
 }
 
 function json_(obj) {
