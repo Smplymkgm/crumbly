@@ -72,12 +72,15 @@
     }).then(parseResponse);
   }
 
-  // Cambia correo + contraseña corta por el token real — a diferencia de
-  // las demás funciones, NO manda token (es justo lo que todavía no tiene).
-  // Devuelve { ok, token } o { ok:false, error }.
-  function login(backendUrl, email, password, fetchImpl) {
+  // Cambia un ID token de Google (JWT firmado, obtenido con Google Identity
+  // Services en el navegador) por el token real del backend — a diferencia
+  // de las demás funciones, NO manda token (es justo lo que todavía no
+  // tiene). El backend verifica el JWT contra Google antes de confiar en
+  // él; esta función solo lo transporta. Devuelve { ok, token } o
+  // { ok:false, error }.
+  function loginGoogle(backendUrl, idToken, fetchImpl) {
     var f = resolveFetch(fetchImpl);
-    var body = JSON.stringify({ action: 'login', email: email, password: password });
+    var body = JSON.stringify({ action: 'loginGoogle', idToken: idToken });
     return f(backendUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -91,6 +94,6 @@
     pull: pull,
     push: push,
     uploadFile: uploadFile,
-    login: login
+    loginGoogle: loginGoogle
   };
 });

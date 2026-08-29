@@ -19,17 +19,18 @@
  * del dueño del script (acción "uploadComprobante") — no son públicos,
  * el link solo funciona logueado con la cuenta que desplegó el script.
  *
- * Login: la app pide correo + contraseña corta (CRUMBLY_LOGIN_EMAIL /
- * CRUMBLY_LOGIN_PASSWORD) en vez del token real — la acción "login" los
- * valida y devuelve el token real una sola vez. El token real nunca vive
- * en el código público.
+ * Login: la app pide iniciar sesión con Google (Google Identity Services)
+ * en vez del token real — la acción "loginGoogle" verifica el ID token
+ * CONTRA GOOGLE, chequea que el correo sea el autorizado
+ * (CRUMBLY_LOGIN_EMAIL) y recién ahí devuelve el token real una sola vez.
+ * El token real nunca vive en el código público.
  *
  * Instalación: ver backend/SETUP.md.
  */
 
 var TOKEN_PROPERTY = 'CRUMBLY_TOKEN';
-var LOGIN_PASSWORD_PROPERTY = 'CRUMBLY_LOGIN_PASSWORD';
 var LOGIN_EMAIL_PROPERTY = 'CRUMBLY_LOGIN_EMAIL';
+var GOOGLE_CLIENT_ID_PROPERTY = 'CRUMBLY_GOOGLE_CLIENT_ID';
 var SHEET_ID_PROPERTY = 'CRUMBLY_SHEET_ID';
 var STATE_SHEET = 'state_json';
 
@@ -54,11 +55,11 @@ function doPost(e) {
     return json_({ ok: false, error: 'body inválido (se esperaba JSON)' });
   }
 
-  // "login" es la única acción que NO pide el token real — es justamente
-  // la que lo entrega, a cambio de la contraseña corta. Por eso se resuelve
-  // antes del chequeo de token, no después.
-  if (body.action === 'login') {
-    return login_(body);
+  // "loginGoogle" es la única acción que NO pide el token real — es
+  // justamente la que lo entrega, a cambio de un login de Google válido.
+  // Por eso se resuelve antes del chequeo de token, no después.
+  if (body.action === 'loginGoogle') {
+    return loginGoogle_(body);
   }
 
   if (!isValidToken_(body.token)) return json_({ ok: false, error: 'token inválido' });
@@ -120,21 +121,36 @@ function isValidToken_(token) {
   return !!expected && token === expected;
 }
 
-// ─── Login (correo + contraseña corta → token real) ─────────────────────
+// ─── Login (Google Sign-In → token real) ─────────────────────────────────
 // El token real (CRUMBLY_TOKEN) nunca vive en el código público de la app
-// — solo acá, en las Propiedades del script. La app pide un correo y una
-// contraseña más simples de recordar; este endpoint los valida y, si
-// coinciden, devuelve el token real UNA vez, que la app guarda localmente
-// para todo lo demás (ping/pull/push/uploadComprobante). Configurar
-// CRUMBLY_LOGIN_EMAIL y CRUMBLY_LOGIN_PASSWORD en las Propiedades del
-// script — ver backend/SETUP.md.
-function login_(body) {
+// — solo acá, en las Propiedades del script. La app obtiene un ID token
+// de Google en el navegador (Google Identity Services) y lo manda acá;
+// este endpoint lo verifica CONTRA GOOGLE (no confía en el JWT solo por
+// decodificarlo) y chequea que el correo sea el autorizado
+// (CRUMBLY_LOGIN_EMAIL) antes de devolver el token real UNA vez.
+// Configurar CRUMBLY_LOGIN_EMAIL y CRUMBLY_GOOGLE_CLIENT_ID en las
+// Propiedades del script — ver backend/SETUP.md.
+function loginGoogle_(body) {
   var expectedEmail = PropertiesService.getScriptProperties().getProperty(LOGIN_EMAIL_PROPERTY);
-  var expectedPassword = PropertiesService.getScriptProperties().getProperty(LOGIN_PASSWORD_PROPERTY);
-  if (!expectedEmail || !expectedPassword) return json_({ ok: false, error: 'falta configurar CRUMBLY_LOGIN_EMAIL o CRUMBLY_LOGIN_PASSWORD' });
-  var email = String(body.email || '').trim().toLowerCase();
-  if (email !== expectedEmail.trim().toLowerCase()) return json_({ ok: false, error: 'correo o contraseña incorrectos' });
-  if (!body.password || body.password !== expectedPassword) return json_({ ok: false, error: 'correo o contraseña incorrectos' });
+  var clientId = PropertiesService.getScriptProperties().getProperty(GOOGLE_CLIENT_ID_PROPERTY);
+  if (!expectedEmail || !clientId) return json_({ ok: false, error: 'falta configurar CRUMBLY_LOGIN_EMAIL o CRUMBLY_GOOGLE_CLIENT_ID' });
+  if (!body.idToken) return json_({ ok: false, error: 'falta idToken' });
+
+  var info;
+  try {
+    var res = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(body.idToken), { muteHttpExceptions: true });
+    info = JSON.parse(res.getContentText());
+  } catch (err) {
+    return json_({ ok: false, error: 'no se pudo verificar el token de Google' });
+  }
+  // aud debe ser nuestro Client ID (si no, el token es de otra app) y el
+  // correo debe venir verificado por Google — así no confiamos en un JWT
+  // cualquiera, solo en uno que Google mismo certifica como válido y
+  // recién emitido para nuestra app.
+  if (!info || info.aud !== clientId) return json_({ ok: false, error: 'token de Google inválido' });
+  if (info.email_verified !== 'true' && info.email_verified !== true) return json_({ ok: false, error: 'correo de Google no verificado' });
+  if (String(info.email || '').trim().toLowerCase() !== expectedEmail.trim().toLowerCase()) return json_({ ok: false, error: 'correo no autorizado' });
+
   var token = PropertiesService.getScriptProperties().getProperty(TOKEN_PROPERTY);
   return json_({ ok: true, token: token });
 }
