@@ -912,7 +912,7 @@ textarea.field{height:auto}
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
 <script src="js/core.js"></script>
 <script src="js/sync.js"></script>
 <script src="js/auth.js"></script>
@@ -1015,9 +1015,14 @@ function hideLoginGate() {
   document.getElementById('login-gate').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
 }
-// El botón de Google se dibuja cada vez que se muestra la pantalla de
-// login — el script de Google (accounts.google.com/gsi/client) carga
-// async, así que puede no estar listo todavía en el primer intento.
+// El script de Google (accounts.google.com/gsi/client) carga async, así
+// que en el primer intento (desde showLoginGate, al arrancar) puede no
+// estar listo todavía — en ese caso esta función no hace nada, sin
+// avisar. Por eso el <script> del head también llama a esta misma
+// función en su evento onload: ese es el intento que realmente dibuja
+// el botón la mayoría de las veces (bug real: antes solo había un
+// intento, sin reintento, así que el botón nunca aparecía salvo que la
+// red fuera raro-rápida — encontrado al probar en un dispositivo real).
 function initGoogleSignIn() {
   if (typeof google === 'undefined' || !google.accounts) return;
   google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleGoogleCredential });
