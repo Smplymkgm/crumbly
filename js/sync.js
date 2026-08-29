@@ -88,12 +88,26 @@
     }).then(parseResponse);
   }
 
+  // Cambia correo + contraseña corta por el token real — camino
+  // alternativo a loginGoogle. Tampoco manda token (todavía no lo tiene).
+  // Devuelve { ok, token } o { ok:false, error }.
+  function login(backendUrl, email, password, fetchImpl) {
+    var f = resolveFetch(fetchImpl);
+    var body = JSON.stringify({ action: 'login', email: email, password: password });
+    return f(backendUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: body
+    }).then(parseResponse);
+  }
+
   return {
     isConfigured: isConfigured,
     ping: ping,
     pull: pull,
     push: push,
     uploadFile: uploadFile,
-    loginGoogle: loginGoogle
+    loginGoogle: loginGoogle,
+    login: login
   };
 });

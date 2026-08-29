@@ -19,17 +19,18 @@
  * del dueño del script (acción "uploadComprobante") — no son públicos,
  * el link solo funciona logueado con la cuenta que desplegó el script.
  *
- * Login: la app pide iniciar sesión con Google (Google Identity Services)
- * en vez del token real — la acción "loginGoogle" verifica el ID token
- * CONTRA GOOGLE, chequea que el correo sea el autorizado
- * (CRUMBLY_LOGIN_EMAIL) y recién ahí devuelve el token real una sola vez.
- * El token real nunca vive en el código público.
+ * Login: dos caminos, a elección de quien entra — "Iniciar sesión con
+ * Google" (acción "loginGoogle", verifica el ID token CONTRA GOOGLE) o
+ * correo + contraseña corta (acción "login", CRUMBLY_LOGIN_EMAIL /
+ * CRUMBLY_LOGIN_PASSWORD). Ambas devuelven el mismo token real una sola
+ * vez — el token real nunca vive en el código público.
  *
  * Instalación: ver backend/SETUP.md.
  */
 
 var TOKEN_PROPERTY = 'CRUMBLY_TOKEN';
 var LOGIN_EMAIL_PROPERTY = 'CRUMBLY_LOGIN_EMAIL';
+var LOGIN_PASSWORD_PROPERTY = 'CRUMBLY_LOGIN_PASSWORD';
 var GOOGLE_CLIENT_ID_PROPERTY = 'CRUMBLY_GOOGLE_CLIENT_ID';
 var SHEET_ID_PROPERTY = 'CRUMBLY_SHEET_ID';
 var STATE_SHEET = 'state_json';
@@ -55,11 +56,15 @@ function doPost(e) {
     return json_({ ok: false, error: 'body inválido (se esperaba JSON)' });
   }
 
-  // "loginGoogle" es la única acción que NO pide el token real — es
-  // justamente la que lo entrega, a cambio de un login de Google válido.
-  // Por eso se resuelve antes del chequeo de token, no después.
+  // "loginGoogle" y "login" son las únicas acciones que NO piden el token
+  // real — son justamente las que lo entregan, a cambio de un login válido
+  // (de Google o correo+contraseña). Por eso se resuelven antes del
+  // chequeo de token, no después.
   if (body.action === 'loginGoogle') {
     return loginGoogle_(body);
+  }
+  if (body.action === 'login') {
+    return login_(body);
   }
 
   if (!isValidToken_(body.token)) return json_({ ok: false, error: 'token inválido' });
@@ -151,6 +156,22 @@ function loginGoogle_(body) {
   if (info.email_verified !== 'true' && info.email_verified !== true) return json_({ ok: false, error: 'correo de Google no verificado' });
   if (String(info.email || '').trim().toLowerCase() !== expectedEmail.trim().toLowerCase()) return json_({ ok: false, error: 'correo no autorizado' });
 
+  var token = PropertiesService.getScriptProperties().getProperty(TOKEN_PROPERTY);
+  return json_({ ok: true, token: token });
+}
+
+// ─── Login (correo + contraseña corta → token real) ─────────────────────
+// Camino alternativo a "Iniciar sesión con Google" para cuando no se
+// quiere/puede usar esa cuenta en el dispositivo. Configurar
+// CRUMBLY_LOGIN_EMAIL y CRUMBLY_LOGIN_PASSWORD en las Propiedades del
+// script — ver backend/SETUP.md.
+function login_(body) {
+  var expectedEmail = PropertiesService.getScriptProperties().getProperty(LOGIN_EMAIL_PROPERTY);
+  var expectedPassword = PropertiesService.getScriptProperties().getProperty(LOGIN_PASSWORD_PROPERTY);
+  if (!expectedEmail || !expectedPassword) return json_({ ok: false, error: 'falta configurar CRUMBLY_LOGIN_EMAIL o CRUMBLY_LOGIN_PASSWORD' });
+  var email = String(body.email || '').trim().toLowerCase();
+  if (email !== expectedEmail.trim().toLowerCase()) return json_({ ok: false, error: 'correo o contraseña incorrectos' });
+  if (!body.password || body.password !== expectedPassword) return json_({ ok: false, error: 'correo o contraseña incorrectos' });
   var token = PropertiesService.getScriptProperties().getProperty(TOKEN_PROPERTY);
   return json_({ ok: true, token: token });
 }

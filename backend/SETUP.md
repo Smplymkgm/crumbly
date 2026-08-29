@@ -29,9 +29,10 @@ Todo el código ya está listo en `backend/Code.gs`. Aquí solo copias y pegas.
 El token es la única contraseña que protege tus datos — sin él, nadie puede leer ni escribir en la hoja aunque encuentre la URL. El ID le dice al script sobre qué hoja trabajar (este proyecto no vive "dentro" de la hoja, así que hay que decírselo).
 
 1. En el editor de Apps Script, ve a **Configuración del proyecto** (ícono de engranaje, panel izquierdo).
-2. Baja hasta **Propiedades del script** → **Añadir propiedad del script**. Agrega tres (falta una cuarta, `CRUMBLY_GOOGLE_CLIENT_ID`, que se agrega en el paso 3.1 más abajo — necesitas crearla primero en Google Cloud Console):
-   - Propiedad: `CRUMBLY_TOKEN` — Valor: **inventa una cadena larga y aleatoria** (ej. genera una en [1password.com/password-generator](https://1password.com/password-generator/), 32+ caracteres). Este es el secreto real que protege tus datos — no se escribe a mano en ningún dispositivo, la app lo obtiene sola al iniciar sesión con Google (ver abajo).
-   - Propiedad: `CRUMBLY_LOGIN_EMAIL` — Valor: **el correo de Google** con el que vas a iniciar sesión en la app (tiene que ser una cuenta de Google real esta vez — es la que va a aparecer en el botón "Iniciar sesión con Google"). Solo ese correo puede entrar.
+2. Baja hasta **Propiedades del script** → **Añadir propiedad del script**. Agrega cuatro (falta una quinta, `CRUMBLY_GOOGLE_CLIENT_ID`, que se agrega en el paso 3.1 más abajo — necesitas crearla primero en Google Cloud Console):
+   - Propiedad: `CRUMBLY_TOKEN` — Valor: **inventa una cadena larga y aleatoria** (ej. genera una en [1password.com/password-generator](https://1password.com/password-generator/), 32+ caracteres). Este es el secreto real que protege tus datos — no se escribe a mano en ningún dispositivo, la app lo obtiene sola al iniciar sesión (Google o correo+contraseña, ver abajo).
+   - Propiedad: `CRUMBLY_LOGIN_EMAIL` — Valor: el correo con el que vas a iniciar sesión en la app. Si vas a usar el botón de Google, tiene que ser una cuenta de Google real (la misma que aparece al tocar "Iniciar sesión con Google"). Solo ese correo puede entrar, por cualquiera de los dos caminos.
+   - Propiedad: `CRUMBLY_LOGIN_PASSWORD` — Valor: **una contraseña corta y fácil de recordar/escribir**, para el login alternativo por correo+contraseña (sin pasar por Google). Distinta del token de arriba — si alguien la adivina, solo puede iniciar sesión, no saltarse el paso y usar el token real directamente.
    - Propiedad: `CRUMBLY_SHEET_ID` — Valor: el ID que copiaste en el paso 1.3.
 3. Guarda (vas a volver a este panel en el paso 3.1 para agregar `CRUMBLY_GOOGLE_CLIENT_ID`).
 
@@ -62,17 +63,17 @@ Esto es aparte del script — se hace en [Google Cloud Console](https://console.
 
 ## 5. Conectar la app
 
-La app pide **iniciar sesión con Google** al abrirla por primera vez en cada dispositivo — no hace falta copiar la URL ni el token técnico a mano. Solo entra la cuenta de Google que pusiste en `CRUMBLY_LOGIN_EMAIL`.
+La app pide iniciar sesión al abrirla por primera vez en cada dispositivo — no hace falta copiar la URL ni el token técnico a mano. Dos formas, elegí la que prefieras:
 
-1. Abre Crumbly en el navegador. Va a mostrar una pantalla de login con el botón de Google.
-2. Toca **Iniciar sesión con Google** y elige la cuenta correcta.
+1. Abre Crumbly en el navegador. Va a mostrar una pantalla de login.
+2. **Con Google:** toca **Iniciar sesión con Google** y elige la cuenta que pusiste en `CRUMBLY_LOGIN_EMAIL`. **Con correo y contraseña:** escribe el correo y la contraseña del paso 3, y toca **Ingresar**.
 3. Trae todos tus datos y queda conectado en ese dispositivo para siempre (no vuelve a pedirlo, salvo que cierres sesión desde Ajustes).
 
 A partir de aquí, cada cambio que hagas en la app (venta, gasto, insumo nuevo, etc.) se sube solo a la hoja en segundo plano.
 
-### Si "Iniciar sesión con Google" no funciona todavía
+### Si ninguno de los dos logins funciona todavía
 
-Si todavía no configuraste `CRUMBLY_LOGIN_EMAIL`/`CRUMBLY_GOOGLE_CLIENT_ID` (paso 3/3.1), o hay algún problema, la pantalla de login tiene un enlace **"¿Problemas para entrar?"** que despliega los campos técnicos (URL + token real del paso 3/4) como alternativa — funciona igual de bien, solo que hay que copiar y pegar a mano.
+Si todavía no configuraste las Propiedades del script (paso 3/3.1), o hay algún problema con ambos, la pantalla de login tiene un enlace **"¿Problemas para entrar?"** que despliega los campos técnicos (URL + token real del paso 3/4) como último recurso — funciona igual de bien, solo que hay que copiar y pegar a mano.
 
 ### Conectar un dispositivo nuevo con un link (alternativa al login)
 
@@ -91,7 +92,8 @@ Abrilo en el dispositivo nuevo — configura la sincronización y trae todos los
 - **"token inválido"** — revisa que copiaste el token exacto (sin espacios) en ambos lados (Script Properties y la app).
 - **"correo no autorizado"** al iniciar sesión con Google — iniciaste con una cuenta de Google distinta a la que pusiste en `CRUMBLY_LOGIN_EMAIL`. Revisa que estén escritos igual (no distingue mayúsculas/minúsculas).
 - **"token de Google inválido"** — el `Client ID` de `index.html` (`GOOGLE_CLIENT_ID`) no coincide con `CRUMBLY_GOOGLE_CLIENT_ID` en Script Properties, o el origen (`https://smplymkgm.github.io`) no está en "Orígenes de JavaScript autorizados" de las credenciales OAuth en Cloud Console.
-- **El botón de Google no aparece** — revisa la consola del navegador; si `accounts.google.com/gsi/client` no cargó (bloqueador de anuncios, sin red), usa **"¿Problemas para entrar?"** mientras tanto.
+- **El botón de Google no aparece** — revisa la consola del navegador; si `accounts.google.com/gsi/client` no cargó (bloqueador de anuncios, sin red), usa el login con correo+contraseña mientras tanto.
+- **"Correo o contraseña incorrectos"** al iniciar sesión sin Google — revisa que `CRUMBLY_LOGIN_EMAIL`/`CRUMBLY_LOGIN_PASSWORD` estén bien escritos en Script Properties (sin espacios de más).
 - **"Probar conexión" no responde / error de red** — vuelve a Implementar → Administrar implementaciones y confirma que "Quién tiene acceso" quedó en "Cualquier usuario", no "Solo yo".
 - **Cambiaste el código de `Code.gs` después de desplegar** — tienes que crear una **nueva versión** de la implementación (Implementar → Administrar implementaciones → ✏️ → Versión: Nueva versión → Implementar). Guardar el archivo en el editor no actualiza la URL ya publicada.
 - **Actualizaste a la versión que sube comprobantes a Drive** — la primera vez que se ejecute te va a pedir autorizar un permiso nuevo (acceso a Drive, antes solo pedía Sheets). Es normal — vuelve a pasar por el flujo de "Implementar" y acepta el nuevo permiso, es tu propio script actuando sobre tu propio Drive.
