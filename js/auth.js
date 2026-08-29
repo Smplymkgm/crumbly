@@ -1,11 +1,12 @@
 /**
  * Crumbly — autenticación (Google Identity Services + sesión).
  *
- * Reemplaza por completo el modelo anterior de un token fijo que había
- * que copiar y pegar a mano. Ahora: Google (o, opcionalmente, correo +
- * contraseña) autentica contra el backend, que devuelve un token de
- * SESIÓN propio de este dispositivo (no un secreto compartido por toda
- * la app) — ver backend/Code.gs § "Sesiones".
+ * Herramienta de uso interno: la ÚNICA forma de entrar es con Google, y
+ * solo funciona para un correo que el backend ya tenga autorizado en la
+ * hoja "usuarios" (sin registro público, sin crear cuenta, sin recuperar
+ * contraseña — ver backend/Code.gs). Un login válido devuelve un token
+ * de SESIÓN propio de este dispositivo (no un secreto compartido por
+ * toda la app) — ver backend/Code.gs § "Sesiones".
  *
  * La sesión vive en su PROPIA llave de localStorage ('crumbly-session'),
  * separada de 'crumbly-state'. A propósito: el token de sesión es un
@@ -17,8 +18,8 @@
  * dueño de la sesión.
  *
  * Sin DOM más allá de lo que Google Identity Services necesita para
- * dibujar su propio botón — el resto (login por correo, restaurar
- * sesión, cerrar sesión) es lógica pura, igual que js/core.js.
+ * dibujar su propio botón — el resto (restaurar sesión, cerrar sesión)
+ * es lógica pura, igual que js/core.js.
  */
 (function (root, factory) {
   if (typeof module !== 'undefined' && module.exports) {
@@ -37,7 +38,7 @@
   // que cada dispositivo configure.
   var BACKEND_URL = 'https://script.google.com/macros/s/AKfycbwh-0SpF-QLYnvq50b2RjM_sKqQTbCuOvkS7Gn6NQUDQDeB-jP1f7G9kkS75-AcVhGxxA/exec';
 
-  var session = null; // { token, user:{id,email,nombre,foto,rol} } | null
+  var session = null; // { token, user:{id,email,nombre,rol} } | null
 
   function resolveFetch(fetchImpl) {
     if (fetchImpl) return fetchImpl;
@@ -103,8 +104,11 @@
     return BACKEND_URL;
   }
 
+  // Si el backend rechaza el login (no autorizado, desactivado, token de
+  // Google inválido) responde success:false + authorized:false + message
+  // — ver backend/Code.gs § authGoogle_. Nunca crea una sesión en ese caso.
   function applySession_(r) {
-    if (!r.success) throw new Error(r.error || 'No se pudo iniciar sesión');
+    if (!r.success) throw new Error(r.message || 'No se pudo iniciar sesión');
     session = { token: r.token, user: r.user };
     writeStoredSession(session);
     return session.user;
@@ -112,14 +116,11 @@
 
   // Cambia un ID token de Google (JWT firmado, obtenido en el navegador
   // con Google Identity Services) por una sesión real — el backend lo
-  // verifica contra Google antes de confiar en él.
+  // verifica contra Google y contra la hoja "usuarios" antes de confiar
+  // en él. Es la ÚNICA forma de entrar — no hay registro ni contraseña
+  // propia de la app.
   function loginGoogle(idToken, fetchImpl) {
     return postJson_('authGoogle', { idToken: idToken }, fetchImpl).then(applySession_);
-  }
-
-  // Camino opcional: correo + contraseña, sin pasar por Google.
-  function loginEmail(email, password, fetchImpl) {
-    return postJson_('login', { email: email, password: password }, fetchImpl).then(applySession_);
   }
 
   function logout(fetchImpl) {
@@ -131,7 +132,6 @@
 
   return {
     loginGoogle: loginGoogle,
-    loginEmail: loginEmail,
     logout: logout,
     getCurrentUser: getCurrentUser,
     isAuthenticated: isAuthenticated,

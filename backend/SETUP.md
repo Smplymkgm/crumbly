@@ -24,31 +24,42 @@ Todo el código ya está listo en `backend/Code.gs`. Aquí solo copias y pegas.
 5. Arriba a la izquierda, dale un nombre al proyecto, por ejemplo "Crumbly Backend".
 6. Guarda (ícono de disco o `Ctrl+S` / `Cmd+S`).
 
-## 3. Configurar quién puede entrar y el ID de la hoja
+## 3. Configurar el ID de la hoja
 
-No hay ningún token fijo que inventar ni copiar a mano — la app entra con Google (o, opcional, correo+contraseña) y el backend le entrega una sesión propia de ese dispositivo. Lo único que configurás acá es **quién** tiene permiso, y a qué hoja conectarse.
+No hay ningún token fijo que inventar ni copiar a mano — la app entra únicamente con Google, y el backend le entrega una sesión propia de ese dispositivo. Quién tiene permiso para entrar NO se configura acá como propiedad — vive en una hoja (§3.2), para que autorizar o desautorizar a alguien sea editar una celda, no tocar código.
 
 1. En el editor de Apps Script, ve a **Configuración del proyecto** (ícono de engranaje, panel izquierdo).
-2. Baja hasta **Propiedades del script** → **Añadir propiedad del script**. Agrega tres (falta una cuarta, `CRUMBLY_GOOGLE_CLIENT_ID`, que se agrega en el paso 3.1 más abajo — necesitas crearla primero en Google Cloud Console):
-   - Propiedad: `CRUMBLY_LOGIN_EMAIL` — Valor: el correo (o los correos, **separados por coma**) que pueden entrar a la app — ej. `duena@gmail.com, empleado@gmail.com`. Si van a usar el botón de Google, tienen que ser cuentas de Google reales. Se revisa en cada login, no solo la primera vez — sacar un correo de la lista le corta el acceso en su próximo intento.
-   - Propiedad: `CRUMBLY_LOGIN_PASSWORD` — Valor: **una contraseña corta y fácil de recordar/escribir**, opcional, solo para el login alternativo por correo+contraseña (sin pasar por Google) — se empareja con el **primer** correo de la lista de arriba.
+2. Baja hasta **Propiedades del script** → **Añadir propiedad del script**. Agrega una (falta una segunda, `CRUMBLY_GOOGLE_CLIENT_ID`, que se agrega en el paso 3.1 más abajo — necesitas crearla primero en Google Cloud Console):
    - Propiedad: `CRUMBLY_SHEET_ID` — Valor: el ID que copiaste en el paso 1.3.
 3. Guarda (vas a volver a este panel en el paso 3.1 para agregar `CRUMBLY_GOOGLE_CLIENT_ID`).
 
-**Quién es quién, una vez que entran:** la primera persona que inicia sesión alguna vez queda automáticamente como `dueño`; las siguientes, como `staff`. No hay pantalla de administración — la hoja `usuarios` que el script crea sola (ver §5) **es** esa pantalla: el rol es una celda más, se corrige a mano ahí mismo cuando haga falta.
+### 3.1 Crear el Client ID de Google (para "Acceder con Google")
 
-### 3.1 Crear el Client ID de Google (para "Iniciar sesión con Google")
-
-Esto es aparte del script — se hace en [Google Cloud Console](https://console.cloud.google.com/), con la misma cuenta de Google que pusiste en `CRUMBLY_LOGIN_EMAIL`.
+Esto es aparte del script — se hace en [Google Cloud Console](https://console.cloud.google.com/), con la cuenta de Google de Crumbly.
 
 1. Ve a [console.cloud.google.com](https://console.cloud.google.com/) → crea un proyecto nuevo (o usa uno existente) — el nombre no importa, ej. "Crumbly".
-2. **APIs y servicios → Pantalla de consentimiento de OAuth**: tipo **Externo**, nombre de la app "Crumbly", tu correo como correo de soporte. Guardar. (Como uso es solo para tu propia cuenta, no hace falta publicarla — queda en modo "Prueba", que ya te alcanza; en ese modo agrega tu correo en **Usuarios de prueba**.)
+2. **APIs y servicios → Pantalla de consentimiento de OAuth**: tipo **Externo**, nombre de la app "Crumbly", tu correo como correo de soporte. Guardar. (No hace falta publicarla — queda en modo "Prueba", que alcanza para un equipo chico; en ese modo agregá en **Usuarios de prueba** el correo de cada persona que va a usar la app con Google — sin eso, Google le va a rechazar el login aunque después esté bien autorizada en la hoja `usuarios`. Máximo 100 personas en modo Prueba, de sobra para este caso.)
 3. **Credenciales → Crear credenciales → ID de cliente de OAuth**. Tipo de aplicación: **Aplicación web**.
 4. En **Orígenes de JavaScript autorizados**, agrega: `https://smplymkgm.github.io` (sin `/crumbly` al final, sin barra).
 5. Crear. Copia el **Client ID** que te muestra (termina en `.apps.googleusercontent.com`) — **no es secreto**, va a vivir directamente en el código de la app.
 6. Volvé al editor de Apps Script → Propiedades del script → agrega:
    - Propiedad: `CRUMBLY_GOOGLE_CLIENT_ID` — Valor: el Client ID que acabas de copiar.
 7. Abre `index.html` de este repo, busca la línea `const GOOGLE_CLIENT_ID = 'TU_CLIENT_ID...'` y reemplázala por el mismo Client ID. Guarda y vuelve a publicar en GitHub Pages (`git add`, `commit`, `push` — o pídemelo a mí, yo puedo hacer esa parte).
+
+### 3.2 Autorizar a quién puede entrar
+
+No hay contraseñas, ni registro, ni "olvidé mi clave" — la única puerta es Google, y solo entra alguien cuyo correo ya esté como fila en la hoja `usuarios`, con `activo` en `TRUE`. Esa hoja la crea sola el script la primera vez que alguien intenta iniciar sesión (vacía, ver §5) — para agregar a la primera persona, tenés dos caminos:
+
+**A mano en la hoja (más simple):** abrí la hoja de cálculo → pestaña `usuarios` → agregá una fila: `id` (un número, 1 para el primero, 2 para el siguiente…), `email` (el correo de Google exacto), `nombre`, `rol` (por ahora siempre `admin` — ver `Code.gs`), `activo` (`TRUE`), `createdAt` (la fecha de hoy, o dejalo vacío), `lastLogin` (vacío, se llena solo). Ejemplo:
+
+| id | email | nombre | rol | activo | createdAt | lastLogin |
+|---|---|---|---|---|---|---|
+| 1 | admin@crumbly.com | Maicol | admin | TRUE | | |
+| 2 | angie@crumbly.com | Angie | admin | TRUE | | |
+
+**Desde el editor de Apps Script (equivalente, un poco más prolijo):** abrí `backend/Code.gs` en el editor, elegí `createUser` en el desplegable de funciones (arriba, junto al botón ▷ Ejecutar), y ejecutalo — te va a pedir los parámetros la primera vez (`email`, `nombre`, `rol` opcional). También existen `disableUser('correo@...')` y `enableUser('correo@...')` para cortar o devolver el acceso sin borrar el historial de esa persona.
+
+Cualquiera de los dos caminos es igual de válido — la hoja **es** el panel de administración, hoy sin interfaz visual (a propósito, ver el encabezado de `Code.gs`).
 
 ## 4. Desplegar como aplicación web
 
@@ -64,31 +75,32 @@ Esto es aparte del script — se hace en [Google Cloud Console](https://console.
 
 ## 5. Conectar la app
 
-La app pide iniciar sesión al abrirla por primera vez en cada dispositivo — no hace falta copiar nada técnico a mano. Dos formas, elegí la que prefieras:
+La app pide iniciar sesión al abrirla por primera vez en cada dispositivo — no hace falta copiar nada técnico a mano, y solo funciona para alguien ya autorizado en el paso 3.2.
 
-1. Abre Crumbly en el navegador. Va a mostrar una pantalla de bienvenida.
-2. **Con Google:** toca **Acceder con Google** y elegí la cuenta que pusiste en `CRUMBLY_LOGIN_EMAIL`. **Con correo y contraseña:** toca "Continuar con correo" y escribí el correo + la contraseña del paso 3.
+1. Abre Crumbly en el navegador. Va a mostrar una pantalla de bienvenida con un solo botón.
+2. Toca **Acceder con Google** y elegí la cuenta autorizada.
 3. Trae todos tus datos y queda conectado en ese dispositivo para siempre (no vuelve a pedirlo, salvo que cierres sesión desde Ajustes). Cada dispositivo tiene su propia sesión — cerrar sesión en uno no afecta a los demás.
 
 A partir de aquí, cada cambio que hagas en la app (venta, gasto, insumo nuevo, etc.) se sube solo a la hoja en segundo plano.
 
-**Dos hojas nuevas que el script crea solo, la primera vez que alguien inicia sesión:**
-- `usuarios` — una fila por persona que entró alguna vez: correo, nombre, foto, **rol** (editable a mano) y último acceso.
+**Dos hojas nuevas que el script crea solas:**
+- `usuarios` — quién puede entrar (§3.2). El login nunca escribe acá salvo `lastLogin`, en cada acceso exitoso.
 - `sesiones` — una fila por sesión activa (dispositivo). Borrar una fila acá a mano cierra esa sesión igual que "Cerrar sesión" desde la app, por si alguna vez perdés un dispositivo y querés revocarlo sin esperar a que expire sola (90 días).
 
 ---
 
 ## Si algo falla
 
-- **"sesión inválida — iniciá sesión de nuevo"** — la sesión de este dispositivo expiró (90 días) o fue cerrada (a mano, desde Ajustes, o borrando la fila en la hoja `sesiones`). Volvé a iniciar sesión.
-- **"correo no autorizado"** (Google o correo+contraseña) — el correo no está en `CRUMBLY_LOGIN_EMAIL`. Revisá que estén escritos igual (no distingue mayúsculas/minúsculas, pero sí todo lo demás — sin espacios de más alrededor de las comas).
+- **"Usuario no autorizado"** — el correo con el que se intentó entrar no tiene fila en la hoja `usuarios`. Agregalo (§3.2).
+- **"Usuario desactivado"** — tiene fila, pero `activo` está en `FALSE`. Corré `enableUser('correo@...')` desde el editor de Apps Script, o cambiá la celda a mano.
+- **Google rechaza el login antes de llegar a la app** ("acceso bloqueado", "esta app no está verificada" y no deja seguir) — falta agregar ese correo en **Usuarios de prueba** de la pantalla de consentimiento de OAuth en Cloud Console (§3.1, paso 2). Es un chequeo de Google, previo y aparte de la hoja `usuarios`.
+- **"sesión inválida — iniciá sesión de nuevo"** (al sincronizar) — la sesión de este dispositivo expiró (90 días) o fue cerrada (a mano, desde Ajustes, o borrando la fila en la hoja `sesiones`). Volvé a iniciar sesión.
 - **"token de Google inválido"** — el `Client ID` de `index.html` (`GOOGLE_CLIENT_ID`) no coincide con `CRUMBLY_GOOGLE_CLIENT_ID` en Script Properties, o el origen (`https://smplymkgm.github.io`) no está en "Orígenes de JavaScript autorizados" de las credenciales OAuth en Cloud Console.
-- **El botón de Google no aparece** — revisa la consola del navegador; si `accounts.google.com/gsi/client` no cargó (bloqueador de anuncios, sin red), usa "Continuar con correo" mientras tanto.
-- **"Correo o contraseña incorrectos"** — revisa que `CRUMBLY_LOGIN_EMAIL`/`CRUMBLY_LOGIN_PASSWORD` estén bien escritos en Script Properties.
+- **El botón de Google no aparece** — revisa la consola del navegador; puede ser que `accounts.google.com/gsi/client` no cargó (bloqueador de anuncios, sin red) — reintentá con la página recargada.
 - **"Probar conexión" no responde / error de red** — vuelve a Implementar → Administrar implementaciones y confirma que "Quién tiene acceso" quedó en "Cualquier usuario", no "Solo yo".
 - **Cambiaste el código de `Code.gs` después de desplegar** — tienes que crear una **nueva versión** de la implementación (Implementar → Administrar implementaciones → ✏️ → Versión: Nueva versión → Implementar). Guardar el archivo en el editor no actualiza la URL ya publicada.
 - **Actualizaste a la versión que sube comprobantes a Drive** — la primera vez que se ejecute te va a pedir autorizar un permiso nuevo (acceso a Drive, antes solo pedía Sheets). Es normal — vuelve a pasar por el flujo de "Implementar" y acepta el nuevo permiso, es tu propio script actuando sobre tu propio Drive.
-- **Quieres ver tus datos "a mano"** — vuelve a la hoja de cálculo, vas a tener pestañas `materia`, `productos`, `ventas`, etc., que se reescriben en cada sincronización solo para que las mires o armes tablas dinámicas encima. La pestaña `state_json` es la que la app realmente usa — no la edites a mano, cualquier cambio ahí se pierde en la siguiente sincronización desde la app. `usuarios` y `sesiones` son las únicas dos pestañas que sí podés editar a mano con seguridad (para corregir un rol o revocar un dispositivo).
+- **Quieres ver tus datos "a mano"** — vuelve a la hoja de cálculo, vas a tener pestañas `materia`, `productos`, `ventas`, etc., que se reescriben en cada sincronización solo para que las mires o armes tablas dinámicas encima. La pestaña `state_json` es la que la app realmente usa — no la edites a mano, cualquier cambio ahí se pierde en la siguiente sincronización desde la app. `usuarios` y `sesiones` son las únicas dos pestañas que sí podés editar a mano con seguridad (para autorizar/desautorizar a alguien o revocar un dispositivo).
 
 ## Qué NO hace esto todavía
 

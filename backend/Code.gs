@@ -19,24 +19,24 @@
  * del dueño del script (acción "uploadComprobante") — no son públicos,
  * el link solo funciona logueado con la cuenta que desplegó el script.
  *
- * Autenticación (29 ago 2026 — reemplaza el token manual por completo):
- * no hay ningún token fijo que copiar y pegar. "Iniciar sesión con
- * Google" (acción "authGoogle") verifica el ID token CONTRA GOOGLE,
- * revisa que el correo esté en CRUMBLY_LOGIN_EMAIL, y busca/crea al
- * usuario en la hoja "usuarios". El camino opcional de correo+contraseña
- * (acción "login", CRUMBLY_LOGIN_PASSWORD) hace lo mismo sin pasar por
- * Google. Ambos caminos terminan en mintSession_(): un token de SESIÓN
+ * Autenticación (29 ago 2026, revisado el mismo día — herramienta de uso
+ * interno, sin registro público): la ÚNICA forma de entrar es "Iniciar
+ * sesión con Google" (acción "authGoogle"), y solo funciona para un
+ * correo que YA esté como fila en la hoja "usuarios" con activo=TRUE —
+ * el login NUNCA crea usuarios nuevos. Autorizar a alguien es agregarlo
+ * a mano en esa hoja (o correr createUser() desde el editor de Apps
+ * Script) — no hay contraseñas propias de la app, ni tokens fijos, ni
+ * listas de correos en el frontend: toda la autorización vive acá, en
+ * Sheets. Un login válido termina en mintSession_(): un token de SESIÓN
  * aleatorio (no un secreto fijo de la app) que se guarda como una fila
  * nueva en la hoja "sesiones" — cada dispositivo tiene el suyo, cerrar
  * sesión en uno no afecta a los demás. push/pull/uploadComprobante
  * validan ese token de sesión contra esa hoja en cada pedido
- * (isValidSession_) en vez de comparar contra un secreto fijo.
+ * (isValidSession_).
  *
  * Instalación: ver backend/SETUP.md.
  */
 
-var LOGIN_EMAIL_PROPERTY = 'CRUMBLY_LOGIN_EMAIL'; // uno o más correos separados por coma
-var LOGIN_PASSWORD_PROPERTY = 'CRUMBLY_LOGIN_PASSWORD'; // opcional — camino de correo+contraseña
 var GOOGLE_CLIENT_ID_PROPERTY = 'CRUMBLY_GOOGLE_CLIENT_ID';
 var SHEET_ID_PROPERTY = 'CRUMBLY_SHEET_ID';
 var STATE_SHEET = 'state_json';
@@ -65,15 +65,12 @@ function doPost(e) {
     return json_({ ok: false, error: 'body inválido (se esperaba JSON)' });
   }
 
-  // "authGoogle" y "login" son las únicas acciones que NO piden una sesión
-  // ya abierta — son justamente las que la abren. "logout" tampoco: solo
-  // necesita el token para saber qué sesión cerrar, no que siga siendo
-  // válida. Por eso las tres se resuelven antes del chequeo de sesión.
+  // "authGoogle" es la única acción que NO pide una sesión ya abierta —
+  // es justamente la que la abre. "logout" tampoco: solo necesita el
+  // token para saber qué sesión cerrar, no que siga siendo válida. Por
+  // eso las dos se resuelven antes del chequeo de sesión.
   if (body.action === 'authGoogle') {
     return authGoogle_(body);
-  }
-  if (body.action === 'login') {
-    return login_(body);
   }
   if (body.action === 'logout') {
     return logoutSession_(body);
@@ -133,12 +130,11 @@ function getOrCreateComprobantesFolder_() {
   return DriveApp.createFolder(COMPROBANTES_FOLDER);
 }
 
-// ─── Sesiones — reemplaza el token fijo por completo ──────────────────
+// ─── Sesiones ───────────────────────────────────────────────────────────
 // No hay ningún secreto compartido que copiar y pegar. Cada login exitoso
-// (Google o correo+contraseña) crea una fila nueva en "sesiones" con un
-// token aleatorio propio de ESE dispositivo — cerrar sesión en uno no
-// afecta a los demás, a diferencia de un único CRUMBLY_TOKEN para toda la
-// app. push/pull/uploadComprobante validan ese token en cada pedido.
+// con Google crea una fila nueva en "sesiones" con un token aleatorio
+// propio de ESE dispositivo — cerrar sesión en uno no afecta a los demás.
+// push/pull/uploadComprobante validan ese token en cada pedido.
 function isValidSession_(token) {
   if (!token) return false;
   var row = findRowByValue_(getSesionesSheet_(), 0, token);
@@ -165,97 +161,93 @@ function logoutSession_(body) {
 }
 
 // ─── Login con Google (ID token → sesión) ──────────────────────────────
-// La app obtiene un ID token de Google en el navegador (Google Identity
-// Services) y lo manda acá; este endpoint lo verifica CONTRA GOOGLE (no
-// confía en decodificarlo solo) y chequea que el correo esté autorizado
-// (CRUMBLY_LOGIN_EMAIL, uno o más separados por coma) antes de crear/
-// actualizar el usuario y abrir una sesión. Configurar CRUMBLY_LOGIN_EMAIL
-// y CRUMBLY_GOOGLE_CLIENT_ID en las Propiedades del script — SETUP.md.
+// Única puerta de entrada — sin registro, sin invitaciones, sin
+// contraseñas propias de la app. La app obtiene un ID token de Google en
+// el navegador (Google Identity Services) y lo manda acá; este endpoint
+// lo verifica CONTRA GOOGLE (no confía en decodificarlo solo) y busca el
+// correo en la hoja "usuarios" — si no está ahí, o está pero con
+// activo=FALSE, no entra. El login NUNCA crea ni modifica usuarios
+// (salvo lastLogin) — autorizar gente es un trabajo manual en Sheets
+// (o con createUser(), ver más abajo), nunca algo que dispare la app.
 function authGoogle_(body) {
   var clientId = PropertiesService.getScriptProperties().getProperty(GOOGLE_CLIENT_ID_PROPERTY);
-  if (!clientId) return json_({ success: false, error: 'falta configurar CRUMBLY_GOOGLE_CLIENT_ID' });
-  if (!body.idToken) return json_({ success: false, error: 'falta idToken' });
+  if (!clientId) return json_({ success: false, authorized: false, message: 'falta configurar CRUMBLY_GOOGLE_CLIENT_ID' });
+  if (!body.idToken) return json_({ success: false, authorized: false, message: 'falta idToken' });
 
   var info;
   try {
     var res = UrlFetchApp.fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(body.idToken), { muteHttpExceptions: true });
     info = JSON.parse(res.getContentText());
   } catch (err) {
-    return json_({ success: false, error: 'no se pudo verificar el token de Google' });
+    return json_({ success: false, authorized: false, message: 'no se pudo verificar el token de Google' });
   }
   // aud debe ser nuestro Client ID (si no, el token es de otra app) y el
   // correo debe venir verificado por Google — así no confiamos en un JWT
   // cualquiera, solo en uno que Google mismo certifica como válido y
   // recién emitido para nuestra app.
-  if (!info || info.aud !== clientId) return json_({ success: false, error: 'token de Google inválido' });
-  if (info.email_verified !== 'true' && info.email_verified !== true) return json_({ success: false, error: 'correo de Google no verificado' });
+  if (!info || info.aud !== clientId) return json_({ success: false, authorized: false, message: 'token de Google inválido' });
+  if (info.email_verified !== 'true' && info.email_verified !== true) return json_({ success: false, authorized: false, message: 'correo de Google no verificado' });
   var email = String(info.email || '').trim().toLowerCase();
-  if (!isEmailAllowed_(email)) return json_({ success: false, error: 'correo no autorizado' });
 
-  var usuario = findOrCreateUsuario_(email, { id: info.sub || '', nombre: info.name || email, foto: info.picture || '' });
+  var row = findUsuarioByEmail_(email);
+  if (!row) return json_({ success: false, authorized: false, message: 'Usuario no autorizado' });
+  if (!isActivoCell_(row.data[4])) return json_({ success: false, authorized: false, message: 'Usuario desactivado' });
+
+  getUsuariosSheet_().getRange(row.row, 7).setValue(new Date().toISOString()); // lastLogin
+  var user = { id: row.data[0], email: row.data[1], nombre: row.data[2], rol: row.data[3] };
   var token = mintSession_(email);
-  return json_({ success: true, user: usuario, token: token });
+  return json_({ success: true, authorized: true, user: user, token: token });
 }
 
-// ─── Login con correo + contraseña (opcional) ──────────────────────────
-// Camino alternativo a "Iniciar sesión con Google" para cuando no se
-// quiere/puede usar esa cuenta en el dispositivo. La contraseña es un
-// secreto propio de la app (CRUMBLY_LOGIN_PASSWORD) — nada que ver con
-// contraseñas de Google. El correo debe estar en CRUMBLY_LOGIN_EMAIL,
-// igual que el camino de Google. Configurar ambas Propiedades del script
-// — ver backend/SETUP.md.
-function login_(body) {
-  var expectedPassword = PropertiesService.getScriptProperties().getProperty(LOGIN_PASSWORD_PROPERTY);
-  if (!expectedPassword) return json_({ success: false, error: 'falta configurar CRUMBLY_LOGIN_PASSWORD' });
-  var email = String(body.email || '').trim().toLowerCase();
-  if (!isEmailAllowed_(email)) return json_({ success: false, error: 'correo o contraseña incorrectos' });
-  if (!body.password || body.password !== expectedPassword) return json_({ success: false, error: 'correo o contraseña incorrectos' });
-
-  var usuario = findOrCreateUsuario_(email, { nombre: email });
-  var token = mintSession_(email);
-  return json_({ success: true, user: usuario, token: token });
+function isActivoCell_(v) {
+  return v === true || v === 'TRUE' || v === 'true' || v === 1;
 }
 
-// ─── Usuarios — quién puede entrar y quién ya entró ────────────────────
-// CRUMBLY_LOGIN_EMAIL sostiene la lista de correos autorizados (uno o
-// más, separados por coma) — se revisa en CADA login, no solo al crear
-// la cuenta, así que sacar un correo de la lista le corta el acceso en
-// su próximo intento de iniciar sesión (las sesiones ya abiertas siguen
-// vivas hasta que expiren o se cierren a mano — revocación inmediata
-// sería el siguiente paso si hace falta).
-function isEmailAllowed_(email) {
-  var raw = PropertiesService.getScriptProperties().getProperty(LOGIN_EMAIL_PROPERTY);
-  if (!raw || !email) return false;
-  var permitidos = raw.split(',').map(function (e) { return e.trim().toLowerCase(); }).filter(Boolean);
-  return permitidos.indexOf(email) !== -1;
-}
-
-// El primer usuario que se registra queda como 'dueño'; los siguientes,
-// 'staff'. Es un default automático, no una decisión final — el rol es
-// una celda más de la hoja "usuarios" y se puede corregir a mano ahí
-// mismo en cualquier momento, igual que cualquier otro dato de este
-// backend (no hay pantalla de administración, a propósito: la hoja ya
-// es esa pantalla).
-function findOrCreateUsuario_(email, datos) {
-  var sh = getUsuariosSheet_();
-  var row = findRowByValue_(sh, 0, email);
-  var ahora = new Date().toISOString();
-  if (row) {
-    var rol = row.data[4];
-    sh.getRange(row.row, 2, 1, 4).setValues([[datos.id || row.data[1], datos.nombre || row.data[2], datos.foto || row.data[3], rol]]);
-    sh.getRange(row.row, 6).setValue(ahora);
-    return { id: datos.id || row.data[1], email: email, nombre: datos.nombre || row.data[2], foto: datos.foto || row.data[3], rol: rol };
-  }
-  var esElPrimero = sh.getLastRow() <= 1; // <=1: solo la fila de encabezado, o vacía
-  var rolNuevo = esElPrimero ? 'dueño' : 'staff';
-  sh.appendRow([email, datos.id || '', datos.nombre || email, datos.foto || '', rolNuevo, ahora]);
-  return { id: datos.id || '', email: email, nombre: datos.nombre || email, foto: datos.foto || '', rol: rolNuevo };
+function findUsuarioByEmail_(email) {
+  return findRowByValue_(getUsuariosSheet_(), 1, email);
 }
 
 function getUsuariosSheet_() {
   var sh = getOrCreateSheet_(USUARIOS_SHEET);
-  if (sh.getLastRow() === 0) sh.appendRow(['email', 'id', 'nombre', 'foto', 'rol', 'ultimoAcceso']);
+  if (sh.getLastRow() === 0) sh.appendRow(['id', 'email', 'nombre', 'rol', 'activo', 'createdAt', 'lastLogin']);
   return sh;
+}
+
+// ─── Administración de usuarios — funciones internas ───────────────────
+// Sin panel visual todavía, a propósito (ver encabezado del archivo).
+// Se corren a mano desde el editor de Apps Script: abrí Code.gs, elegí
+// la función en el desplegable de arriba (junto al botón ▷ Ejecutar),
+// escribí los parámetros en el panel de "Ejecutar función" si hace
+// falta, y ejecutá. Están escritas para que, el día que haya un panel de
+// administración real, sea cablearlas a una acción HTTP, no reescribirlas.
+
+// createUser('nueva@correo.com', 'Nombre', 'admin') — rol es opcional,
+// por defecto 'admin' (todavía no hay roles operativos distintos, ver
+// encabezado del archivo — 'operador' está contemplado en el esquema
+// para cuando haga falta, pero hoy todos son 'admin').
+function createUser(email, nombre, rol) {
+  email = String(email || '').trim().toLowerCase();
+  if (!email) throw new Error('Falta el correo');
+  if (findUsuarioByEmail_(email)) throw new Error('Ya existe un usuario con ese correo: ' + email);
+  var sh = getUsuariosSheet_();
+  var id = sh.getLastRow(); // filas de datos existentes = próximo id correlativo (1, 2, 3…)
+  sh.appendRow([id, email, nombre || email, rol || 'admin', true, new Date().toISOString(), '']);
+  return { id: id, email: email, nombre: nombre || email, rol: rol || 'admin' };
+}
+
+function disableUser(email) {
+  setUsuarioActivo_(email, false);
+}
+
+function enableUser(email) {
+  setUsuarioActivo_(email, true);
+}
+
+function setUsuarioActivo_(email, activo) {
+  email = String(email || '').trim().toLowerCase();
+  var row = findUsuarioByEmail_(email);
+  if (!row) throw new Error('No existe un usuario con ese correo: ' + email);
+  getUsuariosSheet_().getRange(row.row, 5).setValue(activo);
 }
 
 function getSesionesSheet_() {

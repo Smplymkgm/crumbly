@@ -52,13 +52,13 @@ function freshAuth() {
   return require(authPath);
 }
 
-const usuarioGoogle = { id: 'sub123', email: 'duena@correo.com', nombre: 'Duena', foto: 'https://x/foto.jpg', rol: 'dueño' };
+const usuarioGoogle = { id: 1, email: 'duena@correo.com', nombre: 'Duena', rol: 'admin' };
 
-group('loginGoogle');
+group('loginGoogle — única forma de entrar');
 
 test('manda POST con action=authGoogle e idToken', async () => {
   const auth = freshAuth();
-  const f = mockFetch([{ body: { success: true, user: usuarioGoogle, token: 'tok-sesion-1' } }]);
+  const f = mockFetch([{ body: { success: true, authorized: true, user: usuarioGoogle, token: 'tok-sesion-1' } }]);
   await auth.loginGoogle('jwt-de-google', f);
   const body = JSON.parse(f.calls[0].opts.body);
   assert.strictEqual(body.action, 'authGoogle');
@@ -67,7 +67,7 @@ test('manda POST con action=authGoogle e idToken', async () => {
 
 test('usa POST con Content-Type text/plain (evita el preflight de Apps Script)', async () => {
   const auth = freshAuth();
-  const f = mockFetch([{ body: { success: true, user: usuarioGoogle, token: 'tok-sesion-1' } }]);
+  const f = mockFetch([{ body: { success: true, authorized: true, user: usuarioGoogle, token: 'tok-sesion-1' } }]);
   await auth.loginGoogle('jwt-de-google', f);
   assert.strictEqual(f.calls[0].opts.method, 'POST');
   assert.strictEqual(f.calls[0].opts.headers['Content-Type'], 'text/plain;charset=utf-8');
@@ -75,7 +75,7 @@ test('usa POST con Content-Type text/plain (evita el preflight de Apps Script)',
 
 test('al iniciar sesión, isAuthenticated/getCurrentUser/getToken quedan poblados', async () => {
   const auth = freshAuth();
-  const f = mockFetch([{ body: { success: true, user: usuarioGoogle, token: 'tok-sesion-1' } }]);
+  const f = mockFetch([{ body: { success: true, authorized: true, user: usuarioGoogle, token: 'tok-sesion-1' } }]);
   assert.strictEqual(auth.isAuthenticated(), false);
   await auth.loginGoogle('jwt-de-google', f);
   assert.strictEqual(auth.isAuthenticated(), true);
@@ -83,36 +83,25 @@ test('al iniciar sesión, isAuthenticated/getCurrentUser/getToken quedan poblado
   assert.strictEqual(auth.getToken(), 'tok-sesion-1');
 });
 
-test('rechaza la promesa con el error del backend si success:false', async () => {
+test('rechaza la promesa con el message del backend si el correo no está en la hoja "usuarios"', async () => {
   const auth = freshAuth();
-  const f = mockFetch([{ body: { success: false, error: 'correo no autorizado' } }]);
-  await assert.rejects(() => auth.loginGoogle('jwt-de-otra-cuenta', f), /correo no autorizado/);
+  const f = mockFetch([{ body: { success: false, authorized: false, message: 'Usuario no autorizado' } }]);
+  await assert.rejects(() => auth.loginGoogle('jwt-de-otra-cuenta', f), /Usuario no autorizado/);
   assert.strictEqual(auth.isAuthenticated(), false);
 });
 
-group('loginEmail (opcional)');
-
-test('manda POST con action=login, email y password', async () => {
+test('rechaza la promesa si el usuario existe pero está desactivado', async () => {
   const auth = freshAuth();
-  const f = mockFetch([{ body: { success: true, user: usuarioGoogle, token: 'tok-sesion-2' } }]);
-  await auth.loginEmail('duena@correo.com', 'clave123', f);
-  const body = JSON.parse(f.calls[0].opts.body);
-  assert.strictEqual(body.action, 'login');
-  assert.strictEqual(body.email, 'duena@correo.com');
-  assert.strictEqual(body.password, 'clave123');
-});
-
-test('rechaza la promesa si el correo o la contraseña son incorrectos', async () => {
-  const auth = freshAuth();
-  const f = mockFetch([{ body: { success: false, error: 'correo o contraseña incorrectos' } }]);
-  await assert.rejects(() => auth.loginEmail('otro@correo.com', 'mala', f), /correo o contraseña incorrectos/);
+  const f = mockFetch([{ body: { success: false, authorized: false, message: 'Usuario desactivado' } }]);
+  await assert.rejects(() => auth.loginGoogle('jwt-de-cuenta-desactivada', f), /Usuario desactivado/);
+  assert.strictEqual(auth.isAuthenticated(), false);
 });
 
 group('restoreSession — sobrevive a "cerrar y volver a abrir la pestaña"');
 
 test('una sesión guardada por loginGoogle se recupera con restoreSession() en una instancia nueva', async () => {
   const auth1 = freshAuth();
-  const f = mockFetch([{ body: { success: true, user: usuarioGoogle, token: 'tok-persistido' } }]);
+  const f = mockFetch([{ body: { success: true, authorized: true, user: usuarioGoogle, token: 'tok-persistido' } }]);
   await auth1.loginGoogle('jwt-de-google', f);
 
   const auth2 = freshAuth(); // simula recargar la página: módulo nuevo, localStorage igual
@@ -136,7 +125,7 @@ group('logout');
 test('borra la sesión local y avisa al backend con action=logout+token', async () => {
   global.localStorage = fakeLocalStorage();
   const auth = freshAuth();
-  const fLogin = mockFetch([{ body: { success: true, user: usuarioGoogle, token: 'tok-a-cerrar' } }]);
+  const fLogin = mockFetch([{ body: { success: true, authorized: true, user: usuarioGoogle, token: 'tok-a-cerrar' } }]);
   await auth.loginGoogle('jwt-de-google', fLogin);
   assert.strictEqual(auth.isAuthenticated(), true);
 
@@ -152,7 +141,7 @@ test('borra la sesión local y avisa al backend con action=logout+token', async 
 test('tras logout, una instancia nueva ya no encuentra sesión guardada', async () => {
   global.localStorage = fakeLocalStorage();
   const auth1 = freshAuth();
-  const fLogin = mockFetch([{ body: { success: true, user: usuarioGoogle, token: 'tok-x' } }]);
+  const fLogin = mockFetch([{ body: { success: true, authorized: true, user: usuarioGoogle, token: 'tok-x' } }]);
   await auth1.loginGoogle('jwt-de-google', fLogin);
   auth1.logout(mockFetch([{ body: { ok: true } }]));
 

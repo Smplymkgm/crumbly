@@ -170,13 +170,7 @@ textarea.field{height:auto}
     <div style="font-weight:600;font-size:20px;color:var(--ink);margin-bottom:4px">Crumbly</div>
     <div style="font-size:13px;color:var(--muted);margin-bottom:24px">Bienvenido</div>
     <div id="google-signin-btn" style="display:flex;justify-content:center;margin-bottom:14px"></div>
-    <div id="login-error" style="display:none;color:var(--danger);font-size:12px;margin-bottom:12px"></div>
-    <button type="button" onclick="toggleLoginCorreo()" style="background:transparent;border:none;color:var(--muted);font-size:11px;font-weight:500;cursor:pointer;margin-top:4px;text-decoration:underline">Continuar con correo</button>
-    <div id="login-correo-form" style="display:none;margin-top:14px;text-align:left">
-      <input type="email" id="login-email" class="field" placeholder="Correo" autocomplete="username" style="text-align:center;margin-bottom:10px" onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
-      <input type="password" id="login-password" class="field" placeholder="Contraseña" autocomplete="current-password" style="text-align:center;margin-bottom:12px" onkeydown="if(event.key==='Enter')doLoginEmail()">
-      <button class="btn btn-block" onclick="doLoginEmail()" id="login-email-btn">Ingresar</button>
-    </div>
+    <div id="login-error" style="display:none;color:var(--danger);font-size:12px;margin-top:4px"></div>
   </div>
 </div>
 
@@ -1050,8 +1044,6 @@ function applyUsuarioHeader_(user) {
   if (!user) return;
   const greeting = document.querySelector('.header-greeting');
   if (greeting) greeting.textContent = 'Hola, ' + (user.nombre || user.email).split(' ')[0];
-  const avatar = document.querySelector('.avatar-ink');
-  if (avatar && user.foto) avatar.innerHTML = '<img src="' + user.foto + '" alt="" style="width:100%;height:100%;border-radius:50%;object-fit:cover">';
   const ajustesUsuario = document.getElementById('ajustes-usuario');
   if (ajustesUsuario) ajustesUsuario.textContent = 'Conectado como ' + user.email + (user.rol ? ' · ' + user.rol : '');
 }
@@ -1068,31 +1060,6 @@ async function handleGoogleCredential(response) {
   } catch (err) {
     errEl.textContent = err.message;
     errEl.style.display = 'block';
-  }
-}
-// Camino opcional al botón de Google — correo + contraseña, colapsado
-// detrás de "Continuar con correo" hasta que se pide.
-function toggleLoginCorreo() {
-  const el = document.getElementById('login-correo-form');
-  el.style.display = el.style.display === 'none' ? 'block' : 'none';
-}
-async function doLoginEmail() {
-  const email = document.getElementById('login-email').value.trim();
-  const pwd = document.getElementById('login-password').value.trim();
-  const errEl = document.getElementById('login-error');
-  errEl.style.display = 'none';
-  if (!email || !pwd) { errEl.textContent = 'Ingresá el correo y la contraseña'; errEl.style.display = 'block'; return; }
-  const btn = document.getElementById('login-email-btn');
-  btn.textContent = 'Ingresando…'; btn.disabled = true;
-  try {
-    await auth.loginEmail(email, pwd);
-    document.getElementById('login-password').value = '';
-    await afterLogin_('Sesión iniciada ✓');
-  } catch (err) {
-    errEl.textContent = err.message === 'correo o contraseña incorrectos' ? 'Correo o contraseña incorrectos' : err.message;
-    errEl.style.display = 'block';
-  } finally {
-    btn.textContent = 'Ingresar'; btn.disabled = false;
   }
 }
 function cerrarSesion() {
