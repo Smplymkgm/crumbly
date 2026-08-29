@@ -819,7 +819,7 @@ Ninguna bloquea el arranque; todas tienen recomendación y pueden decidirse sobr
 | # | Petición | Estado |
 |---|---|---|
 | 1 | Documento estructurado y completo | ✅ Este archivo |
-| 2 | GitHub + backend en spreadsheet | ✅ Repo creado y en producción — [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (privado). Backend en Sheets: 🔧 Fase E — código y tests listos, falta que despliegues `backend/Code.gs` bajo el correo de Crumbly (`backend/SETUP.md`) |
+| 2 | GitHub + backend en spreadsheet | ✅ Repo en producción — [github.com/Smplymkgm/crumbly](https://github.com/Smplymkgm/crumbly) (público, GitHub Pages). Backend en Sheets: ✅ desplegado y en uso desde el 25 ago — 🔧 pendiente redesplegar con el login más reciente (correo/contraseña + Google), ver "Estado real del proyecto (19-29 de agosto de 2026)" abajo |
 | 3 | Reporte de ventas y gastos | ✅ Implementado y verificado (§9, Fase C) |
 | 4 | Fórmulas de costo por producto y ganancias | ✅ Verificadas correctas (preparaciones + porcentaje panadero, §10.2-§10.3). El recargo de costos fijos por producto se construyó, se verificó, y se **retiró a pedido** — modelo vigente: costo + margen bruto por producto, utilidad neta al cierre (§10.4) |
 
@@ -863,3 +863,24 @@ A pedido explícito, en paralelo a que el usuario trabaja el rediseño visual (`
 - Verificado en navegador con un `fetch` simulado (sin desplegar un Apps Script real todavía): probar conexión, sincronizar manualmente, y confirmar que una mutación real (guardar un insumo) dispara exactamente un push automático con el dato correcto adentro.
 
 **No pude hacer, y no debería poder hacer ningún asistente automatizado:** crear la cuenta/hoja de Google ni desplegar el script — eso requiere iniciar sesión con el correo de Crumbly. Queda en `backend/SETUP.md`, un runbook de ~10 minutos, como el único paso pendiente para que esto quede en producción. Hasta que se despliegue, la app funciona exactamente igual que antes de esta ronda — sin ningún cambio de comportamiento si nadie toca la tarjeta de Sincronización.
+
+### Estado real del proyecto (19-29 de agosto de 2026)
+
+**Backend en producción desde el 25 de agosto** (Sheet + Apps Script desplegados bajo `crumbly2026@gmail.com`, §12 arriba). A partir de ahí, varias rondas a pedido explícito — detalle bug-por-bug y pieza-por-pieza en `IMPLEMENTATION_STATUS.md` (secciones fechadas 19-29 ago), acá solo el resumen para retomar rápido:
+
+1. **Mermas** (19 ago) — nuevo módulo en Inventario para registrar pérdidas de stock (vencimiento, rotura, error) sin que pasen por una venta.
+2. **Restauración de 3 funciones caídas en el rediseño visual** (23 ago) — el rediseño de UI del 18 ago había dejado sin cablear: detalle financiero del período en Dashboard, necesidades de compra semanal en Inventario, y el botón de importar menú. Reconectadas sobre la lógica existente de `core.js`, sin reescribir nada.
+3. **Importar menú Crumbly 2026** (23 ago) — botón en Ajustes que carga los 12 waffles y 28 complementos del menú real (sin fórmula, precios reales). Los complementos se marcaron `esAdicion:false` (línea de producto normal en la factura, no un chip de adición) tras corrección explícita del usuario sobre cómo se veía en el modal de Venta.
+4. **Comprobantes reales a Google Drive** (24 ago) — `uploadComprobante` en el backend sube fotos/PDF de pago a una carpeta privada de Drive del dueño del script; `venta.comprobante`/`gasto.comprobante` guardan la URL real en vez de solo el nombre del archivo. Bug real encontrado al verificar: `registrarGasto` no incluía `comprobante` en el objeto devuelto — corregido.
+5. **Login** (25 ago) — la razón de esta ronda: "cada dispositivo nuevo necesita que le copien URL+token a mano" (queja explícita del usuario, dado que el backend existe justamente para no depender de `localStorage`). Se probaron tres diseños en la misma sesión, cada uno a pedido explícito del usuario tras ver el anterior:
+   - Link mágico de un toque (`?token=...` en la URL) — se descartó como *suficiente* cuando el usuario pidió ir más allá, pero **se mantiene** como alternativa técnica.
+   - Login con correo + contraseña corta (`CRUMBLY_LOGIN_PASSWORD`, distinta del token real) — construido primero.
+   - Login con Google (Google Identity Services, verificado server-side contra `oauth2.googleapis.com/tokeninfo`) — pedido después, con el trade-off (requiere un Client ID de OAuth en Google Cloud Console) explicado y confirmado antes de construirlo.
+
+   **Diseño final:** los tres caminos conviven. La pantalla de login muestra el botón de Google y el formulario de correo+contraseña **juntos y visibles** (no uno escondido detrás del otro — corrección explícita tras un primer diseño que mostraba de más los campos técnicos); el link mágico y el token técnico manual quedan como alternativas para casos puntuales. Cualquiera de los tres termina devolviendo el mismo `CRUMBLY_TOKEN` real, que nunca vive en el código público — ver `IMPLEMENTATION_STATUS.md` § "Login" para la tabla pieza-por-pieza y `backend/SETUP.md` para el runbook de configuración.
+
+   Nota para no repetir el error de la nota de la línea 61: ese login (retirado el 11 de agosto) era decorativo, credenciales visibles en el HTML. **Este es real** — la contraseña/Google se cambian por el token real vía el backend, y el token nunca está en el código fuente.
+
+Verificado: 133/133 tests automatizados (`node tests/core.test.js` + `node tests/sync.test.js`) y flujo manual en navegador para cada pieza (servidor local, no `file://`).
+
+**Pendiente del lado del usuario, único bloqueante para que el login funcione contra el backend real:** agregar `CRUMBLY_LOGIN_EMAIL`/`CRUMBLY_LOGIN_PASSWORD`/`CRUMBLY_GOOGLE_CLIENT_ID` a las Script Properties, crear el Client ID de OAuth en Google Cloud Console si se quiere usar el botón de Google, y desplegar una nueva versión de `backend/Code.gs` — la que está en producción ("Versión 2") es previa a todo este bloque, solo tiene Drive + login de contraseña sin correo. Runbook completo en `backend/SETUP.md`. Mientras tanto, ningún dispositivo ya conectado pierde acceso — el login solo lo ve un dispositivo sin sesión guardada.
