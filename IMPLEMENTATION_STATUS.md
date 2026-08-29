@@ -315,7 +315,7 @@ Pedido explícito y con instrucciones técnicas propias del usuario, en dos rond
 
 Verificado: 137/137 tests automatizados (`core.test.js` 112 + `sync.test.js` 15 + `auth.test.js` 10) y flujo manual completo en navegador (servidor local, `fetch` simulado): pantalla de login con un solo botón, mensaje "Usuario no autorizado" cuando el backend rechaza el correo, login exitoso → dashboard con el nombre real en el saludo y en Ajustes, sesión sobrevive a recargar la página (`auth.restoreSession()`).
 
-**Pendiente del lado del usuario** (documentado en `backend/SETUP.md`): redesplegar `backend/Code.gs` como nueva versión, crear el Client ID de OAuth en Google Cloud Console (si no se hizo en la primera ronda), agregar cada correo autorizado a la hoja `usuarios` (a mano o con `createUser()`) **y** a "Usuarios de prueba" de la pantalla de consentimiento de OAuth en Cloud Console — son dos listas distintas, hace falta estar en ambas.
+**✅ Desplegado (29 ago 2026):** el usuario pidió explícitamente hacerlo en el navegador ("hazlo tu, en el navegador") y confirmó su propia sesión de Google abierta primero — a partir de ahí: proyecto de Cloud Console creado, Client ID generado, `CRUMBLY_GOOGLE_CLIENT_ID` en Script Properties, `backend/Code.gs` como Versión 3, `GOOGLE_CLIENT_ID` real en `index.html`, y `crumbly2026@gmail.com` cargado como primer usuario (`admin`) vía `createUser()`. Confirmado con `curl` que el backend real ya corre el código nuevo. Pendiente de verificación humana: completar un login real haciendo clic en el botón (el navegador sandboxeado usado para el despliegue bloquea el popup de OAuth de Google al hacer clic automatizado — limitación del entorno, no del código).
 
 ## Tests
 
