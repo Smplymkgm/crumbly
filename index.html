@@ -891,11 +891,6 @@ textarea.field{height:auto}
         </div>
         <button class="btn btn-block" onclick="shareReportByEmail()"><i class="ph ph-envelope-simple"></i> Descargar y enviar por correo</button>
       </div>
-      <div>
-        <div class="card-title" style="margin-bottom:10px">Importar datos</div>
-        <p class="item-sub" style="margin-bottom:10px">Carga los 12 waffles y los complementos a la carta del menú 2026. Es seguro tocarlo más de una vez — si un producto o insumo ya existe (por nombre), no lo duplica. Los waffles quedan sin fórmula (agrégala en cada uno) y los complementos con costo $0 — el menú solo trae el precio de venta.</p>
-        <button class="btn btn-outline btn-block" onclick="importMenuCrumbly()"><i class="ph ph-download-simple"></i> Importar menú Crumbly 2026</button>
-      </div>
     </div>
   </div>
 </div>
@@ -2917,6 +2912,11 @@ function closeModal(id) { document.getElementById(id).classList.remove('open'); 
 // al cliente, no el costo del insumo. Idempotente: si ya existe un
 // producto/topping con ese nombre exacto, no lo duplica — se puede tocar
 // el botón más de una vez sin miedo.
+// ponytail: función sin caller — quedó del import inicial del menú
+// (Ajustes → "Importar menú Crumbly 2026", retirado del UI a pedido
+// explícito el 30 ago 2026 porque era una herramienta de una sola vez,
+// no algo para la app ya lista para lanzar). Se deja el código acá por
+// si hace falta re-importar el menú alguna vez — borrarla si no.
 function importMenuCrumbly() {
   const waffles = [
     { nombre: 'New York (Waffle)', categoria: 'Waffle', precio: 24000 },
