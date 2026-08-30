@@ -170,6 +170,7 @@ textarea.field{height:auto}
     <div style="font-weight:600;font-size:20px;color:var(--ink);margin-bottom:4px">Crumbly</div>
     <div style="font-size:13px;color:var(--muted);margin-bottom:24px">Bienvenido</div>
     <div id="google-signin-btn" style="display:flex;justify-content:center;margin-bottom:14px"></div>
+    <div id="login-status" style="display:none;color:var(--muted);font-size:12px;margin-top:4px">Conectando…</div>
     <div id="login-error" style="display:none;color:var(--danger);font-size:12px;margin-top:4px"></div>
   </div>
 </div>
@@ -205,7 +206,7 @@ textarea.field{height:auto}
       <div class="header-right">
         <button class="icon-btn" onclick="openModal('modal-ajustes')" title="Ajustes"><i class="ph ph-gear-six"></i></button>
         <button class="icon-btn"><i class="ph ph-bell"></i><span style="position:absolute;top:6px;right:7px;width:5px;height:5px;border-radius:50%;background:var(--ink)"></span></button>
-        <div class="avatar-ink"><i class="ph ph-user"></i></div>
+        <div class="avatar-ink" onclick="openModal('modal-ajustes')" title="Cuenta" style="cursor:pointer"><i class="ph ph-user"></i></div>
       </div>
     </header>
 
@@ -1058,13 +1059,17 @@ function applyUsuarioHeader_(user) {
 // valida el JWT por su cuenta.
 async function handleGoogleCredential(response) {
   const errEl = document.getElementById('login-error');
+  const statusEl = document.getElementById('login-status');
   errEl.style.display = 'none';
+  statusEl.style.display = 'block';
   try {
     await auth.loginGoogle(response.credential);
     await afterLogin_('Sesión iniciada ✓');
   } catch (err) {
     errEl.textContent = err.message;
     errEl.style.display = 'block';
+  } finally {
+    statusEl.style.display = 'none';
   }
 }
 function cerrarSesion() {
