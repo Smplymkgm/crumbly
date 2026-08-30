@@ -882,10 +882,6 @@ textarea.field{height:auto}
         <div class="card-title" style="margin-bottom:10px">Sincronización (Google Sheets)</div>
         <p class="item-sub" id="ajustes-usuario" style="margin-bottom:6px"></p>
         <p class="item-sub" id="sync-status" style="margin-bottom:10px">Sin sincronizar todavía.</p>
-        <div style="display:flex;gap:8px;margin-bottom:8px">
-          <button class="btn btn-outline" style="flex:1;justify-content:center" onclick="testSyncConnection()">Probar conexión</button>
-          <button class="btn" style="flex:1;justify-content:center" onclick="syncNow()">Sincronizar ahora</button>
-        </div>
         <button class="btn-cancel" onclick="cerrarSesion()">Cerrar sesión en este dispositivo</button>
       </div>
       <div>
@@ -899,11 +895,6 @@ textarea.field{height:auto}
         <div class="card-title" style="margin-bottom:10px">Importar datos</div>
         <p class="item-sub" style="margin-bottom:10px">Carga los 12 waffles y los complementos a la carta del menú 2026. Es seguro tocarlo más de una vez — si un producto o insumo ya existe (por nombre), no lo duplica. Los waffles quedan sin fórmula (agrégala en cada uno) y los complementos con costo $0 — el menú solo trae el precio de venta.</p>
         <button class="btn btn-outline btn-block" onclick="importMenuCrumbly()"><i class="ph ph-download-simple"></i> Importar menú Crumbly 2026</button>
-      </div>
-      <div>
-        <div class="card-title" style="margin-bottom:10px;color:var(--danger)">Zona de riesgo</div>
-        <p class="item-sub" style="margin-bottom:10px">Borra insumos, productos, ventas y gastos de este navegador. No afecta ningún respaldo ya exportado.</p>
-        <button class="btn btn-block" style="background:#FBEAEA;border-color:#FBEAEA;color:var(--danger)" onclick="resetearDatos()"><i class="ph ph-trash"></i> Resetear datos de prueba</button>
       </div>
     </div>
   </div>
@@ -1077,26 +1068,6 @@ function cerrarSesion() {
   closeModal('modal-ajustes');
   auth.logout();
   showLoginGate();
-}
-function testSyncConnection() {
-  if (!auth.isAuthenticated()) { updateSyncStatus('Iniciá sesión primero', true); return; }
-  updateSyncStatus('Probando…');
-  CrumblySync.ping(auth.getBackendUrl(), auth.getToken())
-    .then(r => updateSyncStatus(r.ok ? 'Conectado ✓' : 'Error: ' + (r.error || 'sesión inválida'), !r.ok))
-    .catch(() => updateSyncStatus('No se pudo conectar — revisá tu conexión', true));
-}
-function syncNow() {
-  if (!auth.isAuthenticated()) { updateSyncStatus('Iniciá sesión primero', true); return; }
-  updateSyncStatus('Sincronizando…');
-  CrumblySync.push(auth.getBackendUrl(), auth.getToken(), state)
-    .then(r => {
-      if (!r.ok) { updateSyncStatus('Error: ' + (r.error || 'desconocido'), true); return; }
-      state.config.lastSync = r.ts || new Date().toISOString();
-      try { localStorage.setItem('crumbly-state', JSON.stringify(state)); } catch (e) {}
-      updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
-      showToast('Datos sincronizados con Google Sheets');
-    })
-    .catch(() => updateSyncStatus('No se pudo conectar con el backend', true));
 }
 function pullOnLoad() {
   if (!state.config.lastSync) return;
@@ -3035,17 +3006,6 @@ function importMenuCrumbly() {
   if (productosOmitidos) partes.push(`${productosOmitidos} waffles ya existían`);
   showToast('Importado: ' + partes.join(' · '));
 }
-function resetearDatos() {
-  if (!confirm('¿Borrar TODOS los datos (insumos, productos, ventas)? Esta acción no se puede deshacer.')) return;
-  if (!confirm('Confirma de nuevo: se perderá todo lo que no hayas exportado a CSV o PDF. ¿Continuar?')) return;
-  try { localStorage.removeItem('crumbly-state'); } catch (e) {}
-  state = CrumblyCore.emptyState();
-  saveState();
-  document.getElementById('cfg-email').value = '';
-  refreshAll();
-  showToast('Datos reseteados');
-}
-
 function refreshAll() {
   updateHeaderDate();
   renderInventario();
