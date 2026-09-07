@@ -462,6 +462,15 @@ textarea.field{height:auto}
       <label class="field-label">Nombre</label>
       <input type="text" id="ins-nombre" class="field" placeholder="Ej: Chocolate en polvo">
     </div>
+    <div class="modal-field">
+      <label class="field-label">Tipo de insumo</label>
+      <select id="ins-tipo-insumo" class="field">
+        <option value="materia">Materia prima (ingrediente — se usa en recetas)</option>
+        <option value="empaques">Empaque (cajas, vasos, tapas, etc.)</option>
+        <option value="toppings" disabled>Topping (solo lectura acá — se crean desde el menú)</option>
+      </select>
+      <p class="item-sub" id="ins-tipo-insumo-nota" style="display:none;margin-top:4px">No se puede cambiar después de creado — si lo cargaste en la categoría equivocada, borralo y volvé a crearlo.</p>
+    </div>
     <div style="display:flex;gap:10px">
       <div class="modal-field" style="flex:1">
         <label class="field-label">Categoría (escribe para crear una nueva)</label>
@@ -476,6 +485,7 @@ textarea.field{height:auto}
           <option value="kilogramos">Kilogramos</option>
           <option value="unidad">Unidad</option>
         </select>
+        <p class="item-sub" style="margin-top:4px">Cómo lo medís (aunque venga por unidad, como los huevos, puede ser Materia prima)</p>
       </div>
     </div>
     <div style="display:flex;gap:10px">
@@ -578,7 +588,7 @@ textarea.field{height:auto}
       <label class="dropzone" style="margin-top:8px">
         <input type="file" accept="image/*" onchange="onProductoFotoChange(event)">
         <i class="ph ph-upload-simple" style="font-size:16px;color:var(--muted)"></i>
-        <span style="font-size:12px;font-weight:600;color:var(--text)">Subir foto</span>
+        <span id="p-foto-label" style="font-size:12px;font-weight:600;color:var(--text)">Subir foto</span>
       </label>
     </div>
     <div class="modal-field">
@@ -668,9 +678,11 @@ textarea.field{height:auto}
         </div>
       </div>
       <div class="modal-field">
-        <label>Cantidad comprada</label>
-        <input type="number" id="g-cantidad" placeholder="2000" min="0" step="0.01">
+        <label>Cantidad comprada (unidades individuales)</label>
+        <input type="number" id="g-cantidad" placeholder="2000" min="0" step="0.01" oninput="updateGastoCostoPreview()">
+        <p class="item-sub">Si compraste una caja de 100, escribí 100 — no 1. El precio es del insumo suelto, no del paquete.</p>
       </div>
+      <p class="item-sub" id="g-costo-preview" style="margin-bottom:10px;font-weight:600"></p>
       <p class="item-sub" style="margin-bottom:10px">El costo por unidad del insumo se recalcula automáticamente como promedio ponderado con el stock que ya tenías.</p>
     </div>
 
@@ -685,12 +697,33 @@ textarea.field{height:auto}
     <div style="display:flex;gap:10px">
       <div class="modal-field" style="flex:1">
         <label>Monto pagado ($)</label>
-        <input type="number" id="g-monto" placeholder="50000" min="0" step="1">
+        <input type="number" id="g-monto" placeholder="50000" min="0" step="1" oninput="updateGastoCostoPreview();updateGastoDivididoPreview()">
       </div>
       <div class="modal-field" style="flex:1">
         <label>Proveedor (opcional)</label>
         <input type="text" id="g-proveedor" placeholder="Ej: Makro, Alcaldía">
       </div>
+    </div>
+    <div class="modal-field">
+      <label>Medio de pago</label>
+      <select id="g-metodo-pago" onchange="onGastoMetodoPagoChange()">
+        <option value="efectivo">Efectivo</option>
+        <option value="transferencia">Transferencia</option>
+        <option value="dividido">Dividido (parte en efectivo, parte en transferencia)</option>
+      </select>
+    </div>
+    <div id="g-campos-dividido" style="display:none">
+      <div style="display:flex;gap:10px">
+        <div class="modal-field" style="flex:1">
+          <label>En efectivo ($)</label>
+          <input type="number" id="g-monto-efectivo" placeholder="0" min="0" step="1" oninput="updateGastoDivididoPreview()">
+        </div>
+        <div class="modal-field" style="flex:1">
+          <label>En transferencia ($)</label>
+          <input type="number" id="g-monto-transferencia" placeholder="0" min="0" step="1" oninput="updateGastoDivididoPreview()">
+        </div>
+      </div>
+      <p class="item-sub" id="g-dividido-preview" style="margin-bottom:10px"></p>
     </div>
     <div class="modal-field">
       <label>Descripción (opcional)</label>
@@ -1187,6 +1220,9 @@ function openInsumoModal(id) {
     const found = CrumblyCore.findInsumoConTipo(state, id);
     const item = found.item;
     document.getElementById('ins-edit-tipo').value = found.tipo;
+    document.getElementById('ins-tipo-insumo').value = found.tipo;
+    document.getElementById('ins-tipo-insumo').disabled = true;
+    document.getElementById('ins-tipo-insumo-nota').style.display = 'block';
     document.getElementById('ins-modal-title').textContent = 'Editar insumo';
     document.getElementById('ins-nombre').value = item.nombre;
     document.getElementById('ins-categoria').value = item.categoria || '';
@@ -1202,6 +1238,9 @@ function openInsumoModal(id) {
     document.getElementById('ins-delete-btn').style.display = 'block';
   } else {
     document.getElementById('ins-edit-tipo').value = '';
+    document.getElementById('ins-tipo-insumo').value = 'materia';
+    document.getElementById('ins-tipo-insumo').disabled = false;
+    document.getElementById('ins-tipo-insumo-nota').style.display = 'none';
     document.getElementById('ins-modal-title').textContent = 'Agregar insumo';
     ['ins-nombre','ins-categoria','ins-cantidad','ins-costo','ins-nombre-adicion','ins-precio-adicion','ins-porcion'].forEach(x => document.getElementById(x).value = '');
     document.getElementById('ins-tipo-medicion').value = 'gramos';
@@ -1242,9 +1281,14 @@ function saveInsumo() {
     const idx = list.findIndex(x => x.id === editId);
     list[idx] = { ...list[idx], ...datos, unidad: TIPO_MEDICION_UNIDAD[tipoMedicion] };
   } else {
-    const bucket = tipoMedicion === 'unidad' ? 'empaques' : 'materia';
-    const nuevo = { id: uid(), ...datos };
-    if (bucket === 'empaques') nuevo.unidad = TIPO_MEDICION_UNIDAD[tipoMedicion];
+    // Bucket = qué es (materia prima vs empaque), elegido a propósito en
+    // "Tipo de insumo" — independiente de "Tipo de medición" (cómo se
+    // cuenta). Antes se inferían del mismo campo (unidad ⇒ empaque), lo
+    // que mandaba cualquier materia prima contada por unidad (huevos,
+    // latas, frutas enteras) a la categoría de empaques por error — bug
+    // real reportado por el usuario.
+    const bucket = document.getElementById('ins-tipo-insumo').value;
+    const nuevo = { id: uid(), ...datos, unidad: TIPO_MEDICION_UNIDAD[tipoMedicion] };
     state[bucket].push(nuevo);
   }
   saveState(); closeModal('modal-insumo'); renderInventario(); renderReportes();
@@ -1508,17 +1552,45 @@ function renderPreparaciones() {
 let ingRows = [];
 let empRows = [];
 let productoFotoData = '';
-function onProductoFotoChange(e) {
+// Sube a Drive vía el backend y guarda solo la URL — igual que los
+// comprobantes (onComprobanteChange). Bug real: antes esto guardaba la
+// foto completa en base64 directo en `producto.foto`, dentro de
+// `state` → localStorage se llenaba con una sola foto de celular
+// (varios MB en base64) y `saveState()` empezaba a fallar con
+// "almacenamiento lleno" — no solo para esta foto, para TODO lo que se
+// guardara después. Con la URL de Drive, `producto.foto` es un string
+// de un par de cientos de bytes.
+async function onProductoFotoChange(e) {
   const f = e.target.files && e.target.files[0];
+  const labelEl = document.getElementById('p-foto-label');
   if (!f) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    productoFotoData = reader.result;
+
+  if (!auth.isAuthenticated()) {
+    showToast('Iniciá sesión para subir fotos de producto');
+    e.target.value = '';
+    return;
+  }
+  if (f.size > 10 * 1024 * 1024) {
+    showToast('La foto pesa más de 10MB — elegí una más liviana');
+    e.target.value = '';
+    return;
+  }
+
+  labelEl.textContent = 'Subiendo...';
+  try {
+    const base64 = await fileToBase64(f);
+    const res = await CrumblySync.uploadFile(auth.getBackendUrl(), auth.getToken(), f.name, f.type, base64);
+    if (!res.ok) throw new Error(res.error || 'error desconocido');
+    productoFotoData = res.url;
     document.getElementById('p-foto-preview').src = productoFotoData;
     document.getElementById('p-foto-preview').style.display = 'block';
     document.getElementById('p-foto-empty').style.display = 'none';
-  };
-  reader.readAsDataURL(f);
+    labelEl.textContent = 'Subir foto';
+  } catch (err) {
+    showToast('No se pudo subir la foto: ' + err.message);
+    labelEl.textContent = 'Subir foto';
+    e.target.value = '';
+  }
 }
 function openModalProducto(id) {
   ingRows = [];
@@ -2565,10 +2637,48 @@ function openModalGasto() {
   document.getElementById('g-cantidad').value = '';
   document.getElementById('g-vida-util').value = '';
   document.getElementById('g-insumo-tipo').value = 'materia';
+  document.getElementById('g-metodo-pago').value = 'efectivo';
+  document.getElementById('g-monto-efectivo').value = '';
+  document.getElementById('g-monto-transferencia').value = '';
   gastoComprobanteNombre = '';
   document.getElementById('g-comprobante-label').textContent = 'Subir comprobante';
   onGastoTipoChange();
+  onGastoMetodoPagoChange();
+  updateGastoCostoPreview();
   openModal('modal-gasto');
+}
+function onGastoMetodoPagoChange() {
+  const dividido = document.getElementById('g-metodo-pago').value === 'dividido';
+  document.getElementById('g-campos-dividido').style.display = dividido ? 'block' : 'none';
+  updateGastoDivididoPreview();
+}
+// Solo avisa si no cuadra con el monto total — no bloquea guardar, la
+// plata real manda sobre lo que la app espera.
+function updateGastoDivididoPreview() {
+  const el = document.getElementById('g-dividido-preview');
+  const monto = parseFloat(document.getElementById('g-monto').value) || 0;
+  const efectivo = parseFloat(document.getElementById('g-monto-efectivo').value) || 0;
+  const transferencia = parseFloat(document.getElementById('g-monto-transferencia').value) || 0;
+  const suma = efectivo + transferencia;
+  if (!monto) { el.textContent = ''; return; }
+  if (suma === monto) { el.textContent = 'Suma ' + fmt(suma) + ' ✓'; el.style.color = 'var(--muted)'; }
+  else { el.textContent = 'Suma ' + fmt(suma) + ' — el monto pagado es ' + fmt(monto); el.style.color = 'var(--danger)'; }
+}
+// Vista previa en vivo del costo unitario que va a quedar guardado
+// (monto / cantidad) — para detectar en el momento un error de digitación
+// típico: poner la cantidad de PAQUETES comprados (ej. "1" caja) en vez
+// de unidades individuales (ej. "100" — lo que trae la caja), lo que
+// dispara el costo unitario 100x. Bug real reportado por el usuario:
+// productos con margen de -1.354.057% por un costo de insumo así de
+// inflado.
+function updateGastoCostoPreview() {
+  const el = document.getElementById('g-costo-preview');
+  const cantidad = parseFloat(document.getElementById('g-cantidad').value) || 0;
+  const monto = parseFloat(document.getElementById('g-monto').value) || 0;
+  if (cantidad <= 0 || monto <= 0) { el.textContent = ''; return; }
+  const unitario = monto / cantidad;
+  el.textContent = 'Costo por unidad: ' + fmt(unitario);
+  el.style.color = unitario > 50000 ? 'var(--danger)' : 'var(--muted)';
 }
 function onGastoTipoChange() {
   const tipo = document.getElementById('g-tipo').value;
@@ -2592,7 +2702,12 @@ function saveGasto() {
   const monto = parseFloat(document.getElementById('g-monto').value) || 0;
   const proveedor = document.getElementById('g-proveedor').value.trim();
   const descripcion = document.getElementById('g-descripcion').value.trim();
-  const input = { tipo, categoria, monto, proveedor, descripcion, comprobante: gastoComprobanteNombre };
+  const metodoPago = document.getElementById('g-metodo-pago').value;
+  const input = { tipo, categoria, monto, proveedor, descripcion, comprobante: gastoComprobanteNombre, metodoPago };
+  if (metodoPago === 'dividido') {
+    input.montoEfectivo = parseFloat(document.getElementById('g-monto-efectivo').value) || 0;
+    input.montoTransferencia = parseFloat(document.getElementById('g-monto-transferencia').value) || 0;
+  }
   if (tipo === 'inventario') {
     input.insumoTipo = document.getElementById('g-insumo-tipo').value;
     input.insumoId = document.getElementById('g-insumo-id').value;

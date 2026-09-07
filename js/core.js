@@ -828,6 +828,13 @@
     if (monto <= 0) throw new Error('El monto del gasto debe ser mayor a 0');
     if (!input.tipo || !GASTO_CATEGORIAS[input.tipo]) throw new Error('Tipo de gasto inválido');
 
+    // metodoPago: mismo campo/valores que ya usa registrarVenta
+    // ('efectivo'/'transferencia'), más 'dividido' — a pedido explícito,
+    // para un gasto pagado en parte en efectivo y en parte por
+    // transferencia. montoEfectivo/montoTransferencia solo se guardan con
+    // 'dividido'; no se valida que sumen el monto total (queda a criterio
+    // de quien registra, la app solo lo refleja).
+    var metodoPago = input.metodoPago || 'efectivo';
     var gasto = {
       id: input.id || genId(),
       fecha: input.fecha || new Date().toISOString(),
@@ -836,7 +843,10 @@
       descripcion: input.descripcion || '',
       monto: monto,
       proveedor: input.proveedor || '',
-      comprobante: input.comprobante || ''
+      comprobante: input.comprobante || '',
+      metodoPago: metodoPago,
+      montoEfectivo: metodoPago === 'dividido' ? (Number(input.montoEfectivo) || 0) : 0,
+      montoTransferencia: metodoPago === 'dividido' ? (Number(input.montoTransferencia) || 0) : 0
     };
 
     if (input.tipo === 'inventario') {

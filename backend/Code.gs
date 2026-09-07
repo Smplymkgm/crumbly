@@ -15,9 +15,15 @@
  * llevar IDs y diffs — si algún día el volumen lo justifica, se cambia
  * aquí sin tocar el resto de la app.
  *
- * También sube comprobantes (fotos/PDF de pago) a una carpeta de Drive
- * del dueño del script (acción "uploadComprobante") — no son públicos,
- * el link solo funciona logueado con la cuenta que desplegó el script.
+ * También sube archivos (comprobantes de pago, fotos de producto) a una
+ * carpeta de Drive del dueño del script (acción "uploadComprobante",
+ * nombre histórico — la usan ambos casos). Cada archivo se comparte
+ * como "cualquiera con el link puede ver" (no aparece en búsquedas, no
+ * es de acceso público real) — necesario para que una foto de producto
+ * se vea en el navegador de CUALQUIER dispositivo con la app abierta,
+ * no solo logueado con la cuenta de Google del negocio. Antes los
+ * comprobantes no tenían este permiso — se agregó junto con las fotos
+ * de producto, mismo mecanismo para los dos.
  *
  * Autenticación (29 ago 2026, revisado el mismo día — herramienta de uso
  * interno, sin registro público): la ÚNICA forma de entrar es "Iniciar
@@ -118,7 +124,17 @@ function uploadComprobante_(body) {
     var blob = Utilities.newBlob(bytes, body.mimeType || 'application/octet-stream', body.filename);
     var folder = getOrCreateComprobantesFolder_();
     var file = folder.createFile(blob);
-    return json_({ ok: true, url: file.getUrl(), fileId: file.getId() });
+    // "Cualquiera con el link" — necesario para que las fotos de producto
+    // se vean con <img> en cualquier dispositivo/cuenta, no solo logueado
+    // como el dueño del script. No sale en búsquedas ni en "Compartidos
+    // conmigo" de nadie — hay que tener el link exacto.
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    // file.getUrl() da la página visor de Drive (HTML, no una imagen) —
+    // inútil como src de un <img>. Esta URL de lh3.googleusercontent.com
+    // sirve el archivo directo, así que sí funciona como src de <img>
+    // (bug real: con getUrl(), las fotos de producto no se mostraban).
+    var url = 'https://lh3.googleusercontent.com/d/' + file.getId();
+    return json_({ ok: true, url: url, fileId: file.getId() });
   } catch (err) {
     return json_({ ok: false, error: String(err) });
   }

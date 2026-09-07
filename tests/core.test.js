@@ -373,6 +373,30 @@ test('registrarGasto guarda comprobante (bug real: se perdía, applyVenta sí lo
   assert.strictEqual(s.gastos[0].comprobante, 'https://drive.google.com/file/d/abc/view');
 });
 
+test('registrarGasto: metodoPago por defecto es efectivo, sin montos divididos', () => {
+  const s = stateConGastos();
+  const gasto = C.registrarGasto(s, { tipo: 'operativo', categoria: 'Publicidad', monto: 5000 });
+  assert.strictEqual(gasto.metodoPago, 'efectivo');
+  assert.strictEqual(gasto.montoEfectivo, 0);
+  assert.strictEqual(gasto.montoTransferencia, 0);
+});
+
+test('registrarGasto: metodoPago dividido guarda ambos montos', () => {
+  const s = stateConGastos();
+  const gasto = C.registrarGasto(s, { tipo: 'operativo', categoria: 'Publicidad', monto: 5000, metodoPago: 'dividido', montoEfectivo: 3000, montoTransferencia: 2000 });
+  assert.strictEqual(gasto.metodoPago, 'dividido');
+  assert.strictEqual(gasto.montoEfectivo, 3000);
+  assert.strictEqual(gasto.montoTransferencia, 2000);
+});
+
+test('registrarGasto: montoEfectivo/montoTransferencia se ignoran si metodoPago no es dividido', () => {
+  const s = stateConGastos();
+  const gasto = C.registrarGasto(s, { tipo: 'operativo', categoria: 'Publicidad', monto: 5000, metodoPago: 'transferencia', montoEfectivo: 3000, montoTransferencia: 2000 });
+  assert.strictEqual(gasto.metodoPago, 'transferencia');
+  assert.strictEqual(gasto.montoEfectivo, 0);
+  assert.strictEqual(gasto.montoTransferencia, 0);
+});
+
 test('registrarGasto tipo operativo NO toca ningún insumo', () => {
   const s = stateConGastos();
   C.registrarGasto(s, { tipo: 'operativo', categoria: 'Publicidad', monto: 50000, descripcion: 'Instagram Ads' });
