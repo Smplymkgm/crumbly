@@ -1721,7 +1721,7 @@ function buildProductoCandidateFromUI() {
   return {
     id: document.getElementById('p-edit-id').value || '__preview__',
     nombre: document.getElementById('p-nombre').value.trim(),
-    precio: parseFloat(document.getElementById('p-precio').value) || 0,
+    precio: Math.round(parseFloat(document.getElementById('p-precio').value) || 0),
     componentes: getIngRowData(),
     empaquesUsados: getEmpRowData(),
     empaqueManual: parseFloat(document.getElementById('p-empaque-manual').value) || 0
@@ -1733,7 +1733,7 @@ function calcProdCost() {
   document.getElementById('p-costo-calc').textContent = fmt(r.costo);
   document.getElementById('p-gan-calc').textContent = fmt(r.ganancia);
   document.getElementById('p-gan-calc').style.color = r.ganancia >= 0 ? 'var(--success)' : 'var(--danger)';
-  document.getElementById('p-margen-calc').textContent = (r.margenPct * 100).toFixed(1) + '%';
+  document.getElementById('p-margen-calc').textContent = Math.round(r.margenPct * 100) + '%';
   // Precio objetivo: costo / margen mínimo de la casa (50%), redondeado
   // hacia arriba al múltiplo de 500 más cercano (spec del rediseño).
   document.getElementById('p-precio-objetivo-calc').textContent = fmt(Math.ceil((r.costo / 0.5) / 500) * 500);
@@ -1741,7 +1741,7 @@ function calcProdCost() {
 function saveProducto() {
   const nombre = document.getElementById('p-nombre').value.trim();
   const categoria = document.getElementById('p-categoria').value.trim();
-  const precio = parseFloat(document.getElementById('p-precio').value) || 0;
+  const precio = Math.round(parseFloat(document.getElementById('p-precio').value) || 0);
   const empaqueManual = parseFloat(document.getElementById('p-empaque-manual').value) || 0;
   const editId = document.getElementById('p-edit-id').value;
   const componentes = getIngRowData();
@@ -2693,13 +2693,13 @@ function populateGastoInsumoSelect() {
   const list = tipo === 'materia' ? state.materia : tipo === 'empaques' ? state.empaques : state.toppings;
   const sel = document.getElementById('g-insumo-id');
   sel.innerHTML = list.length
-    ? list.map(x => `<option value="${x.id}">${esc(x.nombre)} (actual: $${x.costo.toFixed(2)}/u)</option>`).join('')
+    ? list.map(x => `<option value="${x.id}">${esc(x.nombre)} (actual: ${fmt(x.costo)}/u)</option>`).join('')
     : '<option value="">-- No hay insumos de este tipo --</option>';
 }
 function saveGasto() {
   const tipo = document.getElementById('g-tipo').value;
   const categoria = document.getElementById('g-categoria').value;
-  const monto = parseFloat(document.getElementById('g-monto').value) || 0;
+  const monto = Math.round(parseFloat(document.getElementById('g-monto').value) || 0);
   const proveedor = document.getElementById('g-proveedor').value.trim();
   const descripcion = document.getElementById('g-descripcion').value.trim();
   const metodoPago = document.getElementById('g-metodo-pago').value;
