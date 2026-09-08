@@ -2261,6 +2261,71 @@ test('getActualVsTheoreticalHistorico arma un punto por cada par consecutivo de 
   serie.forEach(p => assert.strictEqual(p.suficiente, true));
 });
 
+console.log('\n== P1.1 (Ronda 2): parámetro de modo en aplicarComponentes ==');
+
+function statePrepStock(cantidadPrep) {
+  return C.migrateState({
+    materia: [{ id: 'harina', nombre: 'Harina', cantidad: 1000000, costo: 5, minimo: 0 }],
+    preparaciones: [{ id: 'masa', nombre: 'Masa', modo: 'directo', cantidad: cantidadPrep, componentes: [{ tipo: 'materia', refId: 'harina', gramos: 100 }] }]
+  });
+}
+function expandirParaTest(s, modo) {
+  const consumo = { materia: {}, empaques: {}, toppings: {}, preparaciones: {} };
+  function add(bucket, id, cant) { consumo[bucket][id] = (consumo[bucket][id] || 0) + cant; }
+  C.aplicarComponentes(s, [{ tipo: 'preparacion', refId: 'masa', gramos: 500 }], 1, add, { modo });
+  return consumo;
+}
+
+test('modo "crudo" (default) siempre expande hasta materia prima, nunca toca el bucket de preparaciones', () => {
+  const s = statePrepStock(1000); // hay stock de sobra, pero en modo crudo no importa
+  const consumo = expandirParaTest(s, 'crudo');
+  assert.strictEqual(consumo.preparaciones.masa, undefined);
+  assert.strictEqual(consumo.materia.harina, 500); // 500g pedidos = 5x la receta base (100g) -> 500g de harina
+});
+
+test('modo "stock" con stock suficiente descuenta TODO de la preparación, nada de materia prima', () => {
+  const s = statePrepStock(1000);
+  const consumo = expandirParaTest(s, 'stock');
+  assert.strictEqual(consumo.preparaciones.masa, 500);
+  assert.strictEqual(consumo.materia.harina, undefined);
+});
+
+test('modo "stock" con stock PARCIAL (200g de 500g pedidos) reparte: 200g de la preparación + 300g expandidos a materia prima', () => {
+  const s = statePrepStock(200);
+  const consumo = expandirParaTest(s, 'stock');
+  assert.strictEqual(consumo.preparaciones.masa, 200);
+  assert.strictEqual(consumo.materia.harina, 300); // 300g de masa faltantes = 3x100g de harina
+});
+
+test('CRITERIO: sin stock de preparación, "crudo" y "stock" dan resultados IDÉNTICOS', () => {
+  const s = statePrepStock(0);
+  const crudo = expandirParaTest(s, 'crudo');
+  const stock = expandirParaTest(s, 'stock');
+  assert.deepStrictEqual(crudo.materia, stock.materia);
+  assert.strictEqual(stock.preparaciones.masa, undefined);
+});
+
+test('CRITERIO: con stock de preparación, "crudo" y "stock" dan resultados DISTINTOS', () => {
+  const s = statePrepStock(1000);
+  const crudo = expandirParaTest(s, 'crudo');
+  const stock = expandirParaTest(s, 'stock');
+  assert.notDeepStrictEqual(crudo, stock);
+});
+
+test('NO-REGRESIÓN: getConsumptionRolling da exactamente lo mismo con o sin stock de preparación (usa modo "crudo" explícito)', () => {
+  const sSinStock = statePrepStock(0);
+  const sConStock = statePrepStock(5000);
+  const producto = { id: 'p1', nombre: 'Waffle', precio: 20000, componentes: [{ tipo: 'preparacion', refId: 'masa', gramos: 100 }], empaquesUsados: [], empaqueManual: 0 };
+  const venta = { id: 'v1', fecha: '2026-08-01T00:00:00', total: 20000, items: [{ productoId: 'p1', qty: 1, precio: 20000, costo: 500 }] };
+  sSinStock.productos = [producto]; sSinStock.ventas = [Object.assign({}, venta)];
+  sConStock.productos = [Object.assign({}, producto)]; sConStock.ventas = [Object.assign({}, venta)];
+
+  const consumoSinStock = C.getConsumptionRolling(sSinStock, 30, '2026-08-15T00:00:00');
+  const consumoConStock = C.getConsumptionRolling(sConStock, 30, '2026-08-15T00:00:00');
+  assert.deepStrictEqual(consumoSinStock, consumoConStock);
+  assert.strictEqual(consumoConStock.materia.harina, 100); // siempre expande a materia, tenga o no stock la preparación
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);

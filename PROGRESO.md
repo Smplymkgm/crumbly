@@ -15,7 +15,7 @@ Ninguna — la decisión de la ronda 1 (modo del motor de expansión) ya venía 
 | P0.1 · Diagnóstico del doble descuento | ✅ HECHA |
 | P0.2 · Preparaciones contables en el conteo | ✅ HECHA |
 | P0.3 · Congelar desglose alimento/empaque en la venta | ✅ HECHA |
-| P1.1 · Parámetro de modo en el motor de expansión | PENDIENTE |
+| P1.1 · Parámetro de modo en el motor de expansión | ✅ HECHA |
 | P1.2 · Consumo parcial y faltante de preparación | PENDIENTE |
 | P1.3 · Bitácora de lotes | PENDIENTE |
 | P2.1 · Reestructurar getVarianza (dos niveles) | PENDIENTE |
@@ -46,3 +46,9 @@ Ninguna — la decisión de la ronda 1 (modo del motor de expansión) ya venía 
 - Toppings y adiciones se congelan 100% como alimento (`costoEmpaque:0`) — mismo criterio de C1, ninguno tiene empaque propio.
 - Test del criterio explícito del encargo: se vende, se cambia el costo del empaque de la receta DESPUÉS (300→900), y `getFoodCostPct`/`getPaperCostPct` de esa venta pasada quedan exactamente iguales — antes de este fix habrían cambiado, reescribiendo silenciosamente el desglose de una venta ya cerrada.
 - No toca `SCHEMA_VERSION` de la Ronda 1 (quedó en 9 con la migración de A1); ahora es 10. El gate de la migración de A1 (`recalcularValuacionV9`) sigue comparando contra el literal `9`, no contra `SCHEMA_VERSION` — no se re-ejecuta de más al subir a 10 (verificado: la suite completa sigue verde, incluidos los tests de idempotencia de esa migración).
+
+### P1.1 · Parámetro de modo en el motor de expansión — HECHA
+
+- Archivos: `js/core.js` (`aplicarComponentes` gana un 5º parámetro `opts.modo`, `'crudo'` por defecto; `getConsumptionRolling`/`consumoTeoricoDeVentas` pasa `{modo:'crudo'}` explícito; `aplicarComponentes` se exporta para poder testearlo directo), `tests/core.test.js` (6 tests: los dos modos por separado, consumo parcial, los dos criterios exactos del encargo, no-regresión de `getConsumptionRolling`).
+- `applyVenta`, `computeSaleConsumption`, `checkStockShortage` y `registrarMerma` **todavía NO pasan `{modo:'stock'}`** — eso es P1.2, porque implica además el consumo parcial + `faltante` de preparación + `revertVenta` en dos niveles, todo en el mismo cambio (no se puede separar "usar modo stock" de "manejar el faltante que ese modo puede generar").
+- **Limitación conocida, documentada en el código (opción conservadora, no bloqueante)**: en una simulación de solo lectura (`computeSaleConsumption`), si el MISMO carrito tiene dos líneas distintas que usan la MISMA preparación, cada línea lee `prep.cantidad` por separado (la simulación nunca muta nada) y ambas podrían creer que hay stock de sobra — el aviso de faltante PRE-venta podría subestimarse en ese caso puntual. La deducción REAL (`applyVenta`) no tiene este problema porque `apply` sí muta el estado entre líneas. No es una pérdida de datos ni un error de contabilidad — en el peor caso, el aviso previo es optimista y el faltante real de A2 lo captura igual en el momento del descuento real.

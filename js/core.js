@@ -443,15 +443,51 @@
   // Recorre los `componentes` de un producto (materia/preparación/empaques/
   // toppings — rediseño, DISENO_HANDOFF.md) y llama apply(bucket, id,
   // cantidad) por cada insumo hoja involucrado, ya multiplicado por `qty`.
-  // Una preparación se expande primero a materia cruda (nunca llega a
-  // apply() como 'preparacion'). Único punto que conoce esta expansión —
-  // computeSaleConsumption, getConsumptionRolling, applyVenta y el
-  // fallback legado de revertVenta lo reusan, en vez de repetirlo 4 veces.
-  function aplicarComponentes(state, componentes, qty, apply) {
+  // Único punto que conoce esta expansión — computeSaleConsumption,
+  // getConsumptionRolling, applyVenta, registrarMerma y el fallback
+  // legado de revertVenta lo reusan, en vez de repetirlo 5 veces. Sigue
+  // siendo el motor único (P1.1): lo único que cambia es `opts.modo`.
+  //
+  //   modo 'crudo' (default, compatible con el comportamiento de
+  //   siempre): una preparación SIEMPRE se expande hasta materia prima,
+  //   nunca llega a apply() como 'preparaciones'. Es lo correcto para un
+  //   reporte de qué comprar (getConsumptionRolling) — tener salsa hoy no
+  //   cambia cuánta materia prima hace falta en 15 días.
+  //
+  //   modo 'stock': primero descuenta lo que alcance del STOCK YA
+  //   PRODUCIDO de la preparación (`apply('preparaciones', id, ...)`), y
+  //   solo el resto —lo que ese stock no cubre— se expande a materia
+  //   prima cruda, en la MISMA llamada (P1.2: consumo parcial, nunca
+  //   todo-o-nada — salió salsa de la nevera Y ADEMÁS se usó materia
+  //   prima). Es lo correcto para todo lo que descuenta stock de verdad:
+  //   applyVenta, computeSaleConsumption, checkStockShortage,
+  //   registrarMerma de un producto.
+  //
+  // LIMITACIÓN CONOCIDA, documentada a propósito (Ronda 2, opción
+  // conservadora): en `computeSaleConsumption` (simulación de PRE-venta,
+  // de solo lectura), si el mismo carrito tiene dos líneas DISTINTAS que
+  // usan la MISMA preparación, cada línea lee `prep.cantidad` por
+  // separado (nunca se muta en la simulación) y ambas pueden creer que
+  // el stock completo está disponible — el aviso de faltante podría
+  // subestimarse en ese caso puntual. La deducción REAL (applyVenta) no
+  // tiene este problema: `apply` sí muta el estado entre líneas, así que
+  // la segunda línea ve correctamente lo que ya consumió la primera.
+  function aplicarComponentes(state, componentes, qty, apply, opts) {
+    var modo = (opts && opts.modo) || 'crudo';
     (componentes || []).forEach(function (c) {
       var cantidad = (Number(c.gramos) || 0) * qty;
       if (c.tipo === 'empaques' || c.tipo === 'toppings') {
         apply(c.tipo, c.refId, cantidad);
+      } else if (c.tipo === 'preparacion' && modo === 'stock') {
+        var prep = getPreparacion(state, c.refId);
+        var disponible = prep ? Math.max(0, Number(prep.cantidad) || 0) : 0;
+        var deStock = Math.min(disponible, cantidad);
+        var resto = cantidad - deStock;
+        if (deStock > 0) apply('preparaciones', c.refId, deStock);
+        if (resto > 0) {
+          var expandidoResto = expandGramosAMateria(state, c.tipo, c.refId, resto);
+          Object.keys(expandidoResto).forEach(function (mid) { apply('materia', mid, expandidoResto[mid]); });
+        }
       } else {
         var expandido = expandGramosAMateria(state, c.tipo, c.refId, cantidad);
         Object.keys(expandido).forEach(function (mid) { apply('materia', mid, expandido[mid]); });
@@ -904,7 +940,10 @@
         if (item.productoId) {
           var p = (state.productos || []).find(function (x) { return x.id === item.productoId; });
           if (p) {
-            aplicarComponentes(state, p.componentes, item.qty, add);
+            // P1.1: modo 'crudo' A PROPÓSITO y explícito — este es el
+            // reporte de qué comprar. Tener salsa hoy no cambia cuánta
+            // materia prima hace falta en 15 días.
+            aplicarComponentes(state, p.componentes, item.qty, add, { modo: 'crudo' });
             (p.empaquesUsados || []).forEach(function (e) {
               add('empaques', e.empaqueId, (Number(e.cantidad) || 0) * item.qty);
             });
@@ -2235,6 +2274,7 @@
     migrateState: migrateState,
     getCostoProducto: getCostoProducto,
     getEmpaqueTotalProducto: getEmpaqueTotalProducto,
+    aplicarComponentes: aplicarComponentes,
     getCostoConVolatilidad: getCostoConVolatilidad,
     getCostoProductoDesglosado: getCostoProductoDesglosado,
     getFoodCostPct: getFoodCostPct,
