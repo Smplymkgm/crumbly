@@ -868,13 +868,17 @@
   // Consumo real de los últimos `days` días (ventana móvil, P1-2),
   // agregado por tipo+id, recorriendo AMBOS tipos de ítem de venta
   // (productoId y toppingId — antes solo se miraba productoId).
-  function getConsumptionRolling(state, days, ref) {
-    var ventas = getVentasRolling(state.ventas, days || 7, ref);
+  // Expande el consumo teórico de un conjunto YA FILTRADO de ventas —
+  // compartido por getConsumptionRolling (ventana móvil de N días) y
+  // getConsumptionEnRango (D1: rango exacto de fechas, para que la
+  // varianza compare el mismo período que el snapshot inicial/final, sin
+  // el redondeo a días enteros de la ventana móvil).
+  function consumoTeoricoDeVentas(state, ventas) {
     var consumo = { materia: {}, empaques: {}, toppings: {} };
     function add(bucket, id, cant) {
       consumo[bucket][id] = (consumo[bucket][id] || 0) + cant;
     }
-    ventas.forEach(function (v) {
+    (ventas || []).forEach(function (v) {
       (v.items || []).forEach(function (item) {
         if (item.productoId) {
           var p = (state.productos || []).find(function (x) { return x.id === item.productoId; });
@@ -893,6 +897,15 @@
       });
     });
     return consumo;
+  }
+  function getConsumptionRolling(state, days, ref) {
+    return consumoTeoricoDeVentas(state, getVentasRolling(state.ventas, days || 7, ref));
+  }
+  // D1: mismo motor, pero sobre un rango exacto [startISO, endISO] — la
+  // varianza necesita el consumo teórico del MISMO período que cubren
+  // los snapshots, no una ventana de N días redondeados.
+  function getConsumptionEnRango(state, startISO, endISO) {
+    return consumoTeoricoDeVentas(state, getVentasByRange(state.ventas, startISO, endISO));
   }
 
   function calcInventoryNeeds(state, days, ref) {
@@ -1952,6 +1965,111 @@
     return resultado;
   }
 
+  // D1: Varianza (consumo real vs. teórico) por insumo.
+  //
+  //   Consumo teórico  = getConsumptionEnRango (mismo motor de
+  //                      getConsumptionRolling, ya probado)
+  //   Consumo real     = snapshot inicial + compras − snapshot final
+  //   Varianza (cant.) = Consumo real − merma registrada − Consumo teórico
+  //   Varianza ($)     = Varianza cant. × costo unitario vigente
+  //   Varianza %       = Varianza ÷ Consumo teórico
+  //
+  // GUARDA CRÍTICA — esto es lo más importante de la función: si el
+  // snapshot inicial o el final son de tipo 'sistema' en vez de
+  // 'conteo', la cantidad de sistema se mueve como
+  // `final = inicial + compras − teórico − mermas`, así que
+  // `inicial + compras − final = teórico + mermas`, y la varianza da
+  // IDÉNTICAMENTE CERO por construcción. Un cero ahí no significa que no
+  // haya pérdidas — significa que no se midió nada. Por eso se devuelve
+  // `{ suficiente: false, motivo }` y nunca un número en ese caso.
+  //
+  // La merma registrada es obligatoria en la resta: sin ella, la pérdida
+  // ya explicada (mermas) se contaría TAMBIÉN como varianza inexplicada,
+  // duplicándola. Se toma de merma.consumoReal (mismo patrón que
+  // ventas.consumoReal) para que una merma de un PRODUCTO (que expande a
+  // varios insumos) reparta correctamente, no solo las mermas directas
+  // de un insumo.
+  //
+  // Los insumos que no aparezcan en AMBOS snapshots (inicial y final) se
+  // excluyen del reporte y se listan aparte en `noContados` — nunca se
+  // asumen en cero.
+  function getVarianza(state, inicioISO, finISO) {
+    var snapInicial = getSnapshotMasReciente(state, inicioISO);
+    var snapFinal = getSnapshotMasReciente(state, finISO);
+    if (!snapInicial || !snapFinal) {
+      return { suficiente: false, motivo: 'Falta un snapshot de conteo en el inicio o el fin del rango — todavía no hay conteo físico registrado ahí.' };
+    }
+    if (snapInicial.tipo !== 'conteo' || snapFinal.tipo !== 'conteo') {
+      return { suficiente: false, motivo: 'El snapshot inicial y/o final es de tipo "sistema", no "conteo": la varianza daría cero por construcción (no porque no haya pérdidas). Hace falta un conteo físico real en ambos extremos del rango.' };
+    }
+
+    function lineasPorKey(snap) {
+      var out = {};
+      (snap.lineas || []).forEach(function (l) { out[l.insumoTipo + ':' + l.insumoId] = l; });
+      return out;
+    }
+    var inicialPorKey = lineasPorKey(snapInicial);
+    var finalPorKey = lineasPorKey(snapFinal);
+
+    var comprasPorKey = {};
+    getGastosByRange(state.gastos, inicioISO, finISO)
+      .filter(function (g) { return g.tipo === 'inventario' && g.insumoTipo && g.insumoId; })
+      .forEach(function (g) {
+        var key = g.insumoTipo + ':' + g.insumoId;
+        comprasPorKey[key] = (comprasPorKey[key] || 0) + (Number(g.cantidad) || 0);
+      });
+
+    var mermaPorKey = {};
+    getMermasByRange(state.mermas, inicioISO, finISO).forEach(function (m) {
+      ['materia', 'empaques', 'toppings'].forEach(function (bucket) {
+        Object.keys((m.consumoReal || {})[bucket] || {}).forEach(function (id) {
+          var key = bucket + ':' + id;
+          mermaPorKey[key] = (mermaPorKey[key] || 0) + m.consumoReal[bucket][id];
+        });
+      });
+    });
+
+    var teoricoPorKey = {};
+    var consumoTeorico = getConsumptionEnRango(state, inicioISO, finISO);
+    ['materia', 'empaques', 'toppings'].forEach(function (bucket) {
+      Object.keys(consumoTeorico[bucket] || {}).forEach(function (id) {
+        teoricoPorKey[bucket + ':' + id] = consumoTeorico[bucket][id];
+      });
+    });
+
+    var todasLasKeys = {};
+    Object.keys(inicialPorKey).forEach(function (k) { todasLasKeys[k] = true; });
+    Object.keys(finalPorKey).forEach(function (k) { todasLasKeys[k] = true; });
+
+    var lineas = [];
+    var noContados = [];
+    Object.keys(todasLasKeys).forEach(function (key) {
+      var li = inicialPorKey[key], lf = finalPorKey[key];
+      if (!li || !lf) {
+        var sep = key.indexOf(':');
+        noContados.push({ insumoTipo: key.slice(0, sep), insumoId: key.slice(sep + 1) });
+        return;
+      }
+      var compras = comprasPorKey[key] || 0;
+      var mermaRegistrada = mermaPorKey[key] || 0;
+      var teorico = teoricoPorKey[key] || 0;
+      var consumoReal = li.cantidad + compras - lf.cantidad;
+      var varianzaCantidad = consumoReal - mermaRegistrada - teorico;
+      lineas.push({
+        insumoTipo: li.insumoTipo, insumoId: li.insumoId,
+        inicial: li.cantidad, compras: compras, final: lf.cantidad,
+        consumoReal: consumoReal, mermaRegistrada: mermaRegistrada, consumoTeorico: teorico,
+        varianzaCantidad: varianzaCantidad,
+        varianzaValor: varianzaCantidad * lf.costoUnitario,
+        varianzaPct: teorico !== 0 ? varianzaCantidad / teorico : null
+      });
+    });
+
+    lineas.sort(function (a, b) { return b.varianzaValor - a.varianzaValor; });
+
+    return { suficiente: true, snapInicialId: snapInicial.id, snapFinalId: snapFinal.id, lineas: lineas, noContados: noContados };
+  }
+
   // ─── Dependencias (P1-4: no romper recetas al borrar un insumo) ───
 
   // Solo detecta uso DIRECTO en la receta de un producto (tipo:'materia').
@@ -2017,6 +2135,7 @@
     applyVenta: applyVenta,
     revertVenta: revertVenta,
     getConsumptionRolling: getConsumptionRolling,
+    getConsumptionEnRango: getConsumptionEnRango,
     calcInventoryNeeds: calcInventoryNeeds,
     findProductosUsandoMateria: findProductosUsandoMateria,
     findProductosUsandoEmpaque: findProductosUsandoEmpaque,
@@ -2077,6 +2196,7 @@
     getCMPonderado: getCMPonderado,
     getBreakEven: getBreakEven,
     getMenuEngineering: getMenuEngineering,
+    getVarianza: getVarianza,
     MARGEN_VARIABILIDAD_PCT: MARGEN_VARIABILIDAD_PCT
   };
 });
