@@ -4,7 +4,16 @@ Rama: `auditoria/costeo`. Protocolo: test primero, suite completa verde, un comm
 
 ## Preguntas bloqueantes
 
-(se llenan aquí a medida que aparecen — vacío por ahora)
+### B4 (etapa 3 de 3, "consumo en venta") — BLOQUEADA
+
+Hechas las etapas 1 (valorización en snapshots) y 2 (producción). La 3ª —"la venta descuenta del stock de la preparación cuando existe; si no hay stock, cae a descontar materia prima y lo registra como faltante de preparación"— toca `aplicarComponentes`, el motor de expansión ÚNICO y compartido por `applyVenta`, `registrarMerma`, `getConsumptionRolling` y `computeSaleConsumption`/`checkStockShortage`. Antes de tocarlo hace falta una decisión que el encargo no especifica:
+
+**¿`checkStockShortage` (el aviso de "no hay stock" ANTES de confirmar una venta) debe conocer el stock de preparaciones, o seguir asumiendo que todo componente tipo `preparacion` se resuelve a materia prima cruda?**
+
+- Si NO se actualiza junto con `applyVenta`: el aviso previo a la venta advertirá "falta nutella" (materia prima) cuando en realidad hay 3kg de salsa de nutella ya preparada en la nevera — una falsa alarma operativa constante.
+- Si SÍ se actualiza: hay que decidir también qué hace `getConsumptionRolling` (consumo teórico para reportes/necesidades de compra) con esto — reportar en términos de preparación consumida, o seguir expandiendo a materia prima cruda para ese reporte específico. Son al menos 3 funciones a tocar en el mismo cambio, con el motor de expansión que TODO el costeo del sistema comparte — no es un cambio de bajo riesgo para hacerlo sin confirmar el comportamiento esperado en cada punto.
+
+No se adivinó. Queda pendiente para una siguiente ronda con esa decisión ya tomada.
 
 ## Estado de tareas
 
@@ -15,7 +24,7 @@ Rama: `auditoria/costeo`. Protocolo: test primero, suite completa verde, un comm
 | B1 · Snapshots de inventario | ✅ HECHA |
 | B2 · Flujo de conteo físico | ✅ HECHA |
 | B3 · Rendimiento de preparaciones | ✅ HECHA |
-| B4 · Inventario de preparaciones (WIP) | PENDIENTE |
+| B4 · Inventario de preparaciones (WIP) | 🟡 PARCIAL (2/3 etapas) |
 | C1 · Separar costo alimento/empaque | PENDIENTE |
 | C2 · Merma dentro del COGS | PENDIENTE |
 | C3 · Costo laboral y prime cost | PENDIENTE |
@@ -66,4 +75,14 @@ Rama: `auditoria/costeo`. Protocolo: test primero, suite completa verde, un comm
   - El motivo de un AJUSTE de conteo es una lista nueva (`AJUSTE_MOTIVOS`), deliberadamente distinta de `MERMA_MOTIVOS` — una merma es la causa de una pérdida ya conocida al momento de perderla; un ajuste de conteo es la explicación de una diferencia encontrada después (incluye "Merma no registrada" como una de sus opciones).
   - Bug encontrado y corregido durante la verificación en navegador (no en los tests de Node, que no ejercitan el DOM): la primera versión de `renderConteoList()` reconstruía el `innerHTML` completo de la lista en cada tecla presionada en el campo "Contada", lo que le quita el foco al input a mitad de un número de varias cifras. Se corrigió para que cada tecla actualice solo esa fila (`actualizarFilaConteo`), nunca la lista completa.
   - `saveInsumo()` ya no envía `cantidad` en el camino de edición (antes lo hacía incondicionalmente); el campo del modal se deshabilita al editar un insumo existente y sigue habilitado solo al crear uno nuevo (el stock inicial no es un "ajuste").
+
+### B4 · Inventario de preparaciones (WIP) — PARCIAL, 2 de 3 etapas (commit 69cf19a)
+
+Etapa 3 ("consumo en venta") quedó **BLOQUEADA** — ver la pregunta concreta al principio de este archivo.
+
+- Archivos: `js/core.js` (`cantidad` en preparaciones, `getValorInventario`, `crearSnapshot`, `producirPreparacion` nueva, `registrarMerma`/`eliminarMerma`/`getMermaOrigenList` con origen `'preparacion'`, `savePreparacion`), `tests/core.test.js` (sección "B4 (parcial)...", 8 tests).
+- Bug encontrado y corregido de paso: `savePreparacion` reemplazaba el objeto completo de la preparación al editar su receta (`state.preparaciones[idx] = prep`), lo que hubiera borrado `cantidad` (el stock de WIP) cada vez que alguien ajustara un porcentaje de la receta. Se preserva explícitamente ahora — cubierto con test.
+- `producirPreparacion` no persiste una bitácora de lotes ni permite revertir uno (a diferencia de ventas/gastos/mermas, que sí tienen su `consumoReal`+revert). Decisión de alcance, no especificada: el encargo pide "se acredita el stock y se actualiza rendimientoPct", no un log auditable — se puede agregar cuando haga falta revertir un lote mal cargado.
+- `rendimientoPct` se sobreescribe con el dato medido del ÚLTIMO lote producido, sin promediar contra el histórico — así lo pide literalmente el encargo ("se actualiza con el dato medido"), sin especificar suavizado.
+- Verificado con test que la producción NO cambia el valor total del inventario (solo lo mueve de materia prima a WIP) — es la prueba matemática de que `costoPorGramo`/`gramosObtenidos` de B3 y la valuación de B4 son consistentes entre sí.
 
