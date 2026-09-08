@@ -2113,6 +2113,40 @@ test('C5: umbral de popularidad es (1/N) × 0,70 dentro de la categoría', () =>
   assert.ok(Math.abs(bebidas[0].umbralPopularidad - 0.35) < 0.0001); // (1/2)*0.7
 });
 
+console.log('\n== P3.1 (Ronda 2): umbral de rentabilidad = CM PONDERADO, no promedio simple ==');
+
+test('CRITERIO: cuatro productos en una categoría donde el promedio simple y el ponderado clasifican distinto — la clasificación correcta es la del ponderado', () => {
+  const s = C.migrateState({
+    materia: [{ id: 'ins', nombre: 'Insumo', cantidad: 0, costo: 0, minimo: 0 }],
+    productos: [
+      { id: 'p1', nombre: 'P1', categoria: 'Postres', precio: 100, componentes: [], empaquesUsados: [], empaqueManual: 0 },
+      { id: 'p2', nombre: 'P2', categoria: 'Postres', precio: 300, componentes: [], empaquesUsados: [], empaqueManual: 0 },
+      { id: 'p3', nombre: 'P3', categoria: 'Postres', precio: 100, componentes: [], empaquesUsados: [], empaqueManual: 0 },
+      { id: 'p4', nombre: 'P4', categoria: 'Postres', precio: 500, componentes: [], empaquesUsados: [], empaqueManual: 0 }
+    ]
+  });
+  // CM unitario = precio (costo 0 en los cuatro, para simplificar los números).
+  C.applyVenta(s, [{ productoId: 'p1', qty: 10, toppings: [] }], [], {});
+  C.applyVenta(s, [{ productoId: 'p2', qty: 10, toppings: [] }], [], {});
+  C.applyVenta(s, [{ productoId: 'p3', qty: 10, toppings: [] }], [], {});
+  C.applyVenta(s, [{ productoId: 'p4', qty: 70, toppings: [] }], [], {});
+  // promedio simple = (100+300+100+500)/4 = 250 ; ponderado = (100*10+300*10+100*10+500*70)/100 = 400
+  const menu = C.getMenuEngineering(s, s.ventas);
+  const porId = Object.fromEntries(menu.map(m => [m.productoId, m]));
+
+  assert.ok(Math.abs(porId.p1.umbralRentabilidad - 400) < 0.0001); // el ponderado, no 250
+
+  // p2: CM=300. Bajo el promedio simple (250) sería "rentable" (enigma,
+  // no es popular). Bajo el ponderado (400) NO es rentable -> perro.
+  // Esta es la clasificación CORRECTA.
+  assert.strictEqual(porId.p2.clasificacion, 'perro');
+  assert.notStrictEqual(porId.p2.clasificacion, 'enigma'); // lo que daría el promedio simple (incorrecto)
+
+  assert.strictEqual(porId.p4.clasificacion, 'estrella'); // popular y por encima del ponderado
+  assert.strictEqual(porId.p1.clasificacion, 'perro');
+  assert.strictEqual(porId.p3.clasificacion, 'perro');
+});
+
 console.log('\n== P2.1 (Ronda 2): getVarianza reestructurada en dos niveles ==');
 
 function stateVarianza() {

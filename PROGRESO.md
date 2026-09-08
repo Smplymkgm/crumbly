@@ -20,7 +20,7 @@ Ninguna — la decisión de la ronda 1 (modo del motor de expansión) ya venía 
 | P1.3 · Bitácora de lotes | ✅ HECHA |
 | P2.1 · Reestructurar getVarianza (dos niveles) | ✅ HECHA |
 | P2.2 · Ajustar getActualVsTheoretical | ✅ HECHA |
-| P3.1 · Umbral de menu engineering (ponderado) | PENDIENTE |
+| P3.1 · Umbral de menu engineering (ponderado) | ✅ HECHA |
 | P3.2 · Pantalla de reportes de costeo | PENDIENTE |
 
 ## Detalle por tarea
@@ -79,3 +79,9 @@ Se implementaron juntas porque P2.2 no puede funcionar con la forma vieja de `ge
 - **Guarda nueva verificada con test dedicado**: un conteo que cuenta materia en ambos extremos pero NUNCA cuenta preparaciones (bucket con insumos pero cero líneas tocadas) hace que los DOS niveles devuelvan `suficiente:false` — incluida materia prima, tal como pide el encargo explícitamente ("sin saber cuánta salsa quedó no se puede separar...").
 - **Test más importante de la tanda**: un escenario con producción (rendimiento de cocina 90%, genera 30g de varianza de materia) y una merma directa de preparación (50g, genera varianza de preparación) en el MISMO período, verificando que los dos números salen DISTINTOS y cada uno mide lo que le corresponde — la prueba concreta de que "una pérdida de evaporación en la cocina y un robo en el mostrador" ya NO son indistinguibles.
 - La guarda de la Ronda 1 (snapshots de sistema → cero por construcción) se mantuvo intacta y su test sigue verde, ahora verificando ambos niveles.
+
+### P3.1 · Umbral de menu engineering (ponderado) — HECHA
+
+- Archivo: `js/core.js` (`getMenuEngineering` reusa `getCMPonderado` de C4, calculado con los ítems de venta de CADA categoría — no reescribe la fórmula del promedio ponderado). El comentario que argumentaba (incorrectamente) que ponderar sesga el umbral se corrigió.
+- Test del criterio exacto del encargo: 4 productos en una categoría donde promedio simple (250) y ponderado (400) dan resultados distintos para un producto (CM=300, no popular) — bajo el simple sería "enigma", bajo el ponderado (correcto) es "perro". El test verifica explícitamente que la clasificación NO es la que daría el promedio simple.
+- Ningún test de la Ronda 1 se rompió por este cambio (coincidencia de los números elegidos en esos fixtures, no porque el fix no tuviera efecto — verificado con el test nuevo, que sí distingue).

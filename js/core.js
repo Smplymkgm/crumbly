@@ -2125,6 +2125,19 @@
     });
 
     var porCategoria = {};
+    // P3.1: ítems planos por categoría (a nivel de línea de venta, no de
+    // producto) — es lo que getCMPonderado necesita para calcular el CM
+    // ponderado DENTRO de cada categoría, reusando la misma función de
+    // C4 en vez de reescribir su fórmula acá.
+    var itemsPorCategoria = {};
+    (ventas || []).forEach(function (v) {
+      (v.items || []).forEach(function (item) {
+        if (!item.productoId) return;
+        var p = (state.productos || []).find(function (x) { return x.id === item.productoId; });
+        var cat = (p && p.categoria) ? p.categoria : '(sin categoría)';
+        (itemsPorCategoria[cat] = itemsPorCategoria[cat] || []).push(item);
+      });
+    });
     Object.keys(porProducto).forEach(function (pid) {
       var row = porProducto[pid];
       row.cmUnitario = row.qty > 0 ? row.cmTotalPesos / row.qty : 0;
@@ -2138,10 +2151,15 @@
       var totalQtyCategoria = items.reduce(function (a, r) { return a + r.qty; }, 0);
       // Umbral de popularidad estándar: (1 / n ítems de la categoría) × 0,70.
       var umbralPopularidad = n > 0 ? (1 / n) * 0.7 : 0;
-      // Umbral de rentabilidad: promedio SIMPLE del CM unitario de la
-      // categoría (no ponderado por volumen — ponderar sesgaría el
-      // umbral hacia el producto ya popular, que nunca podría superarlo).
-      var umbralRentabilidad = n > 0 ? items.reduce(function (a, r) { return a + r.cmUnitario; }, 0) / n : 0;
+      // P3.1: umbral de rentabilidad = CM PONDERADO de la categoría (CM
+      // total en pesos ÷ unidades totales), reusando getCMPonderado de
+      // C4 — no un promedio simple. Un promedio simple es insensible al
+      // mix, que es justo lo que la matriz existe para capturar: un
+      // producto YA popular puede quedar bajo el ponderado, y esa es
+      // exactamente la definición de un caballo de batalla (alta venta,
+      // bajo margen) — ponderar no lo protege de caer ahí, lo expone.
+      var cmPonderado = getCMPonderado(state, [{ items: itemsPorCategoria[categoria] || [] }]);
+      var umbralRentabilidad = cmPonderado.cmPromedioPesos;
       items.forEach(function (r) {
         var mix = totalQtyCategoria > 0 ? r.qty / totalQtyCategoria : 0;
         var esPopular = mix >= umbralPopularidad;
