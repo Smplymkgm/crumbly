@@ -27,8 +27,8 @@ No se adivinó. Queda pendiente para una siguiente ronda con esa decisión ya to
 | B4 · Inventario de preparaciones (WIP) | 🟡 PARCIAL (2/3 etapas) |
 | C1 · Separar costo alimento/empaque | ✅ HECHA |
 | C2 · Merma dentro del COGS | ✅ HECHA |
-| C3 · Costo laboral y prime cost | PENDIENTE |
-| C4 · Comportamiento de costo y break-even | PENDIENTE |
+| C3 · Costo laboral y prime cost | ✅ HECHA |
+| C4 · Comportamiento de costo y break-even | ✅ HECHA |
 | C5 · Menu engineering | PENDIENTE |
 | C6 · Arreglos baratos (I3,I4,I5,C10,C11) | ✅ HECHA |
 | D1 · getVarianza | PENDIENTE |
@@ -108,3 +108,15 @@ Etapa 3 ("consumo en venta") quedó **BLOQUEADA** — ver la pregunta concreta a
 - Archivos: `js/core.js` (`computeCascada`), `index.html` (etiquetas del "Detalle financiero" y de la tabla del PDF de cierre), `tests/core.test.js` (sección "C2: la merma vive DENTRO...", 3 tests).
 - Verificado con test que `utilidadNeta` es IDÉNTICA a la fórmula vieja — solo cambió dónde aparece la línea (ahora dentro de `costoVentas`/`utilidadBruta`, no restando aparte a nivel de utilidad neta). Margen bruto % baja exactamente `mermas/ingresos × 100`, verificado con test.
 - **Bug encontrado y corregido de paso, no en el encargo original pero necesario para no dejar el fix a medias**: el dashboard ("Detalle financiero") y la tabla del PDF de cierre de caja mostraban "Utilidad bruta" y, aparte, "−Mermas" camino a la utilidad neta — con el cambio de arriba eso restaba la merma DOS VECES en la lectura visual (aunque `utilidadNeta` en sí seguía siendo correcta: el bug era de presentación, no de cálculo). Verificado en el navegador. Se recategorizó esa fila/tile como informativa ("ya incluidas en costo de ventas"), sin signo negativo.
+
+### C3 · Costo laboral y prime cost — HECHA (commit b014958)
+
+- `GASTO_CATEGORIAS_LABORALES`, `state.config.factorPrestacional` (default 1.38, editable en Ajustes → Costeo), `getCostoLaboral`, `getPrimeCost`.
+- **Bug real encontrado y corregido durante la verificación en el navegador**: `emptyState()` no traía `factorPrestacional` en su `config` — un usuario NUEVO (sin estado previo, el caso más común) quedaba con el valor `undefined` pese a que `migrateState(estadoExistente)` sí lo ponía en 1.38. El bloque de defaults de `migrateState` nunca corre para `raw` null/no-objeto (que devuelve `emptyState()` directo por el early-return). Cubierto con test dedicado.
+- No se agregó una tarjeta de Prime Cost en Reportes en esta ronda — el encargo lista `js/core.js` como alcance de C1-C5 y no especifica diseño de UI para estas métricas nuevas.
+
+### C4 · Comportamiento de costo y break-even — HECHA (commit f3c00b5)
+
+- `state.config.comportamientoCategorias{}` (sin clasificar = 'fijo'), `getComportamientoCategoria`, `getCostosFijosYVariables`, `getCMPonderado`, `getBreakEven` (bepContable/bepCaja + diarios).
+- El "OJO" del encargo (no asumir que el atajo siempre subestima) se cubrió con un test de DOS escenarios (deficitario/rentable) que verifica la dirección real del error en cada uno — no se implementó ninguna heurística.
+- Decisión no especificada: el gasto operativo clasificado 'variable'/'mixto' se convierte a un ratio sobre los INGRESOS DEL MISMO período (aproximación explícita en el comentario del código) y se resta del CM ratio, en vez de solo excluirlo del numerador de costos fijos — un gasto variable también reduce lo que queda por cada peso vendido, no es simplemente "costo fijo que no se cuenta".
