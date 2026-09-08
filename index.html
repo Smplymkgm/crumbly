@@ -493,29 +493,30 @@ textarea.field{height:auto}
         <p class="item-sub" style="margin-top:4px">Cómo lo medís (aunque venga por unidad, como los huevos, puede ser Materia prima)</p>
       </div>
     </div>
+    <div class="modal-field">
+      <label class="field-label">Cantidad disponible</label>
+      <input type="number" id="ins-cantidad" class="field" placeholder="0" min="0" step="0.01">
+    </div>
+    <!-- Bug real: acá se cargaba el precio del PAQUETE completo directo
+         como si fuera el costo de una sola unidad/gramo — un waffle que
+         usa 400g terminaba costando el precio de muchos paquetes. Ahora
+         lo que se pide primero es justamente el precio total y el
+         contenido (lo que la persona realmente tiene a mano, la
+         etiqueta del paquete) — "Costo por unidad" se calcula solo y
+         nunca es lo primero que hay que llenar. -->
     <div style="display:flex;gap:10px">
       <div class="modal-field" style="flex:1">
-        <label class="field-label">Cantidad disponible</label>
-        <input type="number" id="ins-cantidad" class="field" placeholder="0" min="0" step="0.01">
+        <label class="field-label">Precio del paquete ($)</label>
+        <input type="number" id="ins-calc-precio" class="field" placeholder="Ej: 10500" min="0" oninput="calcularCostoInsumo()">
       </div>
       <div class="modal-field" style="flex:1">
-        <label class="field-label">Costo por unidad</label>
-        <input type="number" id="ins-costo" class="field" placeholder="$" min="0" step="0.001">
+        <label class="field-label">Contenido del paquete</label>
+        <input type="number" id="ins-calc-contenido" class="field" placeholder="Ej: 1000" min="0" oninput="calcularCostoInsumo()">
       </div>
     </div>
-    <button type="button" onclick="toggleInsumoCalculadora()" style="background:transparent;border:none;color:var(--muted);font-size:11px;font-weight:500;cursor:pointer;text-decoration:underline;margin-bottom:10px">¿Tenés el precio del paquete completo? Calculalo acá</button>
-    <div id="ins-calc-fields" style="display:none;background:var(--bg);border-radius:10px;padding:10px;margin-bottom:12px">
-      <div style="display:flex;gap:10px">
-        <div class="modal-field" style="flex:1;margin-bottom:6px">
-          <label class="field-label">Precio del paquete ($)</label>
-          <input type="number" id="ins-calc-precio" class="field" placeholder="Ej: 10500" min="0" oninput="calcularCostoInsumo()">
-        </div>
-        <div class="modal-field" style="flex:1;margin-bottom:6px">
-          <label class="field-label">Contenido (misma unidad de arriba)</label>
-          <input type="number" id="ins-calc-contenido" class="field" placeholder="Ej: 1000" min="0" oninput="calcularCostoInsumo()">
-        </div>
-      </div>
-      <p class="item-sub" style="margin-bottom:0">Bug real que causó esto: cargar el precio del paquete completo directo en "Costo por unidad" — un waffle que use 400g de harina termina costando el precio de MUCHOS paquetes. Esta calculadora hace la división por vos.</p>
+    <div class="modal-field">
+      <label class="field-label">Costo por unidad (se calcula solo — ajustalo si hace falta)</label>
+      <input type="number" id="ins-costo" class="field" placeholder="$" min="0" step="0.001">
     </div>
     <div class="modal-field">
       <label class="field-label">Alerta de stock mínimo</label>
@@ -1289,19 +1290,15 @@ function openInsumoModal(id) {
   document.getElementById('ins-categorias-chips').innerHTML = insumoCategorias().map(c =>
     `<button type="button" class="chip" onclick="document.getElementById('ins-categoria').value='${esc(c)}'">${esc(c)}</button>`
   ).join('');
-  document.getElementById('ins-calc-fields').style.display = 'none';
   document.getElementById('ins-calc-precio').value = '';
   document.getElementById('ins-calc-contenido').value = '';
   openModal('modal-insumo');
 }
-function toggleInsumoCalculadora() {
-  const el = document.getElementById('ins-calc-fields');
-  el.style.display = el.style.display === 'none' ? 'block' : 'none';
-}
 // Bug real que esto previene: cargar el precio del PAQUETE completo
 // directo en "Costo por unidad" — el mismo error de fondo detrás del
-// aviso de "costo sospechoso" en Inventario. Divide acá en vez de
-// obligar a la cuenta a mano.
+// aviso de "costo sospechoso" en Inventario. "Precio del paquete" +
+// "Contenido" son los primeros campos que se llenan (lo que la persona
+// tiene a mano de verdad, la etiqueta) — esto solo hace la división.
 function calcularCostoInsumo() {
   const precio = parseFloat(document.getElementById('ins-calc-precio').value) || 0;
   const contenido = parseFloat(document.getElementById('ins-calc-contenido').value) || 0;
