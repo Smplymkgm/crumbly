@@ -254,7 +254,7 @@
     });
 
     s.preparaciones = s.preparaciones.map(function (prep) {
-      var out = Object.assign({ modo: 'porcentaje', baseGramos: 0 }, prep);
+      var out = Object.assign({ modo: 'porcentaje', baseGramos: 0, rendimientoPct: 100 }, prep); // rendimientoPct: v9 (B3)
       if (!Array.isArray(out.componentes)) out.componentes = [];
       return out;
     });
@@ -351,8 +351,15 @@
       }
     });
     var porGramo = {};
-    if (gramosTotal > 0) {
-      Object.keys(acumMateria).forEach(function (mid) { porGramo[mid] = acumMateria[mid] / gramosTotal; });
+    // B3 (auditoría de costeo, I1): el costo/consumo se reparte sobre los
+    // gramos OBTENIDOS (post-merma de cocción/evaporación), no sobre los
+    // gramos de insumos que entraron — si no, toda preparación con
+    // rendimiento < 100% queda subcosteada y su consumo teórico expandido
+    // sale corto (la varianza de mañana lo leería como faltante fantasma).
+    var rendimientoPct = prep.rendimientoPct === undefined ? 100 : Number(prep.rendimientoPct);
+    var gramosObtenidos = gramosTotal * (rendimientoPct / 100);
+    if (gramosObtenidos > 0) {
+      Object.keys(acumMateria).forEach(function (mid) { porGramo[mid] = acumMateria[mid] / gramosObtenidos; });
     }
     return porGramo;
   }
@@ -371,7 +378,13 @@
     if (prep) {
       (prep.componentes || []).forEach(function (c) { gramosTotal += gramosDeComponentePreparacion(prep, c); });
     }
-    return { costoPorGramo: costoPorGramo, gramosTotal: gramosTotal, costoTotal: costoPorGramo * gramosTotal };
+    // gramosObtenidos (B3): base real de reparto. costoTotal se calcula
+    // sobre ella, no sobre gramosTotal (insumos) — costoPorGramo ya está
+    // en base "por gramo obtenido", así que costoTotal debe conservar el
+    // costo real de los insumos sin importar el rendimiento.
+    var rendimientoPct = prep && prep.rendimientoPct !== undefined ? Number(prep.rendimientoPct) : 100;
+    var gramosObtenidos = gramosTotal * (rendimientoPct / 100);
+    return { costoPorGramo: costoPorGramo, gramosTotal: gramosTotal, gramosObtenidos: gramosObtenidos, costoTotal: costoPorGramo * gramosObtenidos };
   }
 
   // Expande `gramos` de un componente (de un producto o de otra
@@ -443,7 +456,8 @@
     if (wouldCreateCiclo(state, id, componentes)) {
       throw new Error('Esta combinación crea un ciclo entre preparaciones (una depende de otra que depende de ella).');
     }
-    var prep = { id: id, nombre: nombre, modo: modo, baseGramos: Number(input.baseGramos) || 0, componentes: componentes };
+    var rendimientoPct = input.rendimientoPct !== undefined ? Number(input.rendimientoPct) : 100;
+    var prep = { id: id, nombre: nombre, modo: modo, baseGramos: Number(input.baseGramos) || 0, componentes: componentes, rendimientoPct: rendimientoPct };
     var idx = state.preparaciones.findIndex(function (x) { return x.id === id; });
     if (idx === -1) state.preparaciones.push(prep); else state.preparaciones[idx] = prep;
     return prep;

@@ -12,7 +12,7 @@ Rama: `auditoria/costeo`. Protocolo: test primero, suite completa verde, un comm
 |---|---|
 | A1 · Quitar recargo +8% | ✅ HECHA |
 | A2 · Registrar déficit de stock (`faltante`) | ✅ HECHA |
-| B1 · Snapshots de inventario | PENDIENTE |
+| B1 · Snapshots de inventario | ✅ HECHA |
 | B2 · Flujo de conteo físico | PENDIENTE |
 | B3 · Rendimiento de preparaciones | PENDIENTE |
 | B4 · Inventario de preparaciones (WIP) | PENDIENTE |
@@ -44,4 +44,10 @@ Rama: `auditoria/costeo`. Protocolo: test primero, suite completa verde, un comm
   - `eliminarGasto` no estaba en el alcance literal de A2, pero `registrarGasto` ahora muta `insumo.faltante` — sin snapshot/restauración ahí, deshacer una compra que había saldado faltante lo dejaba corrompido silenciosamente. Se agregó `gasto.faltanteAntes` (mismo patrón que `costoAntes`/`cantidadAntes`) y su restauración en `eliminarGasto`. Es la misma regla de "arreglar donde convergen los llamadores", no una tarea nueva.
   - Si la compra no alcanza a cubrir todo el faltante, el costo promedio ponderado NO se toca (no hay compra neta a ningún precio) — evita el caso borde de `costoPromedioPonderado` con cantidad neta 0 y stock previo 0, que devolvería el precio de la compra sin haber sumado nada.
   - `revertVenta` nunca deja `faltante` negativo (usa `Math.max(0, ...)`) — si una compra ya saldó parte del faltante antes de revertir la venta que lo generó, no hay forma de saber con certeza cuánto de ese pago correspondía a esa venta específica; se documentó en el comentario del código, no se intentó adivinar.
+
+### B1 · Snapshots de inventario — HECHA (commit aa01b5f)
+
+- Archivos: `js/core.js` (`state.snapshots[]`, `getValorInventario`, `crearSnapshot`, `getSnapshotMasReciente`), `tests/core.test.js` (sección "B1: snapshots de inventario", 5 tests).
+- Decisión no especificada: cada línea del snapshot guarda también `insumoTipo` además de `insumoId` (el ejemplo del encargo solo mostraba `insumoId`) — sin el tipo no se puede resolver a qué colección pertenece el insumo (mismo patrón que `insumoTipo`+`insumoId` en `registrarGasto`/mermas). Necesario para que D1 pueda comparar snapshots contra el estado real.
+- No se implementó todavía ningún flujo de UI ni de conteo (eso es B2) — B1 es solo el motor de datos.
 

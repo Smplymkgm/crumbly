@@ -721,6 +721,61 @@ test('masa New York: costo por gramo $12,4591 (verificado contra la hoja real)',
   assert.ok(Math.abs(c.costoPorGramo - 12.4591) < 0.001);
 });
 
+console.log('\n== B3: rendimiento de preparaciones (mermas de cocción/evaporación) ==');
+
+function statePrepConRendimiento(rendimientoPct) {
+  return C.migrateState({
+    materia: [
+      { id: 'harina', nombre: 'Harina', cantidad: 100000, costo: 5, minimo: 0 },
+      { id: 'agua', nombre: 'Agua', cantidad: 100000, costo: 0, minimo: 0 }
+    ],
+    preparaciones: [{
+      id: 'masa', nombre: 'Masa', modo: 'directo', rendimientoPct: rendimientoPct,
+      componentes: [
+        { tipo: 'materia', refId: 'harina', gramos: 600 },
+        { tipo: 'materia', refId: 'agua', gramos: 400 }
+      ]
+    }]
+  });
+}
+
+test('rendimientoPct 85%: 600g harina a $5 + 400g agua a $0 da $3,53/g (hoy con el bug daba $3,00/g)', () => {
+  const s = statePrepConRendimiento(85);
+  const c = C.getPreparacionCosto(s, 'masa');
+  assert.ok(Math.abs(c.costoPorGramo - 3.5294) < 0.001);
+  assert.ok(Math.abs(c.gramosObtenidos - 850) < 0.01);
+  // el costo TOTAL de los insumos no cambia con el rendimiento, solo el costo por gramo
+  assert.ok(Math.abs(c.costoTotal - 3000) < 0.01);
+});
+
+test('rendimientoPct 100 (default) no cambia el comportamiento actual', () => {
+  const s = statePrepConRendimiento(100);
+  const c = C.getPreparacionCosto(s, 'masa');
+  assert.strictEqual(c.costoPorGramo, 3);
+  assert.strictEqual(c.gramosObtenidos, 1000);
+  assert.strictEqual(c.costoTotal, 3000);
+});
+
+test('el consumo teórico expandido (composición por gramo) también usa gramos obtenidos, no insumos', () => {
+  const s = statePrepConRendimiento(85);
+  const composicion = C.getPreparacionComposicionPorGramo(s, 'masa');
+  // 600g de harina repartidos sobre 850g obtenidos, no sobre 1000g de insumos
+  assert.ok(Math.abs(composicion.harina - 600 / 850) < 0.0001);
+});
+
+test('migrateState pone rendimientoPct:100 en preparaciones viejas que no lo tenían', () => {
+  const s = C.migrateState({ preparaciones: [{ id: 'p1', nombre: 'Vieja', modo: 'directo', componentes: [] }] });
+  assert.strictEqual(s.preparaciones[0].rendimientoPct, 100);
+});
+
+test('savePreparacion guarda rendimientoPct (default 100 si no se manda)', () => {
+  const s = C.migrateState({});
+  const p1 = C.savePreparacion(s, { nombre: 'Con rendimiento', componentes: [], rendimientoPct: 92 });
+  assert.strictEqual(p1.rendimientoPct, 92);
+  const p2 = C.savePreparacion(s, { nombre: 'Sin especificar', componentes: [] });
+  assert.strictEqual(p2.rendimientoPct, 100);
+});
+
 console.log('\n== Preparaciones — modo directo ==');
 
 test('modo directo suma gramos explícitos sin porcentaje panadero', () => {
