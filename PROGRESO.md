@@ -25,8 +25,8 @@ No se adivinó. Queda pendiente para una siguiente ronda con esa decisión ya to
 | B2 · Flujo de conteo físico | ✅ HECHA |
 | B3 · Rendimiento de preparaciones | ✅ HECHA |
 | B4 · Inventario de preparaciones (WIP) | 🟡 PARCIAL (2/3 etapas) |
-| C1 · Separar costo alimento/empaque | PENDIENTE |
-| C2 · Merma dentro del COGS | PENDIENTE |
+| C1 · Separar costo alimento/empaque | ✅ HECHA |
+| C2 · Merma dentro del COGS | ✅ HECHA |
 | C3 · Costo laboral y prime cost | PENDIENTE |
 | C4 · Comportamiento de costo y break-even | PENDIENTE |
 | C5 · Menu engineering | PENDIENTE |
@@ -95,3 +95,16 @@ Etapa 3 ("consumo en venta") quedó **BLOQUEADA** — ver la pregunta concreta a
 - **C11** (primera auditoría) — `porcion > 0` es obligatoria cuando "Disponible como adición" está marcado; el formulario muestra costo de la porción y margen resultante en vivo.
 - **C10** (primera auditoría) — `findProductosUsandoInsumo(state, id)` nueva: puerta única para `deleteInsumo` en los tres buckets. Decisión no especificada: se agregó como función NUEVA sin tocar/eliminar `findProductosUsandoMateria`/`findProductosUsandoEmpaque` (siguen exportadas y testeadas) — solo dejaron de ser la puerta de `deleteInsumo`. Hallazgo real durante la implementación: **toppings no tenía NINGÚN chequeo de dependencias** — se podía borrar un topping usado directo en una receta y dejarla con una referencia rota; verificado a mano en el navegador que ahora se bloquea igual que materia prima.
 
+
+### C1 · Separar costo alimento/empaque — HECHA (commit 883ddfc)
+
+- Archivos: `js/core.js` (`getCostoProductoDesglosado`, `getCostoDesglosadoVentaItem`, `costosDesglosadosPeriodo`, `getFoodCostPct`, `getPaperCostPct`), `tests/core.test.js` (sección "C1: separar costo...", 4 tests).
+- `getCostoProducto()` original NO cambió de firma ni de valor (sigue devolviendo un número, exactamente el mismo) — la función nueva es aparte, para no romper a `applyVenta`/`registrarMerma`/`getMargenProducto`, que siguen usando la de siempre.
+- Decisión no especificada: el desglose por período (`getFoodCostPct`/`getPaperCostPct`) prorratea el costo YA CONGELADO de cada ítem de venta (`item.costo`, el mismo dato que ya usa `computeCascada` para el COGS del período) según la proporción VIGENTE de la receta actual — no recalcula el costo total en vivo. Si lo hiciera, food+paper cost dejarían de sumar el mismo COGS que ya reporta Caja/Reportes: sería una tercera cifra de costo de ventas distinta, exactamente el problema que la auditoría de costeo señala como su hallazgo raíz (Sección 0).
+- Un topping ES comida (food cost), aunque estructuralmente comparta `COLECCION_POR_TIPO` con empaques en `getCostoProducto`. Un topping suelto o una adición van 100% a alimento (no tienen empaque propio).
+
+### C2 · Merma dentro del COGS — HECHA (commit 8fcedfa)
+
+- Archivos: `js/core.js` (`computeCascada`), `index.html` (etiquetas del "Detalle financiero" y de la tabla del PDF de cierre), `tests/core.test.js` (sección "C2: la merma vive DENTRO...", 3 tests).
+- Verificado con test que `utilidadNeta` es IDÉNTICA a la fórmula vieja — solo cambió dónde aparece la línea (ahora dentro de `costoVentas`/`utilidadBruta`, no restando aparte a nivel de utilidad neta). Margen bruto % baja exactamente `mermas/ingresos × 100`, verificado con test.
+- **Bug encontrado y corregido de paso, no en el encargo original pero necesario para no dejar el fix a medias**: el dashboard ("Detalle financiero") y la tabla del PDF de cierre de caja mostraban "Utilidad bruta" y, aparte, "−Mermas" camino a la utilidad neta — con el cambio de arriba eso restaba la merma DOS VECES en la lectura visual (aunque `utilidadNeta` en sí seguía siendo correcta: el bug era de presentación, no de cálculo). Verificado en el navegador. Se recategorizó esa fila/tile como informativa ("ya incluidas en costo de ventas"), sin signo negativo.
