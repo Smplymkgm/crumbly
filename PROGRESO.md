@@ -31,8 +31,8 @@ No se adivinó. Queda pendiente para una siguiente ronda con esa decisión ya to
 | C4 · Comportamiento de costo y break-even | ✅ HECHA |
 | C5 · Menu engineering | ✅ HECHA |
 | C6 · Arreglos baratos (I3,I4,I5,C10,C11) | ✅ HECHA |
-| D1 · getVarianza | PENDIENTE |
-| D2 · Actual vs Theoretical | PENDIENTE |
+| D1 · getVarianza | ✅ HECHA |
+| D2 · Actual vs Theoretical | ✅ HECHA |
 
 ## Detalle por tarea
 
@@ -125,3 +125,37 @@ Etapa 3 ("consumo en venta") quedó **BLOQUEADA** — ver la pregunta concreta a
 
 - `getMenuEngineering(state, ventas)`. Sin decisiones fuera de lo especificado — el encargo fue explícito en los dos puntos que "la mayoría implementa mal" (eje en pesos, mix dentro de cada categoría) y en el umbral de popularidad exacto; se siguieron literalmente.
 - Único detalle no cubierto por el texto: el umbral de rentabilidad (promedio de CM$ dentro de la categoría) se calculó como promedio SIMPLE de los productos, no ponderado por volumen — es el método estándar de Kasavana & Smith, y ponderar sesgaría el umbral hacia el producto ya popular (nunca podría superarlo). Documentado en el comentario del código.
+
+### D1 · getVarianza — HECHA (commit 41d3d40)
+
+- `getConsumptionRolling` se refactorizó (sin cambiar su comportamiento externo — sigue con tests verdes) para extraer `consumoTeoricoDeVentas`, reutilizado por `getConsumptionEnRango` (D1 necesita el consumo teórico de un rango EXACTO de fechas, no una ventana de N días redondeados como la rolling).
+- `getVarianza(state, inicio, fin)` implementada literal según la fórmula y la guarda del encargo. La guarda crítica (snapshots de tipo 'sistema' dan varianza cero por construcción) tiene su propio test explícito con dos snapshots de sistema.
+- La merma registrada se resta usando `merma.consumoReal` (no `merma.cantidad`/`origenId`), para que una merma de tipo `'producto'` (que expande a varios insumos vía receta) reparta correctamente sobre cada insumo — no solo las mermas directas de un insumo.
+- Probado con snapshots de conteo **sintéticos construidos en el test** — no se metieron datos falsos en el estado real de la app, tal como pide el encargo.
+
+### D2 · Actual vs Theoretical — HECHA (commit 287575d)
+
+- `getActualVsTheoretical(state, inicio, fin)` y `getActualVsTheoreticalHistorico(state)`. Aritmética sobre D1 (varianza real) y C1 (desglose alimento/empaque teórico). Hereda la guarda de D1.
+- Decisión no especificada: la "serie histórica" se arma con un punto por cada PAR CONSECUTIVO de snapshots de tipo 'conteo' existentes — es la cadencia real de conteos físicos la que define los períodos comparables (no hay snapshots en un calendario arbitrario, así que cualquier otro criterio dejaría huecos).
+
+---
+
+## Cierre del run
+
+**Suite completa: 189 tests, 0 fallos** (`node --test tests/*.test.js`).
+
+### Qué queda listo para el conteo de mañana
+
+- **Antes de contar nada**: A1 (sin +8% contaminando la valuación) y A2 (el déficit de stock ya no se pierde silenciosamente) están hechas — el conteo de mañana parte de una valuación limpia.
+- **La pantalla para hacer el conteo existe y funciona**: Inventario → "Conteo físico" (B2). Verificado a mano en el navegador: cuenta parcial por tipo, motivo obligatorio en cada diferencia, total en pesos antes de confirmar, genera el ajuste trazado (usuario+timestamp) y el snapshot `tipo:'conteo'`.
+- **El modal de insumo ya no deja editar `cantidad` a mano** — cualquier corrección de mañana en adelante pasa por el conteo, con rastro.
+- **Preparaciones (masas, salsas) tienen rendimiento real** (B3) y valorización/producción de su propio stock (B4, parcial) — la varianza de mañana no va a leer evaporación normal como si fuera robo.
+- **D1/D2 (varianza, Actual vs Theoretical) ya están implementadas y probadas** — en cuanto exista un SEGUNDO snapshot de conteo (el de mañana es el primero), esos reportes van a poder calcular algo real. Con un solo conteo todavía no hay nada que comparar — eso es esperado, no un bug.
+
+### Qué falta
+
+- **B4, etapa 3 ("consumo en venta")**: BLOQUEADA — requiere decidir si `checkStockShortage`/`getConsumptionRolling` deben conocer el stock de preparaciones. Ver la pregunta al principio de este archivo.
+- **UI de Reportes para C1/C3/C4/C5** (food cost/paper cost, prime cost, break-even, menu engineering): el motor de cálculo está hecho y probado en `js/core.js`, pero no hay todavía una pantalla que los muestre — el encargo listaba estas tareas con alcance `js/core.js` y no especificaba diseño de UI.
+- Los dos archivos de auditoría (`AUDITORIA.md`, `AUDITORIA_COSTEO.md`) siguen sin commitear en el repo (esto es de antes de este run, no de esta tanda).
+
+**No se hizo merge a main.** La rama `auditoria/costeo` está lista para revisión — 20 commits desde que se creó, cada uno con su test.
