@@ -93,3 +93,27 @@ Se implementaron juntas porque P2.2 no puede funcionar con la forma vieja de `ge
 - Las 5 secciones quedaron en el orden de importancia operativa que pide el encargo: break-even diario (grande, con lo ya vendido hoy al lado) → prime cost (semáforo contra 65%, factor prestacional editable ahí mismo) → food/paper/COGS % en tres números separados → menu engineering (cuadrantes por categoría con la acción recomendada) → varianza (dos niveles) + AvT.
 - Decisión no especificada: el factor prestacional ahora es editable desde DOS lugares (Ajustes y la pestaña de Costeo) — `saveConfigFactorPrestacional` se generalizó para leer del input que disparó el evento y sincronizar el otro, en vez de hardcodear un solo id.
 - El break-even "de hoy" usa el `bepDiarioContable`/`bepDiarioCaja` del PERÍODO SELECCIONADO (no recalcula un período distinto solo para esta tarjeta) — es una tasa diaria promedio de ese período, no "el break-even de las próximas 24 horas". "Llevas vendido hoy" sí es siempre el día calendario de hoy, independiente del período seleccionado, porque comparar contra otro período no tendría sentido.
+
+---
+
+## Cierre del run
+
+**Suite completa: 228 tests en `tests/core.test.js` + 15 en `tests/sync.test.js`, 0 fallos** (`node --test tests/*.test.js`). Todas las 10 tareas del encargo quedaron `HECHA` — ninguna quedó bloqueada ni pendiente. Cero preguntas bloqueantes nuevas (la única de la Ronda 1 venía resuelta en el encargo).
+
+### Qué cambió respecto a lo que quedó de la Ronda 1
+
+- **B4 quedó cerrada.** La etapa 3 ("consumo en venta"), bloqueada al final de la Ronda 1, ya está implementada (P1.1/P1.2): la venta y la merma de producto ahora descuentan primero del stock de la preparación y solo el resto de materia prima, con consumo parcial y `faltante` en los dos niveles.
+- **`getVarianza` cambió de forma.** Ya no devuelve `{ suficiente, lineas, noContados }` en la raíz — ahora es `{ preparaciones: {...}, materiaPrima: {...} }`, cada uno con su propia guarda. Cualquier código (no hay ninguno fuera de los tests y `getActualVsTheoretical`, ya actualizado) que llamara a la función vieja esperando `.lineas` en la raíz se rompe a propósito.
+- **`rendimientoPct` de una preparación ya no se autoactualiza al producir.** Es un valor configurado, y lo medido en cada lote vive en `state.lotes[]` (`rendimientoObservado`), nunca sobreescribe la receta.
+- **El desglose alimento/empaque de una venta quedó congelado** (`item.costoAlimento`/`costoEmpaque`) — antes se recalculaba con la receta vigente cada vez que se consultaba un reporte.
+- **El conteo físico ahora cubre 4 buckets, no 3** (agregó preparaciones) y cada snapshot de conteo trae `bucketsContados` para saber qué se contó y qué no.
+- **`SCHEMA_VERSION` subió de 9 a 10** (P0.3) — ventas viejas quedan deliberadamente sin `costoAlimento`/`costoEmpaque` (no se inventan).
+- **Hay una pantalla nueva** (Dashboard → pestaña "Costeo") donde antes no había ninguna: break-even, prime cost, food/paper/COGS %, menu engineering, varianza y AvT.
+
+### Qué habría que rehacer si alguien ya usó el flujo de producción con el estado incoherente de P0.1
+
+**Nada — no hace falta rehacer nada.** `producirPreparacion` nunca estuvo expuesta en `index.html` en ningún momento (confirmado en P0.1 y otra vez al cerrar este run: `grep producirPreparacion index.html` sigue sin devolver ninguna llamada desde la UI). Es una función de `js/core.js` invocable solo por tests o por consola. Nadie pudo haber producido un lote real con el bug del doble descuento activo, porque no había ninguna manera de llegar a esa función desde la aplicación.
+
+Si en algún momento SE EXPONE la producción en la UI antes de que este fix llegue a producción (no debería pasar, porque este run ya lo corrigió antes de exponer nada), la señal de que el estado quedó corrupto sería: el stock de una preparación solo crece y nunca baja al vender, y la materia prima se descuenta dos veces por cada venta que use esa preparación. La corrección sería recontar físicamente esa preparación y su materia prima, y usar el conteo físico (B2/P0.2) para llevar `cantidad` a lo real — el mismo mecanismo que ya existe para cualquier otra discrepancia de inventario, no algo especial para este caso.
+
+**No se hizo merge a main.** La rama `auditoria/costeo` queda lista para revisión — 33 commits desde que se creó (23 de la Ronda 1, 10 de esta), cada uno con su test.
