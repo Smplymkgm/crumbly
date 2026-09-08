@@ -1276,6 +1276,91 @@
     return candidatos[0] || null;
   }
 
+  // ─── Conteo físico (B2) ─────────────────────────────────────────────
+  //
+  // Motivo de un AJUSTE de conteo — deliberadamente distinto de
+  // MERMA_MOTIVOS: una merma es una causa de pérdida ya conocida al
+  // momento de perderla; un ajuste de conteo es la explicación de una
+  // diferencia encontrada después, con otras causas típicas (incluida
+  // "merma no registrada" — la merma que nadie anotó a tiempo).
+  var AJUSTE_MOTIVOS = ['Merma no registrada', 'Error de porcionado', 'Error de recepción', 'Robo', 'Error de digitación', 'Otro'];
+
+  // Vista previa de un conteo antes de confirmarlo: por cada línea contada,
+  // la diferencia contra el teórico actual, valorizada al costo VIGENTE, y
+  // si esa línea va a exigir motivo al cerrar. No muta nada — el conteo
+  // puede guardarse parcial varias veces antes de cerrarse.
+  function previsualizarConteo(state, lineas) {
+    var out = (lineas || []).map(function (l) {
+      var list = getInsumoList(state, l.insumoTipo);
+      var insumo = list && list.find(function (x) { return x.id === l.insumoId; });
+      if (!insumo) return null;
+      var teorica = Number(insumo.cantidad) || 0;
+      var contada = Number(l.cantidadContada) || 0;
+      var diferencia = contada - teorica;
+      var costoVigente = Number(insumo.costo) || 0;
+      return {
+        insumoTipo: l.insumoTipo, insumoId: l.insumoId, nombre: insumo.nombre,
+        teorica: teorica, contada: contada, diferencia: diferencia,
+        costoVigente: costoVigente, valor: diferencia * costoVigente,
+        requiereMotivo: diferencia !== 0
+      };
+    }).filter(Boolean);
+    var totalDiferenciaValor = out.reduce(function (a, l) { return a + l.valor; }, 0);
+    return { lineas: out, totalDiferenciaValor: totalDiferenciaValor };
+  }
+
+  // Cierra un conteo: valida TODAS las líneas antes de tocar nada (una
+  // línea con diferencia y sin motivo hace fallar el cierre completo, sin
+  // aplicar las demás a medias), luego por cada línea con diferencia
+  // registra un ajuste trazado (mismo `state.ajustes[]` de la migración
+  // v9/A1) y deja `insumo.cantidad` en lo contado. Genera además el
+  // snapshot tipo 'conteo' con exactamente lo que se contó en este cierre.
+  //
+  // input: { usuarioEmail, fecha, nota,
+  //          lineas: [{ insumoTipo, insumoId, cantidadContada, motivo, observaciones }] }
+  function cerrarConteo(state, input) {
+    input = input || {};
+    var lineas = input.lineas || [];
+    var resueltas = lineas.map(function (l) {
+      var list = getInsumoList(state, l.insumoTipo);
+      var insumo = list && list.find(function (x) { return x.id === l.insumoId; });
+      if (!insumo) throw new Error('Insumo no encontrado en el conteo');
+      var teorica = Number(insumo.cantidad) || 0;
+      var contada = Number(l.cantidadContada) || 0;
+      var diferencia = contada - teorica;
+      if (diferencia !== 0 && !(l.motivo && String(l.motivo).trim())) {
+        throw new Error('Falta el motivo del ajuste en "' + insumo.nombre + '" (diferencia de ' + diferencia + ')');
+      }
+      return { insumo: insumo, insumoTipo: l.insumoTipo, insumoId: l.insumoId, teorica: teorica, contada: contada, diferencia: diferencia, motivo: l.motivo, observaciones: l.observaciones || '' };
+    });
+
+    var fecha = input.fecha || new Date().toISOString();
+    var ajustesCreados = [];
+    resueltas.forEach(function (r) {
+      if (r.diferencia === 0) return;
+      var costoVigente = Number(r.insumo.costo) || 0;
+      var ajuste = {
+        id: genId(), fecha: fecha, tipo: 'conteo',
+        insumoTipo: r.insumoTipo, insumoId: r.insumoId,
+        cantidadAjuste: r.diferencia, costoAntes: r.insumo.costo, costoDespues: r.insumo.costo,
+        valorAjuste: r.diferencia * costoVigente,
+        motivo: r.motivo, observaciones: r.observaciones,
+        usuarioEmail: input.usuarioEmail || '', nota: input.nota || ''
+      };
+      state.ajustes.push(ajuste);
+      ajustesCreados.push(ajuste);
+      r.insumo.cantidad = r.contada;
+    });
+
+    var snapshot = crearSnapshot(state, {
+      tipo: 'conteo', fecha: fecha, usuarioEmail: input.usuarioEmail, nota: input.nota,
+      conteo: resueltas.map(function (r) { return { insumoTipo: r.insumoTipo, insumoId: r.insumoId, cantidad: r.contada }; })
+    });
+
+    var totalDiferenciaValor = ajustesCreados.reduce(function (a, j) { return a + j.valorAjuste; }, 0);
+    return { snapshot: snapshot, ajustes: ajustesCreados, totalDiferenciaValor: totalDiferenciaValor };
+  }
+
   // ─── Rango de fechas personalizable (Reportes) ─────────────
   // `new Date('YYYY-MM-DD')` se interpreta como medianoche UTC — en
   // cualquier huso horario detrás de UTC (Colombia, UTC-5) eso corre la
@@ -1470,6 +1555,9 @@
     getValorInventario: getValorInventario,
     crearSnapshot: crearSnapshot,
     getSnapshotMasReciente: getSnapshotMasReciente,
+    AJUSTE_MOTIVOS: AJUSTE_MOTIVOS,
+    previsualizarConteo: previsualizarConteo,
+    cerrarConteo: cerrarConteo,
     getDepreciacionMensualTotal: getDepreciacionMensualTotal,
     getDepreciacionPeriodo: getDepreciacionPeriodo,
     agruparGastosPorCategoria: agruparGastosPorCategoria,

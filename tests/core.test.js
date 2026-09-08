@@ -1475,6 +1475,64 @@ test('getSnapshotMasReciente filtra por tipo y por fecha de corte', () => {
   assert.strictEqual(masRecienteConteo.tipo, 'conteo');
 });
 
+console.log('\n== B2: cierre de conteo físico ==');
+
+test('previsualizarConteo calcula diferencia y valor al costo vigente, sin mutar nada', () => {
+  const s = stateConMermas(); // m1: 2900 lo cambiamos abajo a mano, costo 10
+  s.materia[0].cantidad = 2900;
+  const preview = C.previsualizarConteo(s, [{ insumoTipo: 'materia', insumoId: 'm1', cantidadContada: 2100 }]);
+  assert.strictEqual(preview.lineas[0].diferencia, -800);
+  assert.strictEqual(preview.lineas[0].valor, -8000);
+  assert.strictEqual(preview.lineas[0].requiereMotivo, true);
+  assert.strictEqual(preview.totalDiferenciaValor, -8000);
+  assert.strictEqual(s.materia[0].cantidad, 2900); // no mutó
+});
+
+test('cerrarConteo: sistema dice 2900g, se cuenta 2100g -> ajuste de -800g valorizado, motivo y usuario estampados, stock en 2100', () => {
+  const s = stateConMermas();
+  s.materia[0].cantidad = 2900;
+  s.materia[0].costo = 10;
+  const r = C.cerrarConteo(s, {
+    usuarioEmail: 'mike@crumbly.co', fecha: '2026-09-08T07:00:00',
+    lineas: [{ insumoTipo: 'materia', insumoId: 'm1', cantidadContada: 2100, motivo: 'Merma no registrada' }]
+  });
+  assert.strictEqual(s.materia[0].cantidad, 2100);
+  assert.strictEqual(r.ajustes.length, 1);
+  assert.strictEqual(r.ajustes[0].cantidadAjuste, -800);
+  assert.strictEqual(r.ajustes[0].valorAjuste, -8000);
+  assert.strictEqual(r.ajustes[0].usuarioEmail, 'mike@crumbly.co');
+  assert.strictEqual(r.ajustes[0].motivo, 'Merma no registrada');
+  assert.strictEqual(s.ajustes.length, 1);
+  assert.strictEqual(r.snapshot.tipo, 'conteo');
+  assert.strictEqual(r.totalDiferenciaValor, -8000);
+});
+
+test('cerrarConteo falla si una línea con diferencia no trae motivo, y no aplica NINGUNA línea (todo o nada)', () => {
+  const s = stateConMermas();
+  s.materia[0].cantidad = 1000;
+  s.toppings[0].cantidad = 30;
+  assert.throws(() => {
+    C.cerrarConteo(s, {
+      usuarioEmail: 'mike@crumbly.co',
+      lineas: [
+        { insumoTipo: 'materia', insumoId: 'm1', cantidadContada: 900, motivo: 'Error de porcionado' },
+        { insumoTipo: 'toppings', insumoId: 't1', cantidadContada: 20 } // diferencia sin motivo
+      ]
+    });
+  }, /motivo/);
+  // ninguna línea se aplicó, ni siquiera la que sí traía motivo
+  assert.strictEqual(s.materia[0].cantidad, 1000);
+  assert.strictEqual(s.toppings[0].cantidad, 30);
+  assert.strictEqual(s.ajustes.length, 0);
+});
+
+test('cerrarConteo sin diferencia no exige motivo y no crea ajuste, pero sí genera el snapshot', () => {
+  const s = stateConMermas();
+  const r = C.cerrarConteo(s, { lineas: [{ insumoTipo: 'materia', insumoId: 'm1', cantidadContada: s.materia[0].cantidad }] });
+  assert.strictEqual(r.ajustes.length, 0);
+  assert.strictEqual(r.snapshot.tipo, 'conteo');
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);
