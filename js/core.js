@@ -2059,6 +2059,7 @@
         insumoTipo: li.insumoTipo, insumoId: li.insumoId,
         inicial: li.cantidad, compras: compras, final: lf.cantidad,
         consumoReal: consumoReal, mermaRegistrada: mermaRegistrada, consumoTeorico: teorico,
+        costoUnitario: lf.costoUnitario,
         varianzaCantidad: varianzaCantidad,
         varianzaValor: varianzaCantidad * lf.costoUnitario,
         varianzaPct: teorico !== 0 ? varianzaCantidad / teorico : null
@@ -2068,6 +2069,64 @@
     lineas.sort(function (a, b) { return b.varianzaValor - a.varianzaValor; });
 
     return { suficiente: true, snapInicialId: snapInicial.id, snapFinalId: snapFinal.id, lineas: lineas, noContados: noContados };
+  }
+
+  // D2: Actual vs Theoretical — food cost REAL % (con lo que de verdad
+  // salió del inventario, según D1) contra food cost TEÓRICO % (con lo
+  // que la receta dice que debió salir, según C1). Es aritmética pura
+  // sobre esos dos — depende de que D1 tenga snapshots de conteo
+  // suficientes; hereda su misma guarda (nunca inventa un número si no
+  // los hay).
+  function getActualVsTheoretical(state, inicioISO, finISO) {
+    var varianza = getVarianza(state, inicioISO, finISO);
+    if (!varianza.suficiente) return { suficiente: false, motivo: varianza.motivo };
+
+    var ventas = getVentasByRange(state.ventas, inicioISO, finISO);
+    var ingresos = ventas.reduce(function (a, v) { return a + v.total; }, 0);
+
+    // Alimento = materia + toppings (un topping ES comida, igual criterio
+    // que C1); empaque = empaques. Acá se puede clasificar por
+    // insumoTipo directo porque D1 ya trabaja a nivel de insumo crudo,
+    // sin necesidad de expandir preparaciones/recetas.
+    var costoAlimentoReal = varianza.lineas
+      .filter(function (l) { return l.insumoTipo === 'materia' || l.insumoTipo === 'toppings'; })
+      .reduce(function (a, l) { return a + l.consumoReal * l.costoUnitario; }, 0);
+
+    var desgloseTeorico = costosDesglosadosPeriodo(state, ventas);
+    var foodCostRealPct = ingresos > 0 ? costoAlimentoReal / ingresos : 0;
+    var foodCostTeoricoPct = desgloseTeorico.ingresos > 0 ? desgloseTeorico.costoAlimento / desgloseTeorico.ingresos : 0;
+
+    return {
+      suficiente: true,
+      ingresos: ingresos,
+      costoAlimentoReal: costoAlimentoReal,
+      costoAlimentoTeorico: desgloseTeorico.costoAlimento,
+      foodCostRealPct: foodCostRealPct,
+      foodCostTeoricoPct: foodCostTeoricoPct,
+      diferenciaPuntos: (foodCostRealPct - foodCostTeoricoPct) * 100,
+      diferenciaRatio: foodCostTeoricoPct !== 0 ? (foodCostRealPct - foodCostTeoricoPct) / foodCostTeoricoPct : null
+    };
+  }
+
+  // Serie histórica de Actual vs Theoretical: un punto por cada PAR
+  // CONSECUTIVO de snapshots de conteo — es la cadencia real de conteos
+  // físicos la que define los períodos comparables, no un calendario
+  // arbitrario (no tendría snapshots en los bordes). Los períodos sin
+  // datos suficientes (par con un 'sistema' de por medio) se incluyen
+  // igual, con `suficiente:false`, para que la serie no tenga huecos
+  // silenciosos.
+  function getActualVsTheoreticalHistorico(state) {
+    var snapshotsConteo = (state.snapshots || [])
+      .filter(function (sn) { return sn.tipo === 'conteo'; })
+      .sort(function (a, b) { return new Date(a.fecha) - new Date(b.fecha); });
+    var serie = [];
+    for (var i = 1; i < snapshotsConteo.length; i++) {
+      var inicio = snapshotsConteo[i - 1].fecha;
+      var fin = snapshotsConteo[i].fecha;
+      var punto = getActualVsTheoretical(state, inicio, fin);
+      serie.push(Object.assign({ inicio: inicio, fin: fin }, punto));
+    }
+    return serie;
   }
 
   // ─── Dependencias (P1-4: no romper recetas al borrar un insumo) ───
@@ -2197,6 +2256,8 @@
     getBreakEven: getBreakEven,
     getMenuEngineering: getMenuEngineering,
     getVarianza: getVarianza,
+    getActualVsTheoretical: getActualVsTheoretical,
+    getActualVsTheoreticalHistorico: getActualVsTheoreticalHistorico,
     MARGEN_VARIABILIDAD_PCT: MARGEN_VARIABILIDAD_PCT
   };
 });

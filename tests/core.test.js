@@ -2083,6 +2083,58 @@ test('D1: las líneas quedan ordenadas por varianza en pesos, descendente', () =
   assert.strictEqual(v.lineas[1].insumoId, 'a');
 });
 
+console.log('\n== D2: Actual vs Theoretical (food cost real % vs teórico %) ==');
+
+function stateAvT() {
+  return C.migrateState({
+    materia: [{ id: 'm1', nombre: 'Nutella', cantidad: 3000, costo: 10, minimo: 0 }],
+    empaques: [{ id: 'caja', nombre: 'Caja', cantidad: 1000, costo: 5, minimo: 0 }],
+    productos: [{ id: 'p1', nombre: 'Waffle', precio: 2000, componentes: [{ tipo: 'materia', refId: 'm1', gramos: 100 }], empaquesUsados: [{ empaqueId: 'caja', cantidad: 1 }], empaqueManual: 0 }]
+  });
+}
+
+test('getActualVsTheoretical: real > teórico cuando hay varianza (pérdida no explicada) — diferencia en puntos y en ratio', () => {
+  const s = stateAvT();
+  const inicioISO = '2026-09-01T00:00:00', finISO = '2026-09-08T00:00:00';
+  C.crearSnapshot(s, { tipo: 'conteo', fecha: inicioISO, conteo: [{ insumoTipo: 'materia', insumoId: 'm1', cantidad: 3000 }] });
+  // 15 unidades × 2000 = 30000 de ingresos ; teórico: 1500g de nutella ($10/g)=$15000, foodCostTeorico=15000/30000=50%
+  C.applyVenta(s, [{ productoId: 'p1', qty: 15, toppings: [] }], [], { fecha: '2026-09-04T00:00:00' });
+  // conteo final: solo quedan 1300g -> consumoReal = 3000-1300 = 1700g ($17000), foodCostReal = 17000/30000 ≈ 56.7%
+  C.crearSnapshot(s, { tipo: 'conteo', fecha: finISO, conteo: [{ insumoTipo: 'materia', insumoId: 'm1', cantidad: 1300 }] });
+
+  const avt = C.getActualVsTheoretical(s, inicioISO, finISO);
+  assert.strictEqual(avt.suficiente, true);
+  assert.ok(Math.abs(avt.foodCostTeoricoPct - 0.5) < 0.0001);
+  assert.ok(Math.abs(avt.foodCostRealPct - (17000 / 30000)) < 0.0001);
+  assert.ok(avt.diferenciaPuntos > 0); // real por encima del teórico: hay pérdida sin explicar
+  assert.ok(Math.abs(avt.diferenciaPuntos - (avt.foodCostRealPct - avt.foodCostTeoricoPct) * 100) < 0.0001);
+  assert.ok(Math.abs(avt.diferenciaRatio - (avt.foodCostRealPct - avt.foodCostTeoricoPct) / avt.foodCostTeoricoPct) < 0.0001);
+});
+
+test('getActualVsTheoretical hereda la guarda de D1: sin snapshots de conteo suficientes, no calcula nada', () => {
+  const s = stateAvT();
+  const avt = C.getActualVsTheoretical(s, '2026-09-01T00:00:00', '2026-09-08T00:00:00');
+  assert.strictEqual(avt.suficiente, false);
+  assert.strictEqual(avt.foodCostRealPct, undefined);
+});
+
+test('getActualVsTheoreticalHistorico arma un punto por cada par consecutivo de snapshots de conteo', () => {
+  const s = stateAvT();
+  C.crearSnapshot(s, { tipo: 'conteo', fecha: '2026-08-01T00:00:00', conteo: [{ insumoTipo: 'materia', insumoId: 'm1', cantidad: 3000 }] });
+  C.applyVenta(s, [{ productoId: 'p1', qty: 5, toppings: [] }], [], { fecha: '2026-08-04T00:00:00' });
+  C.crearSnapshot(s, { tipo: 'conteo', fecha: '2026-08-08T00:00:00', conteo: [{ insumoTipo: 'materia', insumoId: 'm1', cantidad: 2500 }] });
+  C.applyVenta(s, [{ productoId: 'p1', qty: 5, toppings: [] }], [], { fecha: '2026-08-10T00:00:00' });
+  C.crearSnapshot(s, { tipo: 'conteo', fecha: '2026-08-15T00:00:00', conteo: [{ insumoTipo: 'materia', insumoId: 'm1', cantidad: 2000 }] });
+
+  const serie = C.getActualVsTheoreticalHistorico(s);
+  assert.strictEqual(serie.length, 2); // 3 snapshots -> 2 pares consecutivos
+  assert.strictEqual(serie[0].inicio, '2026-08-01T00:00:00');
+  assert.strictEqual(serie[0].fin, '2026-08-08T00:00:00');
+  assert.strictEqual(serie[1].inicio, '2026-08-08T00:00:00');
+  assert.strictEqual(serie[1].fin, '2026-08-15T00:00:00');
+  serie.forEach(p => assert.strictEqual(p.suficiente, true));
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);
