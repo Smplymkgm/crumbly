@@ -1667,14 +1667,16 @@ test('producirPreparacion: lote de 8x descuenta las materias primas expandidas y
   assert.strictEqual(s.materia[1].cantidad, 100000 - 3200); // agua: 400*8
   assert.strictEqual(s.preparaciones[0].cantidad, 8000);
   assert.strictEqual(r.gramosTeoricos, 8000);
-  assert.strictEqual(s.preparaciones[0].rendimientoPct, 100); // obtenidos == teóricos
+  assert.strictEqual(r.rendimientoObservado, 100); // obtenidos == teóricos, medido en ESTE lote
 });
 
-test('producirPreparacion actualiza rendimientoPct con el dato medido cuando hay merma de cocción', () => {
+test('P1.3: producirPreparacion ya NO sobreescribe rendimientoPct — el dato medido queda en el lote, no en la receta', () => {
   const s = statePrepWIP();
-  C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 1, gramosObtenidos: 850 });
+  s.preparaciones[0].rendimientoPct = 100; // valor configurado por quien administra la receta
+  const r = C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 1, gramosObtenidos: 850 }); // 85% medido en este lote
   assert.strictEqual(s.preparaciones[0].cantidad, 850);
-  assert.strictEqual(s.preparaciones[0].rendimientoPct, 85);
+  assert.strictEqual(s.preparaciones[0].rendimientoPct, 100, 'rendimientoPct no cambió solo por producir');
+  assert.strictEqual(r.rendimientoObservado, 85, 'lo medido queda registrado en el lote');
 });
 
 test('producirPreparacion no cambia el valor total del inventario — solo mueve de un bucket a otro', () => {
@@ -2401,6 +2403,83 @@ test('savePreparacion preserva `faltante` (no solo `cantidad`) al editar la rece
   s.preparaciones[0].faltante = 30;
   C.savePreparacion(s, { id: 'masa', nombre: 'Masa', modo: 'directo', componentes: [{ tipo: 'materia', refId: 'harina', gramos: 90 }] });
   assert.strictEqual(s.preparaciones[0].faltante, 30);
+});
+
+console.log('\n== P1.3 (Ronda 2): bitácora de lotes ==');
+
+function statePrepLotes() {
+  return C.migrateState({
+    materia: [{ id: 'harina', nombre: 'Harina', cantidad: 100000, costo: 5, minimo: 0 }],
+    preparaciones: [{ id: 'masa', nombre: 'Masa', modo: 'directo', componentes: [{ tipo: 'materia', refId: 'harina', gramos: 100 }] }]
+  });
+}
+
+test('CRITERIO: producir tres lotes deja tres registros con su consumo real', () => {
+  const s = statePrepLotes();
+  C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 1, gramosObtenidos: 100 });
+  C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 1, gramosObtenidos: 95 });
+  C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 1, gramosObtenidos: 90 });
+  assert.strictEqual(s.lotes.length, 3);
+  s.lotes.forEach(l => assert.strictEqual(l.consumoReal.materia.harina, 100));
+  assert.strictEqual(s.preparaciones[0].cantidad, 100 + 95 + 90);
+  assert.strictEqual(s.materia[0].cantidad, 100000 - 300);
+});
+
+test('CRITERIO: eliminar el lote del MEDIO revierte exactamente su consumo y su stock, sin tocar los otros dos', () => {
+  const s = statePrepLotes();
+  C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 1, gramosObtenidos: 100 });
+  const l2 = C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 1, gramosObtenidos: 95 });
+  C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 1, gramosObtenidos: 90 });
+
+  const harinaAntes = s.materia[0].cantidad;
+  const prepAntes = s.preparaciones[0].cantidad;
+  C.eliminarLote(s, l2.id);
+
+  assert.strictEqual(s.lotes.length, 2);
+  assert.deepStrictEqual(s.lotes.map(l => l.gramosObtenidos), [100, 90]); // los otros dos intactos
+  assert.strictEqual(s.materia[0].cantidad, harinaAntes + 100); // repuso exactamente los 100g que consumió el lote 2
+  assert.strictEqual(s.preparaciones[0].cantidad, prepAntes - 95); // le quita exactamente los 95g que había acreditado
+});
+
+test('CRITERIO: rendimientoPct no cambia solo por producir (ni por eliminar un lote)', () => {
+  const s = statePrepLotes();
+  s.preparaciones[0].rendimientoPct = 100;
+  const l = C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 1, gramosObtenidos: 70 });
+  assert.strictEqual(s.preparaciones[0].rendimientoPct, 100);
+  C.eliminarLote(s, l.id);
+  assert.strictEqual(s.preparaciones[0].rendimientoPct, 100);
+});
+
+test('eliminarLote revierte también el faltante que ese lote haya generado', () => {
+  const s = statePrepLotes();
+  s.materia[0].cantidad = 60; // solo alcanza para 60g de los 100g que pide el lote
+  const l = C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 1, gramosObtenidos: 60 });
+  assert.strictEqual(s.materia[0].cantidad, 0);
+  assert.strictEqual(s.materia[0].faltante, 40);
+  C.eliminarLote(s, l.id);
+  assert.strictEqual(s.materia[0].cantidad, 60);
+  assert.strictEqual(s.materia[0].faltante, 0);
+  assert.strictEqual(s.preparaciones[0].cantidad, 0);
+});
+
+test('getPromedioRendimientoObservado: promedio de los últimos 5 lotes, más reciente primero', () => {
+  const s = statePrepLotes();
+  const fechas = ['2026-01-01', '2026-01-02', '2026-01-03', '2026-01-04', '2026-01-05', '2026-01-06'];
+  const obtenidos = [100, 90, 80, 70, 60, 50]; // rendimientos: 100,90,80,70,60,50 %
+  fechas.forEach((f, i) => C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 1, gramosObtenidos: obtenidos[i], fecha: f + 'T00:00:00' }));
+  // los últimos 5 (excluye el primero, 100%): 90,80,70,60,50 -> promedio 70
+  const promedio = C.getPromedioRendimientoObservado(s, 'masa', 5);
+  assert.ok(Math.abs(promedio - 70) < 0.0001);
+});
+
+test('getPromedioRendimientoObservado devuelve null si no hay lotes de esa preparación', () => {
+  const s = statePrepLotes();
+  assert.strictEqual(C.getPromedioRendimientoObservado(s, 'masa'), null);
+});
+
+test('migrateState agrega lotes:[] a un estado viejo sin romper nada', () => {
+  const s = C.migrateState({ materia: [] });
+  assert.deepStrictEqual(s.lotes, []);
 });
 
 console.log('\n== Resumen ==');

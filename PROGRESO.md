@@ -17,7 +17,7 @@ Ninguna — la decisión de la ronda 1 (modo del motor de expansión) ya venía 
 | P0.3 · Congelar desglose alimento/empaque en la venta | ✅ HECHA |
 | P1.1 · Parámetro de modo en el motor de expansión | ✅ HECHA |
 | P1.2 · Consumo parcial y faltante de preparación | ✅ HECHA |
-| P1.3 · Bitácora de lotes | PENDIENTE |
+| P1.3 · Bitácora de lotes | ✅ HECHA |
 | P2.1 · Reestructurar getVarianza (dos niveles) | PENDIENTE |
 | P2.2 · Ajustar getActualVsTheoretical | PENDIENTE |
 | P3.1 · Umbral de menu engineering (ponderado) | PENDIENTE |
@@ -60,3 +60,11 @@ Ninguna — la decisión de la ronda 1 (modo del motor de expansión) ya venía 
 - **Verificado en el navegador con el flujo real de venta** (Registrar venta → buscar producto → agregar → confirmar), dos veces: (1) 1 unidad con 200g de stock de sobra → consume 100% de la preparación, la materia prima queda intacta; (2) 3 unidades más (300g pedidos, solo 100g de stock) → consume el resto de la preparación (100g) y expande el faltante (200g) a materia prima, sin errores de consola.
 - **Bug encontrado y corregido, no pedido explícitamente pero necesario**: `registrarMerma` nunca implementó el mecanismo de `faltante` de A2 para NINGÚN bucket (ni materia, ni empaques, ni toppings) — su `deduct` solo clampeaba a 0 sin registrar el déficit. Con el modo `'stock'` cascadeando preparación → materia en una merma de producto, dejar ese hueco habría reintroducido la misma clase de bug que A2 corrigió, ahora en mermas. Se agregó `faltanteGenerado` + su reversión simétrica en `eliminarMerma`, mismo patrón que `revertVenta`.
 - `checkStockShortage` incluye un chequeo de `preparaciones` por completitud/consistencia con los demás buckets, aunque por construcción (el motor nunca pide más de lo disponible en modo `'stock'`) nunca va a marcar un faltante ahí — documentado en el comentario.
+
+### P1.3 · Bitácora de lotes — HECHA
+
+- Archivos: `js/core.js` (`state.lotes[]` nuevo; `producirPreparacion` reescrita — ya NO sobreescribe `rendimientoPct`, registra `rendimientoObservado` en el lote, agrega `faltanteGenerado`; `eliminarLote` nueva; `getPromedioRendimientoObservado` nueva), `tests/core.test.js` (8 tests nuevos + 2 tests viejos de Ronda 1 corregidos porque afirmaban el comportamiento viejo — auto-sobreescritura de `rendimientoPct` — que este encargo pide cambiar explícitamente).
+- **Cambio de comportamiento pedido explícitamente, no una corrección de bug**: antes, un solo lote mal digitado (ej. una báscula mal calibrada un día) alteraba en silencio el costeo de TODOS los productos que usan esa preparación. Ahora `rendimientoPct` es un valor de la receta, configurado a propósito, y solo cambia si alguien lo cambia. `rendimientoObservado` (lo medido en cada lote específico) vive en `state.lotes[]`, nunca sobreescribe la receta.
+- `getPromedioRendimientoObservado(state, preparacionId, n=5)` es la mitad de datos de "la app muestra el promedio... como sugerencia, con un botón para adoptarlo" — la función existe y está probada. **La mitad de UI (el botón, la pantalla) no se construyó**: no hay ninguna pantalla de "Producir lote" en `index.html` — P0.1 ya confirmó que `producirPreparacion` no está expuesta en absoluto. Construir esa pantalla desde cero es un proyecto de UI no pedido explícitamente por ninguna tarea de esta ronda (P1.2 solo decía "rehabilitar el control SI existía" — no había ninguno que rehabilitar). Opción conservadora, documentada: se implementó el motor completo y probado; la pantalla queda pendiente de una ronda de UI dedicada a producción.
+- `eliminarLote` sigue el mismo patrón que `eliminarGasto`/`eliminarMerma`: repone `consumoReal` + `faltanteGenerado`, y resta exactamente `gramosObtenidos` del stock de la preparación (nunca negativo, mismo criterio de "no se puede reconstruir con certeza qué le corresponde a este lote si ya se consumió stock desde entonces").
+- No se agregó ninguna verificación de navegador para esta tarea — no toca `index.html` (no hay UI que verificar).

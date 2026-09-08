@@ -139,6 +139,7 @@
       ajustes: [],
       snapshots: [],
       conteoEnProgreso: {},
+      lotes: [], // P1.3: bitácora de producción de preparaciones
       clientes: [],
       // factorPrestacional (C3) va también acá, no solo en el bloque de
       // defaults de migrateState más abajo — ese bloque nunca corre para
@@ -240,6 +241,7 @@
       // dispositivos igual que todo lo demás — es justo lo que hace falta
       // para "contar materia prima hoy, toppings mañana".
       conteoEnProgreso: (raw.conteoEnProgreso && typeof raw.conteoEnProgreso === 'object') ? raw.conteoEnProgreso : {},
+      lotes: Array.isArray(raw.lotes) ? raw.lotes : [], // v9 -> v10 (P1.3)
       config: (raw.config && typeof raw.config === 'object') ? raw.config : {}
     };
     if (s.config.email === undefined) s.config.email = '';
@@ -557,6 +559,15 @@
   //
   // input: { preparacionId, multiplicador (tamaño del lote, en "veces la
   //          receta base"), gramosObtenidos (medido), fecha, usuarioEmail }
+  // P1.3: produce un lote y lo deja en `state.lotes[]` — bitácora
+  // auditable, mismo patrón que ventas/gastos/mermas (consumoReal +
+  // faltanteGenerado, revertible con eliminarLote). `rendimientoPct` de
+  // la preparación YA NO se sobreescribe acá: es un valor configurado
+  // por quien administra la receta, y solo cambia si esa persona lo
+  // cambia a propósito — antes, un solo lote mal digitado alteraba en
+  // silencio el costeo de todos los productos que usan la preparación.
+  // `rendimientoObservado` de ESTE lote queda igual en el registro, para
+  // que `getPromedioRendimientoObservado` pueda sugerirlo después.
   function producirPreparacion(state, input) {
     input = input || {};
     var prep = getPreparacion(state, input.preparacionId);
@@ -574,6 +585,7 @@
     var gramosTeoricos = resueltos.reduce(function (a, c) { return a + c.gramos; }, 0);
 
     var consumoReal = { materia: {}, empaques: {}, toppings: {} };
+    var faltanteGenerado = { materia: {}, empaques: {}, toppings: {} };
     function deduct(bucket, id, cant) {
       var m = (state[bucket] || []).find(function (x) { return x.id === id; });
       if (!m || cant <= 0) return;
@@ -582,26 +594,81 @@
       m.cantidad = Math.max(0, antes - cant);
       var real = antes - m.cantidad;
       consumoReal[bucket][id] = (consumoReal[bucket][id] || 0) + real;
-      if (deficit > 0) m.faltante = (Number(m.faltante) || 0) + deficit;
+      if (deficit > 0) {
+        m.faltante = (Number(m.faltante) || 0) + deficit;
+        faltanteGenerado[bucket][id] = (faltanteGenerado[bucket][id] || 0) + deficit;
+      }
     }
     aplicarComponentes(state, resueltos, 1, deduct);
 
-    var rendimientoMedido = gramosTeoricos > 0 ? (gramosObtenidos / gramosTeoricos) * 100 : (Number(prep.rendimientoPct) || 100);
+    var rendimientoObservado = gramosTeoricos > 0 ? (gramosObtenidos / gramosTeoricos) * 100 : null;
     prep.cantidad = (Number(prep.cantidad) || 0) + gramosObtenidos;
-    prep.rendimientoPct = rendimientoMedido;
 
-    return {
-      id: genId(), fecha: input.fecha || new Date().toISOString(),
-      preparacionId: prep.id, multiplicador: multiplicador,
+    // Costo del lote a los costos VIGENTES en este momento (mismo
+    // criterio que registrarGasto/registrarMerma: costo al momento de la
+    // transacción, no una cifra recalculada después).
+    var costoTotal = 0;
+    ['materia', 'empaques', 'toppings'].forEach(function (bucket) {
+      Object.keys(consumoReal[bucket]).forEach(function (iid) {
+        var item = (state[bucket] || []).find(function (x) { return x.id === iid; });
+        if (item) costoTotal += consumoReal[bucket][iid] * (Number(item.costo) || 0);
+      });
+    });
+
+    var lote = {
+      id: genId(), preparacionId: prep.id, fecha: input.fecha || new Date().toISOString(),
+      usuarioEmail: input.usuarioEmail || '', multiplicador: multiplicador,
       gramosTeoricos: gramosTeoricos, gramosObtenidos: gramosObtenidos,
-      rendimientoMedido: rendimientoMedido, consumoReal: consumoReal,
-      usuarioEmail: input.usuarioEmail || ''
+      rendimientoObservado: rendimientoObservado,
+      consumoReal: consumoReal, faltanteGenerado: faltanteGenerado,
+      costoTotal: costoTotal
     };
-    // ponytail: no se persiste una bitácora de producciones aparte (no
-    // hay forma de revertir un lote todavía) — el efecto que importa
-    // (stock de la preparación + rendimiento actualizado) ya queda en el
-    // estado. Agregar el log/revert cuando haga falta auditar lotes
-    // individuales o deshacer uno mal cargado.
+    state.lotes.push(lote);
+    return lote;
+  }
+
+  // Revierte un lote: repone el consumo real (materia/empaques/toppings),
+  // su faltante generado, y el stock que se le había acreditado a la
+  // preparación — mismo patrón que eliminarGasto/eliminarMerma. Nunca
+  // deja `cantidad` de la preparación negativa (si parte de ese stock ya
+  // se vendió/mermó desde entonces, no hay forma de saber con certeza
+  // cuánto le corresponde a este lote específico — mismo criterio que
+  // revertVenta con `faltante`).
+  function eliminarLote(state, id) {
+    var lote = (state.lotes || []).find(function (l) { return l.id === id; });
+    if (!lote) return;
+    function restore(bucket) {
+      Object.keys(lote.consumoReal[bucket] || {}).forEach(function (iid) {
+        var m = (state[bucket] || []).find(function (x) { return x.id === iid; });
+        if (m) m.cantidad += lote.consumoReal[bucket][iid];
+      });
+    }
+    function restoreFaltante(bucket) {
+      Object.keys((lote.faltanteGenerado || {})[bucket] || {}).forEach(function (iid) {
+        var m = (state[bucket] || []).find(function (x) { return x.id === iid; });
+        if (m) m.faltante = Math.max(0, (Number(m.faltante) || 0) - lote.faltanteGenerado[bucket][iid]);
+      });
+    }
+    ['materia', 'empaques', 'toppings'].forEach(restore);
+    ['materia', 'empaques', 'toppings'].forEach(restoreFaltante);
+    var prep = getPreparacion(state, lote.preparacionId);
+    if (prep) prep.cantidad = Math.max(0, (Number(prep.cantidad) || 0) - lote.gramosObtenidos);
+    state.lotes = state.lotes.filter(function (l) { return l.id !== id; });
+  }
+
+  // Promedio de rendimiento OBSERVADO (medido) de los últimos `n` lotes
+  // de una preparación — la sugerencia que la app puede mostrar con un
+  // botón para adoptarla; nunca se aplica solo. Ver nota en
+  // producirPreparacion sobre por qué rendimientoPct ya no se
+  // sobreescribe automáticamente.
+  function getPromedioRendimientoObservado(state, preparacionId, n) {
+    n = n || 5;
+    var lotes = (state.lotes || [])
+      .filter(function (l) { return l.preparacionId === preparacionId && l.rendimientoObservado !== null && l.rendimientoObservado !== undefined; })
+      .sort(function (a, b) { return new Date(b.fecha) - new Date(a.fecha); })
+      .slice(0, n);
+    if (!lotes.length) return null;
+    return lotes.reduce(function (a, l) { return a + l.rendimientoObservado; }, 0) / lotes.length;
   }
 
   function findProductosUsandoPreparacion(state, prepId) {
@@ -2361,6 +2428,8 @@
     wouldCreateCiclo: wouldCreateCiclo,
     savePreparacion: savePreparacion,
     producirPreparacion: producirPreparacion,
+    eliminarLote: eliminarLote,
+    getPromedioRendimientoObservado: getPromedioRendimientoObservado,
     findProductosUsandoPreparacion: findProductosUsandoPreparacion,
     findPreparacionesUsandoPreparacion: findPreparacionesUsandoPreparacion,
     findPreparacionesUsandoMateria: findPreparacionesUsandoMateria,
