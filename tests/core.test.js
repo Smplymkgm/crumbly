@@ -1489,6 +1489,82 @@ test('getSnapshotMasReciente filtra por tipo y por fecha de corte', () => {
   assert.strictEqual(masRecienteConteo.tipo, 'conteo');
 });
 
+console.log('\n== P0.2 (Ronda 2): las preparaciones (WIP) se pueden contar ==');
+
+function statePrepContable() {
+  return C.migrateState({
+    materia: [{ id: 'harina', nombre: 'Harina', cantidad: 1000, costo: 5, minimo: 0 }],
+    preparaciones: [{ id: 'masa', nombre: 'Masa', modo: 'directo', cantidad: 800, componentes: [{ tipo: 'materia', refId: 'harina', gramos: 100 }] }]
+  });
+}
+
+test('crearSnapshot tipo conteo incluye una preparación cuando se cuenta explícitamente', () => {
+  const s = statePrepContable();
+  const snap = C.crearSnapshot(s, { tipo: 'conteo', conteo: [{ insumoTipo: 'preparaciones', insumoId: 'masa', cantidad: 750 }] });
+  assert.strictEqual(snap.lineas.length, 1);
+  assert.strictEqual(snap.lineas[0].insumoTipo, 'preparaciones');
+  assert.strictEqual(snap.lineas[0].cantidad, 750);
+  assert.strictEqual(snap.lineas[0].costoUnitario, C.getPreparacionCosto(s, 'masa').costoPorGramo);
+});
+
+test('bucketsContados: un conteo que NO tocó preparaciones (habiendo preparaciones registradas) marca ese bucket como no contado, no asume cero', () => {
+  const s = statePrepContable();
+  const snap = C.crearSnapshot(s, { tipo: 'conteo', conteo: [] }); // solo entra vacío, como si esa pestaña nunca se abrió
+  assert.strictEqual(snap.bucketsContados.preparaciones, false);
+  assert.strictEqual(snap.bucketsContados.materia, false); // tampoco se tocó materia (hay 1 insumo registrado)
+});
+
+test('bucketsContados: un bucket SIN insumos registrados en el sistema es trivialmente "contado" (no hay nada que contar)', () => {
+  const s = C.migrateState({}); // sin preparaciones ni materia
+  const snap = C.crearSnapshot(s, { tipo: 'conteo', conteo: [] });
+  assert.strictEqual(snap.bucketsContados.preparaciones, true);
+  assert.strictEqual(snap.bucketsContados.materia, true);
+});
+
+test('bucketsContados: contar preparaciones marca ese bucket como contado', () => {
+  const s = statePrepContable();
+  const snap = C.crearSnapshot(s, { tipo: 'conteo', conteo: [{ insumoTipo: 'preparaciones', insumoId: 'masa', cantidad: 750 }] });
+  assert.strictEqual(snap.bucketsContados.preparaciones, true);
+});
+
+test('bucketsContados: un snapshot tipo sistema siempre marca los 4 buckets como contados', () => {
+  const s = statePrepContable();
+  const snap = C.crearSnapshot(s, { tipo: 'sistema' });
+  assert.deepStrictEqual(snap.bucketsContados, { materia: true, empaques: true, toppings: true, preparaciones: true });
+});
+
+test('noContados también funciona para preparaciones: una preparación no incluida en el conteo aparece listada aparte', () => {
+  const s = C.migrateState({
+    preparaciones: [
+      { id: 'masa', nombre: 'Masa', cantidad: 800, componentes: [] },
+      { id: 'salsa', nombre: 'Salsa', cantidad: 200, componentes: [] }
+    ]
+  });
+  const snap = C.crearSnapshot(s, { tipo: 'conteo', conteo: [{ insumoTipo: 'preparaciones', insumoId: 'masa', cantidad: 750 }] });
+  assert.strictEqual(snap.noContados.length, 1);
+  assert.strictEqual(snap.noContados[0].insumoId, 'salsa');
+});
+
+console.log('\n== P0.2 (Ronda 2): previsualizarConteo/cerrarConteo también soportan preparaciones ==');
+
+test('previsualizarConteo BUG encontrado y corregido: antes descartaba en silencio una línea de preparación (getInsumoList no la conocía)', () => {
+  const s = statePrepContable(); // masa: cantidad 800
+  const preview = C.previsualizarConteo(s, [{ insumoTipo: 'preparaciones', insumoId: 'masa', cantidadContada: 750 }]);
+  assert.strictEqual(preview.lineas.length, 1); // antes del fix esto era 0 (.filter(Boolean) se comía el null)
+  assert.strictEqual(preview.lineas[0].diferencia, -50);
+  assert.strictEqual(preview.lineas[0].costoVigente, C.getPreparacionCosto(s, 'masa').costoPorGramo);
+});
+
+test('cerrarConteo BUG encontrado y corregido: antes tiraba "Insumo no encontrado" para una línea de preparación', () => {
+  const s = statePrepContable();
+  const r = C.cerrarConteo(s, { lineas: [{ insumoTipo: 'preparaciones', insumoId: 'masa', cantidadContada: 750, motivo: 'Merma no registrada' }] });
+  assert.strictEqual(s.preparaciones[0].cantidad, 750);
+  assert.strictEqual(r.ajustes[0].insumoTipo, 'preparaciones');
+  assert.strictEqual(r.ajustes[0].cantidadAjuste, -50);
+  const costoEsperado = C.getPreparacionCosto(s, 'masa').costoPorGramo;
+  assert.strictEqual(r.ajustes[0].valorAjuste, -50 * costoEsperado);
+});
+
 console.log('\n== B2: cierre de conteo físico ==');
 
 test('previsualizarConteo calcula diferencia y valor al costo vigente, sin mutar nada', () => {

@@ -13,7 +13,7 @@ Ninguna — la decisión de la ronda 1 (modo del motor de expansión) ya venía 
 | Tarea | Estado |
 |---|---|
 | P0.1 · Diagnóstico del doble descuento | ✅ HECHA |
-| P0.2 · Preparaciones contables en el conteo | PENDIENTE |
+| P0.2 · Preparaciones contables en el conteo | ✅ HECHA |
 | P0.3 · Congelar desglose alimento/empaque en la venta | PENDIENTE |
 | P1.1 · Parámetro de modo en el motor de expansión | PENDIENTE |
 | P1.2 · Consumo parcial y faltante de preparación | PENDIENTE |
@@ -30,3 +30,11 @@ Ninguna — la decisión de la ronda 1 (modo del motor de expansión) ya venía 
 - **Bug confirmado con números reales** (script en el scratchpad de la sesión, no comiteado — se convertirá en el test de regresión de P1.2 una vez exista el fix, para no romper "suite completa verde" con un test committeado en rojo): producir 1 lote de una preparación (100g de harina → 100g de masa acreditados) y luego vender 1 unidad de un producto que usa esa preparación (100g) descuenta la harina **dos veces** (200g en vez de 100g), y el stock de la preparación **nunca baja** (se queda en 100g en vez de volver a 0). Confirma exactamente el diagnóstico del encargo.
 - `producirPreparacion` **NO está expuesta en `index.html`** — no hay ningún control de UI que la llame (`grep producirPreparacion index.html` → 0 resultados). No se agregó ningún aviso ni control deshabilitado porque no hay nada que deshabilitar. Nadie pudo haber usado el flujo de producción real todavía (ver sección de cierre del run).
 - El test de regresión real (con `test(...)` registrado en `tests/core.test.js`) se agrega en el commit de P1.2, ya en verde — así nunca hay un commit con la suite en rojo.
+
+### P0.2 · Preparaciones contables en el conteo — HECHA
+
+- Archivos: `js/core.js` (`SNAPSHOT_BUCKETS` ahora incluye `'preparaciones'`; `listaDeBucket`/`costoUnitarioDe` nuevas, resuelven los 4 buckets uniformemente; `crearSnapshot` gana `bucketsContados`), `index.html` (pestaña "Preparaciones (WIP)" en Conteo físico, unidad "g"), `tests/core.test.js` (9 tests nuevos).
+- **Dos bugs reales encontrados y corregidos de paso, no pedidos explícitamente pero necesarios para que P0.2 funcionara de punta a punta**: `previsualizarConteo` y `cerrarConteo` usaban `getInsumoList`, que nunca conoció `'preparaciones'` — una línea de preparación se descartaba en silencio en la vista previa (`.filter(Boolean)` se comía el `null`) y `cerrarConteo` directamente tiraba "Insumo no encontrado". Ambos se corrigieron para usar `listaDeBucket`/`costoUnitarioDe`, con test dedicado para cada uno.
+- `bucketsContados` (nuevo campo del snapshot): `{materia, empaques, toppings, preparaciones}`, cada uno `true` si ese bucket no tiene insumos registrados (trivialmente completo) o si al menos una línea de ese tipo apareció en este conteo; `false` si tiene insumos y ninguno se tocó. Es la señal que P2.1 va a usar para bloquear la varianza cuando falta el WIP — más barata y sin ambigüedad que inferirlo de `noContados` (que se queda mudo cuando un bucket tiene cero insumos).
+- **Verificado en el navegador** (servidor estático local, sesión simulada vía `crumbly-session` en localStorage — `restoreSession()` no valida contra el backend, así que no hace falta login real de Google para probar la UI): pestaña "Preparaciones (WIP)" aparece, cuenta 750g contra 800g teóricos, motivo obligatorio, cierre genera ajuste (−50g, −$250 al costo derivado) y el snapshot trae `bucketsContados.materia:false` (no se tocó) y `preparaciones:true` (sí se tocó) correctamente.
+- No se agregó visualización de `cantidad` (stock WIP) en la pantalla normal de Preparaciones (Inventario) — sigue sin mostrarse fuera del modal de conteo, mismo gap que dejó B4 en la ronda 1. Fuera de lo que pide P0.2 explícitamente.

@@ -1435,50 +1435,65 @@
     return { total: materia + empaques + toppings + preparaciones, materia: materia, empaques: empaques, toppings: toppings, preparaciones: preparaciones };
   }
 
-  var SNAPSHOT_BUCKETS = [['materia'], ['empaques'], ['toppings']];
+  var SNAPSHOT_BUCKETS = ['materia', 'empaques', 'toppings', 'preparaciones']; // P0.2: preparaciones ya es un bucket contable más
 
   // input: { tipo: 'sistema'|'conteo', fecha, usuarioEmail, nota,
   //          conteo: [{ insumoTipo, insumoId, cantidad }] }  // solo 'conteo'
+  // P0.2 (Ronda 2): el conteo físico también debe poder cubrir el WIP de
+  // preparaciones — sin eso, la masa/salsas que están en la nevera el día
+  // del conteo quedan fuera del snapshot para siempre y
+  // COGS = inicial + compras − final las trata como consumidas, un hueco
+  // que no se puede rellenar después. `listaDeBucket`/`costoUnitarioDe`
+  // resuelven los 4 buckets contables de forma uniforme (preparaciones no
+  // tiene campo `costo` propio — se deriva con getPreparacionCosto, igual
+  // que ya hacía el snapshot de sistema).
+  function listaDeBucket(state, tipo) {
+    return tipo === 'preparaciones' ? state.preparaciones : getInsumoList(state, tipo);
+  }
+  function costoUnitarioDe(state, tipo, item) {
+    return tipo === 'preparaciones' ? getPreparacionCosto(state, item.id).costoPorGramo : (Number(item.costo) || 0);
+  }
+
   function crearSnapshot(state, input) {
     input = input || {};
     var tipo = input.tipo === 'conteo' ? 'conteo' : 'sistema';
     var lineas = [];
     var noContados = [];
+    var bucketsContados = {};
 
     if (tipo === 'sistema') {
       SNAPSHOT_BUCKETS.forEach(function (b) {
-        (state[b[0]] || []).forEach(function (item) {
+        (listaDeBucket(state, b) || []).forEach(function (item) {
           var cantidad = Number(item.cantidad) || 0;
-          var costoUnitario = Number(item.costo) || 0;
-          lineas.push({ insumoTipo: b[0], insumoId: item.id, cantidad: cantidad, costoUnitario: costoUnitario, valor: cantidad * costoUnitario });
+          var costoUnitario = costoUnitarioDe(state, b, item);
+          lineas.push({ insumoTipo: b, insumoId: item.id, cantidad: cantidad, costoUnitario: costoUnitario, valor: cantidad * costoUnitario });
         });
-      });
-      // B4 (parcial): el WIP de preparaciones también se congela en el
-      // snapshot de sistema, con su costo/gramo derivado (no tiene campo
-      // `costo` propio). Todavía no es contable a mano en el flujo de
-      // conteo físico (B2) — eso queda para cuando exista una UI de
-      // conteo de preparaciones — así que no entra en SNAPSHOT_BUCKETS ni
-      // en `noContados`.
-      (state.preparaciones || []).forEach(function (prep) {
-        var cantidad = Number(prep.cantidad) || 0;
-        var costoUnitario = getPreparacionCosto(state, prep.id).costoPorGramo;
-        lineas.push({ insumoTipo: 'preparaciones', insumoId: prep.id, cantidad: cantidad, costoUnitario: costoUnitario, valor: cantidad * costoUnitario });
+        bucketsContados[b] = true; // 'sistema' toma TODO lo que hay, siempre "completo" por definición
       });
     } else {
       var contadosSet = {};
+      var bucketsConAlgunaLinea = {};
       (input.conteo || []).forEach(function (c) {
-        var list = getInsumoList(state, c.insumoTipo);
-        var item = list && list.find(function (x) { return x.id === c.insumoId; });
+        var lista = listaDeBucket(state, c.insumoTipo);
+        var item = lista && lista.find(function (x) { return x.id === c.insumoId; });
         if (!item) return;
         var cantidad = Number(c.cantidad) || 0;
-        var costoUnitario = Number(item.costo) || 0;
+        var costoUnitario = costoUnitarioDe(state, c.insumoTipo, item);
         lineas.push({ insumoTipo: c.insumoTipo, insumoId: c.insumoId, cantidad: cantidad, costoUnitario: costoUnitario, valor: cantidad * costoUnitario });
         contadosSet[c.insumoTipo + ':' + c.insumoId] = true;
+        bucketsConAlgunaLinea[c.insumoTipo] = true;
       });
       SNAPSHOT_BUCKETS.forEach(function (b) {
-        (state[b[0]] || []).forEach(function (item) {
-          if (!contadosSet[b[0] + ':' + item.id]) noContados.push({ insumoTipo: b[0], insumoId: item.id });
+        var lista = listaDeBucket(state, b) || [];
+        lista.forEach(function (item) {
+          if (!contadosSet[b + ':' + item.id]) noContados.push({ insumoTipo: b, insumoId: item.id });
         });
+        // Bucket sin ningún insumo registrado en el sistema: no hay nada
+        // que contar, trivialmente completo. Bucket CON insumos pero
+        // ninguno tocado en este conteo: el bucket entero se marca sin
+        // contar — nunca se asume cero ni "igual al teórico" (P2.1 lo usa
+        // para bloquear la varianza cuando falta el WIP).
+        bucketsContados[b] = lista.length === 0 || !!bucketsConAlgunaLinea[b];
       });
     }
 
@@ -1491,6 +1506,7 @@
       nota: input.nota || '',
       lineas: lineas,
       noContados: noContados,
+      bucketsContados: bucketsContados,
       valorTotal: valorTotal
     };
     state.snapshots.push(snap);
@@ -1524,13 +1540,18 @@
   // puede guardarse parcial varias veces antes de cerrarse.
   function previsualizarConteo(state, lineas) {
     var out = (lineas || []).map(function (l) {
-      var list = getInsumoList(state, l.insumoTipo);
-      var insumo = list && list.find(function (x) { return x.id === l.insumoId; });
+      // P0.2: listaDeBucket/costoUnitarioDe (definidas junto a
+      // crearSnapshot) también resuelven 'preparaciones' — antes esto
+      // usaba getInsumoList, que no las conoce, así que una línea de
+      // preparación se descartaba en silencio (.filter(Boolean) más
+      // abajo se comía el null sin avisar).
+      var lista = listaDeBucket(state, l.insumoTipo);
+      var insumo = lista && lista.find(function (x) { return x.id === l.insumoId; });
       if (!insumo) return null;
       var teorica = Number(insumo.cantidad) || 0;
       var contada = Number(l.cantidadContada) || 0;
       var diferencia = contada - teorica;
-      var costoVigente = Number(insumo.costo) || 0;
+      var costoVigente = costoUnitarioDe(state, l.insumoTipo, insumo);
       return {
         insumoTipo: l.insumoTipo, insumoId: l.insumoId, nombre: insumo.nombre,
         teorica: teorica, contada: contada, diferencia: diferencia,
@@ -1555,8 +1576,8 @@
     input = input || {};
     var lineas = input.lineas || [];
     var resueltas = lineas.map(function (l) {
-      var list = getInsumoList(state, l.insumoTipo);
-      var insumo = list && list.find(function (x) { return x.id === l.insumoId; });
+      var lista = listaDeBucket(state, l.insumoTipo); // P0.2: incluye 'preparaciones'
+      var insumo = lista && lista.find(function (x) { return x.id === l.insumoId; });
       if (!insumo) throw new Error('Insumo no encontrado en el conteo');
       var teorica = Number(insumo.cantidad) || 0;
       var contada = Number(l.cantidadContada) || 0;
@@ -1571,11 +1592,13 @@
     var ajustesCreados = [];
     resueltas.forEach(function (r) {
       if (r.diferencia === 0) return;
-      var costoVigente = Number(r.insumo.costo) || 0;
+      // Una preparación no tiene `.costo` propio — se deriva igual que
+      // en crearSnapshot/previsualizarConteo.
+      var costoVigente = costoUnitarioDe(state, r.insumoTipo, r.insumo);
       var ajuste = {
         id: genId(), fecha: fecha, tipo: 'conteo',
         insumoTipo: r.insumoTipo, insumoId: r.insumoId,
-        cantidadAjuste: r.diferencia, costoAntes: r.insumo.costo, costoDespues: r.insumo.costo,
+        cantidadAjuste: r.diferencia, costoAntes: costoVigente, costoDespues: costoVigente,
         valorAjuste: r.diferencia * costoVigente,
         motivo: r.motivo, observaciones: r.observaciones,
         usuarioEmail: input.usuarioEmail || '', nota: input.nota || ''
