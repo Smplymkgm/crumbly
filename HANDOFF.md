@@ -1,9 +1,8 @@
 # Crumbly — Handoff técnico y roadmap
 
-> **Última actualización:** 17 de agosto de 2026
-> **Archivo de la app:** `crumbly 2.html` (1394 líneas) → renombrar a `index.html`. Ver §1.
-> **Archivo de costeo:** `COSTOS WAFFLES.xlsx` (22 hojas). Analizado en §10.
-> **Decisión de esta sesión:** se arreglan todos los bugs conocidos y se migra el modelo de costeo del spreadsheet a la app, con backend en Google Sheets. Sin IVA, sin canales de venta por aplicación. Todas las decisiones de costeo tomadas — la migración está desbloqueada (§13).
+> **Última actualización:** 7 de septiembre de 2026
+> **Estado:** en producción, uso real. `index.html` + `js/core.js` + `js/sync.js` + `js/auth.js`, servido estático en GitHub Pages ([smplymkgm.github.io/crumbly](https://smplymkgm.github.io/crumbly/)), backend en Google Apps Script + Google Sheets (`backend/Code.gs`, runbook en `backend/SETUP.md`). Login solo con Google, sin token manual (§12.4, §14). El dueño ya está cargando su inventario y menú reales — ver la última entrada de §14 para los bugs que salieron en ese proceso.
+> **Para retomar rápido:** leé §0 (qué es esto hoy) y las últimas 2-3 entradas de §14 (qué se hizo y qué falta). El resto del documento es la historia completa, sección por sección, de cómo se llegó acá — sigue siendo correcto, no hace falta releerlo entero cada vez.
 
 ---
 
@@ -29,21 +28,13 @@
 
 ## §0. Resumen ejecutivo
 
-Crumbly es una app de una sola página para gestionar insumos, productos, ventas y reportes de un negocio de waffles y obleas. Corre en el navegador, guarda en `localStorage`, sin servidor.
+**Qué es Crumbly hoy:** el sistema de punto de venta real de un negocio de waffles y obleas — insumos, recetas con preparaciones intermedias, ventas, gastos, mermas, clientes, reportes (Dashboard, cierre de caja diario, PDF/CSV), y sincronización multi-dispositivo. Se entra con Google (solo correos autorizados a mano en una hoja de cálculo, §12), cada dispositivo con sesión propia. Es una sola página (`index.html`) + tres módulos JS sin DOM (`core.js` lógica de negocio, `sync.js` comunicación con el backend, `auth.js` sesión) — sin build step, sin framework, servida tal cual en GitHub Pages. El backend es Google Apps Script sobre una Google Sheet: la app manda el estado completo en cada sincronización, la hoja es la fuente de verdad compartida entre dispositivos (§12).
 
-En paralelo existe `COSTOS WAFFLES.xlsx`, donde vive el **verdadero modelo de costeo del negocio**: recetas con porcentaje panadero, sub-preparaciones reutilizables y recargo por costos fijos. La app no sabe nada de eso — su "costo por unidad" es una versión simplificada y sin costos fijos.
+**Cómo se llegó acá, en una frase:** empezó como una migración de un spreadsheet de costeo (`COSTOS WAFFLES.xlsx`) a esta app — recetas con porcentaje panadero, sub-preparaciones reutilizables, todos los errores de fórmula del Excel corregidos (§10-§11) — y de ahí creció hasta ser la herramienta real de operación diaria: primero local (`localStorage`), después con backend compartido (Fase E, §12), y por último con autenticación real de verdad en vez de un token que había que copiar a mano entre dispositivos (§12.4, y la última entrada de §14).
 
-**El objetivo de este plan es que el spreadsheet deje de ser necesario:** que todo lo que hoy calculas a mano en Excel lo calcule la app, con los datos vivos de tu inventario y tus ventas reales.
+**Dónde está la fricción ahora, con el negocio ya usándola en serio:** el dueño está cargando su inventario y menú reales, y de ahí salieron varios bugs de UX/datos genuinos — la mayoría, alguna forma de "cargué un número pensando en una cosa y la app esperaba otra" (precio del paquete completo en vez de por gramo, insumo contado por unidad cayendo en la categoría equivocada). El detalle completo, con cada uno diagnosticado y corregido, está en la última entrada de §14 y en `IMPLEMENTATION_STATUS.md`.
 
-**Hallazgos principales de esta sesión:**
-
-1. **El spreadsheet tiene errores de fórmula** (§11). Al menos uno te está haciendo subcostear un producto en **$484 por unidad**. Detalle y corrección en §11.
-2. **Falta un concepto entero en la app: las preparaciones intermedias** (masa, salsas, crumble, caramelo). El spreadsheet las calcula con porcentaje panadero y las reutiliza entre productos. Es el cambio arquitectónico más grande del plan (§10.2).
-3. **Los "costos fijos" del spreadsheet no son costos fijos**, son un recargo porcentual sobre el costo variable. Sirve para poner precios, no para saber si ganas plata. La app puede hacer las dos cosas y contrastarlas (§10.5).
-4. **La fórmula va invertida respecto al Excel.** En las hojas el margen es el parámetro y el precio se calcula; en la operación real el precio se decide y el margen es la consecuencia. La app usa el segundo sentido (§10.4).
-5. Los 19 bugs de la app (§6) quedan todos en alcance.
-
-**Fuera de alcance (decidido el 10 de agosto de 2026):** no se maneja IVA — el negocio no lo cobra sobre sus ventas. Tampoco se modelan canales de venta por aplicación (Rappi y similares): todavía no operan ahí. Toda la lógica de comisiones, IVA sobre comisión y precio diferenciado por canal que existe en el spreadsheet **no se migra**. Ver §11.10 si eso cambia más adelante.
+**Fuera de alcance, decisiones tomadas y vigentes:** no se maneja IVA — el negocio no lo cobra sobre sus ventas (10 ago 2026). Tampoco se modelan canales de venta por aplicación tipo Rappi — todavía no operan ahí (ver §11.10 si eso cambia). El historial completo de errores del spreadsheet original y cómo se corrigieron al migrar sigue en §10-§11, como referencia de por qué el costeo de la app se calcula como se calcula.
 
 ---
 
@@ -905,4 +896,21 @@ Verificado: 137/137 tests automatizados (112 core + 15 sync + 10 auth) y flujo m
 
 **Bug real #2 (encontrado al probar el login real, no reportado — surgió al revisar el mensaje de error): el backend no tenía permiso para verificar tokens de Google.** Con el botón ya visible, el login fallaba con `"no se pudo verificar el token de Google"`. Diagnóstico: `authGoogle_()` necesita `UrlFetchApp.fetch()` para consultar `oauth2.googleapis.com/tokeninfo` (scope `script.external_request`), pero la autorización que el usuario había dado antes solo cubría Sheets — la autorización de Apps Script se otorga por scopes efectivamente usados en la ejecución que la dispara, no por todo el archivo, así que `createUser()` (que solo toca Sheets) nunca pidió el permiso de red. Se revocó el acceso completo del script desde myaccount.google.com/connections y se re-autorizó de una sola vez con una función temporal que toca Sheets + Drive + `UrlFetchApp` juntos (`autorizarTodoDeUnaVez_ONETIME`, corrida por el usuario en su propio navegador — clic bloqueado en el navegador sandboxeado de Claude, mismo límite que el portapapeles y el popup de login, documentado antes en este archivo). **Verificado con `fetch` real desde el navegador contra el backend en producción:** un `idToken` falso ahora devuelve `{"success":false,"authorized":false,"message":"token de Google inválido"}` — antes del fix devolvía `"no se pudo verificar el token de Google"` (fallo de red, no de validación). Confirma que el backend ya puede completar el viaje de ida y vuelta a Google.
 
-**Pendiente:** que el usuario complete un login real de punta a punta tocando el botón en su propio navegador (paso que ningún automatismo de este entorno puede completar — todo lo demás ya está verificado). La función temporal `autorizarTodoDeUnaVez_ONETIME` quedó guardada en el editor de Apps Script (no en este repo, y no en la Versión 3 ya desplegada) — es inofensiva pero se puede borrar del editor cuando se confirme que el login ya no la necesita.
+**✅ Confirmado por el usuario el mismo día: el login funciona de punta a punta en su navegador real.** La función temporal `autorizarTodoDeUnaVez_ONETIME` quedó guardada en el editor de Apps Script (no en este repo, y no en la Versión 3 desplegada) — inofensiva, se puede borrar del editor cuando se quiera.
+
+### Estado real del proyecto (30 de agosto de 2026) — pulido del login ya funcionando
+
+Con el login confirmado funcionando, el usuario reportó dos fricciones de uso real (no bugs de backend): sin ninguna señal de "Conectando…" al tocar el botón (parecía trabado), y el ícono de usuario del header sin ninguna función (sin forma obvia de cerrar sesión salvo por el engranaje). Ambos arreglados. Además, a pedido explícito, se simplificó Ajustes: se quitaron los botones de sincronización manual ("la sincronización debe ser automática" — ya lo es, esos botones quedaban redundantes), la "Zona de riesgo" (resetear datos de prueba, herramienta de desarrollo) y "Importar menú Crumbly 2026" (herramienta de una sola vez) — todo esto porque la app ya está lista para lanzar de verdad, no para seguir en modo de prueba. Detalle pieza por pieza en `IMPLEMENTATION_STATUS.md` § "Pulido del login real".
+
+### Estado real del proyecto (7 de septiembre de 2026) — bugs reales importando datos de verdad
+
+El dueño empezó a cargar su inventario y menú reales — la primera vez que la app se usa con datos de producción, no de prueba — y fue reportando, con capturas, cada cosa que no cuadraba. Ronda larga: **siete arreglos reales**, cada uno diagnosticado desde una captura o un mensaje del usuario, no adivinado. Tabla completa (problema → causa real → fix) en `IMPLEMENTATION_STATUS.md` § "Bugs reales encontrados importando datos de verdad" — acá el resumen de los que más importan:
+
+- **La causa raíz de todos los márgenes absurdos** (`-1.354.057%`, después `-2.503.896%` en TODOS los productos): no era un bug de fórmula — la fórmula de costeo (§10, `getCostoProducto`) siempre estuvo bien. El costo por unidad de un insumo se estaba cargando con el **precio del paquete completo**, no por gramo — confirmado por el usuario con "Harina fuerza" a \$10.500/g (el precio real de un paquete de harina, no de un gramo). El fix real, a pedido explícito del usuario ("la calculadora debe automáticamente definir el valor x unidad"): el formulario de insumo ahora pide primero "Precio del paquete" + "Contenido del paquete" — "Costo por unidad" es un resultado calculado, no el primer campo donde alguien escribe un número sin saber qué unidad espera la app. Los insumos ya mal cargados antes de este fix hay que corregirlos a mano (el fix es solo hacia adelante) — un aviso nuevo en Inventario ("costo sospechoso", con umbral distinto para gramos/ml vs. kg/unidad) ayuda a encontrarlos.
+- **Fotos de producto** rotas de raíz: se guardaban como base64 completo dentro de `state` → `localStorage`, llenando la cuota con una sola foto de celular (la misma causa detrás del error "almacenamiento lleno"). Ahora se suben a Drive vía el backend, mismo mecanismo que los comprobantes, compartidas como "cualquiera con el link puede ver" (necesario para que se vean en cualquier dispositivo, no solo logueado como el dueño del script) — `producto.foto` guarda una URL de contenido directo, no la imagen.
+- **"Huevos" en Empaques en vez de Materia prima** (y varios más: Belga preparados, Croissants, Banano): `saveInsumo()` decidía la categoría a partir de la unidad de medida ("unidad" ⇒ empaque), no de qué es el insumo realmente. Ahora hay un selector explícito "Tipo de insumo".
+- **Filtros de Inventario y scroll horizontal en la Fórmula del producto**: arreglos de UX puros, sin dato de por medio — filtro real por Tipo (no solo categoría libre) y `flex-wrap` en las filas de fórmula.
+- **Decimales fuera en todos lados** ("no dejes decimales"): márgenes, costos, precios y cantidades — `Math.round()` consistente en display y al guardar.
+- **Nuevo, no un fix**: "Medio de pago" (Efectivo/Transferencia/Dividido) en Registrar gasto, mismo campo que ya usaba `registrarVenta`.
+
+Verificado en cada uno de los siete: `node --check`, la suite completa (140/140: 115 core + 15 sync + 10 auth), y prueba manual en navegador con sesión simulada antes de cada push — nunca se subió nada sin probarlo primero. **Pendiente del lado del usuario:** corregir a mano los insumos que ya quedaron mal cargados antes de estos fixes (con la calculadora y el selector nuevos, ya no debería volver a pasar).
