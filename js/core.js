@@ -78,9 +78,14 @@
     return fmt(start) + ' – ' + fmt(end);
   }
 
+  // I3 (auditoría): sin cota superior, una venta con fecha futura (typo
+  // al digitar, o reloj de un dispositivo mal puesto) aparecía en
+  // CUALQUIER período consultado, pasado o presente — nunca quedaba
+  // fuera. `ref` es "hasta cuándo" además de "desde cuándo".
   function getVentasByPeriod(ventas, period, ref) {
     var start = getDateStart(period, ref);
-    return (ventas || []).filter(function (v) { return new Date(v.fecha) >= start; });
+    var end = ref ? new Date(ref) : new Date();
+    return (ventas || []).filter(function (v) { var f = new Date(v.fecha); return f >= start && f <= end; });
   }
 
   // Ventana móvil de N días (por defecto 7) — reemplaza el sesgo de "semana
@@ -843,6 +848,7 @@
 
   function applyVenta(state, lineas, toppingsSueltos, opts) {
     opts = opts || {};
+    validarFechaNoFutura(opts.fecha); // I3
     const items = [];
     let total = 0, ganancia = 0;
     const consumoReal = { materia: {}, empaques: {}, toppings: {} };
@@ -1118,9 +1124,11 @@
     state.gastos = state.gastos.filter(function (g) { return g.id !== id; });
   }
 
+  // I3: misma cota superior que getVentasByPeriod, mismo motivo.
   function getGastosByPeriod(gastos, period, ref) {
     var start = getDateStart(period, ref);
-    return (gastos || []).filter(function (g) { return new Date(g.fecha) >= start; });
+    var end = ref ? new Date(ref) : new Date();
+    return (gastos || []).filter(function (g) { var f = new Date(g.fecha); return f >= start && f <= end; });
   }
 
   // ─── Mermas (pérdidas de inventario: vencido, dañado, quemado, error de
@@ -1164,6 +1172,7 @@
     var cantidad = Number(input.cantidad) || 0;
     if (cantidad <= 0) throw new Error('La cantidad de la merma debe ser mayor a 0');
     if (!input.motivo || !String(input.motivo).trim()) throw new Error('El motivo de la merma es obligatorio');
+    validarFechaNoFutura(input.fecha); // I3
     var origenTipo = input.origenTipo;
     var list = getMermaOrigenList(state, origenTipo);
     if (!list) throw new Error('Tipo de origen inválido');
@@ -1237,9 +1246,11 @@
     state.mermas = state.mermas.filter(function (m) { return m.id !== id; });
   }
 
+  // I3: misma cota superior que getVentasByPeriod, mismo motivo.
   function getMermasByPeriod(mermas, period, ref) {
     var start = getDateStart(period, ref);
-    return (mermas || []).filter(function (m) { return new Date(m.fecha) >= start; });
+    var end = ref ? new Date(ref) : new Date();
+    return (mermas || []).filter(function (m) { var f = new Date(m.fecha); return f >= start && f <= end; });
   }
   function getMermasByRange(mermas, startISO, endISO) {
     var b = rangeBounds(startISO, endISO);
@@ -1466,6 +1477,15 @@
   // cualquier huso horario detrás de UTC (Colombia, UTC-5) eso corre la
   // fecha un día hacia atrás en hora local. Se construye la fecha local
   // a mano para que el rango sea exactamente el que se ve en el selector.
+  // I3 (auditoría): una fecha futura en una venta o una merma (typo al
+  // digitar, o el reloj de un dispositivo mal puesto) antes no se
+  // rechazaba en ningún punto — solo se hacía visible cuando otro
+  // reporte sin cota superior (ver I3 arriba) la mostraba donde no
+  // debía. Se corta en el origen, no en cada reporte que la lee después.
+  function validarFechaNoFutura(fecha) {
+    if (!fecha) return;
+    if (new Date(fecha).getTime() > Date.now()) throw new Error('La fecha no puede ser futura');
+  }
   function parseLocalDate(dateStr) {
     var parts = String(dateStr).split('T')[0].split('-').map(Number);
     return new Date(parts[0], parts[1] - 1, parts[2]);
@@ -1502,13 +1522,18 @@
       }, 0);
   }
 
-  // Depreciación prorrateada al período de reportes seleccionado (día
-  // /semana/mes/año), a partir de la depreciación mensual total.
+  // Depreciación prorrateada al período de reportes seleccionado (día/
+  // semana/mes/año). I5 (auditoría): antes usaba factores FIJOS (mes=1,
+  // año=12) sin importar cuántos días habían transcurrido realmente del
+  // período — el día 1 de un mes mostraba la depreciación del mes
+  // COMPLETO, igual que el día 28. Reusa la misma proración por días
+  // transcurridos que ya usa correctamente getDepreciacionRango.
   function getDepreciacionPeriodo(state, period, ref) {
-    var mensual = getDepreciacionMensualTotal(state, ref);
-    var factor = { dia: 1 / 30, semana: 7 / 30, mes: 1, anio: 12 }[period];
-    if (factor === undefined) factor = 1;
-    return mensual * factor;
+    var end = ref ? new Date(ref) : new Date();
+    var start = getDateStart(period, ref);
+    var mensual = getDepreciacionMensualTotal(state, end);
+    var dias = Math.max(0, (end - start) / (1000 * 60 * 60 * 24));
+    return mensual * (dias / 30);
   }
   function getDepreciacionRango(state, startISO, endISO) {
     var b = rangeBounds(startISO, endISO); // ya resuelto a fecha local correcta

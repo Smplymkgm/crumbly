@@ -622,14 +622,18 @@ test('un activo ya totalmente depreciado deja de aportar depreciación', () => {
   assert.strictEqual(dep, 0);
 });
 
-test('getDepreciacionPeriodo prorratea la depreciación mensual al período', () => {
+test('I5: getDepreciacionPeriodo prorratea por días REALMENTE transcurridos, no un factor fijo (antes "mes" daba el mes completo desde el día 1)', () => {
   const s = stateConGastos();
-  C.registrarGasto(s, { tipo: 'capex', categoria: 'Equipos de cocina', monto: 300000, vidaUtilMeses: 1, fecha: '2026-01-01T00:00:00' });
-  // depreciación mensual total = 300000
-  const mes = C.getDepreciacionPeriodo(s, 'mes', new Date('2026-01-15T00:00:00'));
-  const anio = C.getDepreciacionPeriodo(s, 'anio', new Date('2026-01-15T00:00:00'));
-  assert.ok(Math.abs(mes - 300000) < 1);
-  assert.ok(Math.abs(anio - 300000 * 12) < 1);
+  C.registrarGasto(s, { tipo: 'capex', categoria: 'Equipos de cocina', monto: 900000, vidaUtilMeses: 36, fecha: '2026-01-01T00:00:00' });
+  // depreciación mensual total = 25000. Al 15 de junio: "mes" solo cuenta
+  // los 14 días transcurridos desde el 1 de junio (antes daba 25000 fijo,
+  // el mes completo, sin importar el día). "año" cuenta los 165 días
+  // transcurridos desde el 1 de enero (antes daba 25000*12 fijo).
+  const ref = new Date('2026-06-15T00:00:00');
+  const mes = C.getDepreciacionPeriodo(s, 'mes', ref);
+  const anio = C.getDepreciacionPeriodo(s, 'anio', ref);
+  assert.ok(Math.abs(mes - 25000 * (14 / 30)) < 1);
+  assert.ok(Math.abs(anio - 25000 * (165 / 30)) < 1);
 });
 
 console.log('\n== Cascada de utilidad (HANDOFF §9.1, §9.5) ==');
@@ -1629,6 +1633,45 @@ test("registrarMerma con origenTipo 'preparacion' descuenta el WIP 1:1 al costo 
   assert.strictEqual(merma.valorTotal, 24000);
   C.eliminarMerma(s, merma.id);
   assert.strictEqual(s.preparaciones[0].cantidad, 8000);
+});
+
+console.log('\n== C6/I3: los reportes por período tienen cota superior, no solo inferior ==');
+
+test('getVentasByPeriod excluye una venta con fecha futura al consultar un período pasado', () => {
+  const ventas = [
+    { fecha: '2026-01-10T10:00:00', total: 1000 },
+    { fecha: '2026-03-01T10:00:00', total: 2000 } // "futura" respecto al ref de abajo
+  ];
+  const enero = C.getVentasByPeriod(ventas, 'mes', '2026-01-15T00:00:00');
+  assert.strictEqual(enero.length, 1);
+  assert.strictEqual(enero[0].total, 1000);
+});
+
+test('getGastosByPeriod y getMermasByPeriod también respetan la cota superior de ref', () => {
+  const gastos = [{ fecha: '2026-01-10T10:00:00', monto: 500 }, { fecha: '2026-03-01T10:00:00', monto: 999 }];
+  const mermas = [{ fecha: '2026-01-10T10:00:00', valorTotal: 300 }, { fecha: '2026-03-01T10:00:00', valorTotal: 999 }];
+  assert.strictEqual(C.getGastosByPeriod(gastos, 'mes', '2026-01-15T00:00:00').length, 1);
+  assert.strictEqual(C.getMermasByPeriod(mermas, 'mes', '2026-01-15T00:00:00').length, 1);
+});
+
+console.log('\n== C6/I3: fecha futura se rechaza en el origen (venta y merma) ==');
+
+test('applyVenta rechaza una fecha futura en vez de dejarla contaminar los reportes', () => {
+  const s = stateBase();
+  const manana = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  assert.throws(() => C.applyVenta(s, [{ productoId: 'p1', qty: 1, toppings: [] }], [], { fecha: manana }), /futura/);
+});
+
+test('registrarMerma rechaza una fecha futura', () => {
+  const s = stateConMermas();
+  const manana = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  assert.throws(() => C.registrarMerma(s, { origenTipo: 'materia', origenId: 'm1', cantidad: 1, motivo: 'Vencido', fecha: manana }), /futura/);
+});
+
+test('applyVenta/registrarMerma con fecha de HOY (no futura) siguen funcionando normal', () => {
+  const s = stateBase();
+  const venta = C.applyVenta(s, [{ productoId: 'p1', qty: 1, toppings: [] }], [], { fecha: new Date().toISOString() });
+  assert.ok(venta);
 });
 
 console.log('\n== Resumen ==');

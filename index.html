@@ -1935,6 +1935,7 @@ function openSaleModal() {
   document.getElementById('venta-draft-qty').textContent = '1';
   document.getElementById('venta-buscar-sugerencias').style.display = 'none';
   document.getElementById('venta-fecha').value = todayLocalISO();
+  document.getElementById('venta-fecha').max = todayLocalISO(); // I3: no se puede elegir una fecha futura
   document.getElementById('venta-comprobante-label').textContent = 'Subir comprobante';
   document.getElementById('clientes-datalist').innerHTML = state.clientes.map(c => `<option value="${esc(c.nombre)}">`).join('');
   renderVentaMetodoPago();
@@ -2129,7 +2130,13 @@ function registrarVenta() {
     opts.fecha = new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds()).toISOString();
   }
 
-  const venta = CrumblyCore.applyVenta(state, lineas, toppingsSueltos, opts);
+  let venta;
+  try {
+    venta = CrumblyCore.applyVenta(state, lineas, toppingsSueltos, opts);
+  } catch (e) {
+    showToast(e.message);
+    return;
+  }
   if (!venta) { showToast('Error al registrar la venta'); return; }
   saveState();
   closeSaleModal();
@@ -2861,6 +2868,7 @@ const GASTO_TIPO_LABEL = { inventario: 'Inventario', operativo: 'Operativo', cap
 let mermaPeriodo = 'mes';
 function openModalMerma() {
   document.getElementById('merma-fecha').value = todayLocalISO();
+  document.getElementById('merma-fecha').max = todayLocalISO(); // I3: no se puede elegir una fecha futura
   document.getElementById('merma-motivo').innerHTML = CrumblyCore.MERMA_MOTIVOS.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('');
   document.getElementById('merma-origen-tipo').value = 'materia';
   document.getElementById('merma-cantidad').value = '';
