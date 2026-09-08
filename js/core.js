@@ -847,6 +847,19 @@
     var d = costosDesglosadosPeriodo(state, getVentasByPeriod(state.ventas, period, ref));
     return d.ingresos > 0 ? d.costoEmpaque / d.ingresos : 0;
   }
+  // P3.2: mismas dos, por rango exacto de fechas — la pantalla de
+  // reportes de costeo necesita un solo par [inicio,fin] para TODO
+  // (break-even, prime cost, varianza...), incluido un rango
+  // personalizado que getFoodCostPct/getPaperCostPct (basadas en
+  // period+ref) no pueden expresar.
+  function getFoodCostPctRango(state, startISO, endISO) {
+    var d = costosDesglosadosPeriodo(state, getVentasByRange(state.ventas, startISO, endISO));
+    return d.ingresos > 0 ? d.costoAlimento / d.ingresos : 0;
+  }
+  function getPaperCostPctRango(state, startISO, endISO) {
+    var d = costosDesglosadosPeriodo(state, getVentasByRange(state.ventas, startISO, endISO));
+    return d.ingresos > 0 ? d.costoEmpaque / d.ingresos : 0;
+  }
 
   // ─── Margen bruto por producto ─────────────────────────────
   // ponytail: sin recargo de costos fijos por producto (retirado a
@@ -2499,6 +2512,8 @@
     getCostoProductoDesglosado: getCostoProductoDesglosado,
     getFoodCostPct: getFoodCostPct,
     getPaperCostPct: getPaperCostPct,
+    getFoodCostPctRango: getFoodCostPctRango,
+    getPaperCostPctRango: getPaperCostPctRango,
     computeSaleConsumption: computeSaleConsumption,
     checkStockShortage: checkStockShortage,
     applyVenta: applyVenta,

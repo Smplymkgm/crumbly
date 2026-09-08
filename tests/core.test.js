@@ -2113,6 +2113,17 @@ test('C5: umbral de popularidad es (1/N) × 0,70 dentro de la categoría', () =>
   assert.ok(Math.abs(bebidas[0].umbralPopularidad - 0.35) < 0.0001); // (1/2)*0.7
 });
 
+console.log('\n== P3.2 (Ronda 2): getFoodCostPctRango/getPaperCostPctRango (rango exacto, para la pantalla de reportes) ==');
+
+test('getFoodCostPctRango/getPaperCostPctRango dan el mismo resultado que sus versiones por período, para el rango equivalente', () => {
+  const s = stateProductoConEmpaque();
+  C.applyVenta(s, [{ productoId: 'p1', qty: 1, toppings: [] }], [], { fecha: '2026-08-05T00:00:00' });
+  const porPeriodo = { food: C.getFoodCostPct(s, 'mes', '2026-08-15T00:00:00'), paper: C.getPaperCostPct(s, 'mes', '2026-08-15T00:00:00') };
+  const porRango = { food: C.getFoodCostPctRango(s, '2026-08-01', '2026-08-15'), paper: C.getPaperCostPctRango(s, '2026-08-01', '2026-08-15') };
+  assert.ok(Math.abs(porPeriodo.food - porRango.food) < 0.0001);
+  assert.ok(Math.abs(porPeriodo.paper - porRango.paper) < 0.0001);
+});
+
 console.log('\n== P3.1 (Ronda 2): umbral de rentabilidad = CM PONDERADO, no promedio simple ==');
 
 test('CRITERIO: cuatro productos en una categoría donde el promedio simple y el ponderado clasifican distinto — la clasificación correcta es la del ponderado', () => {

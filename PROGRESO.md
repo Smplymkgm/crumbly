@@ -21,7 +21,7 @@ Ninguna — la decisión de la ronda 1 (modo del motor de expansión) ya venía 
 | P2.1 · Reestructurar getVarianza (dos niveles) | ✅ HECHA |
 | P2.2 · Ajustar getActualVsTheoretical | ✅ HECHA |
 | P3.1 · Umbral de menu engineering (ponderado) | ✅ HECHA |
-| P3.2 · Pantalla de reportes de costeo | PENDIENTE |
+| P3.2 · Pantalla de reportes de costeo | ✅ HECHA |
 
 ## Detalle por tarea
 
@@ -85,3 +85,11 @@ Se implementaron juntas porque P2.2 no puede funcionar con la forma vieja de `ge
 - Archivo: `js/core.js` (`getMenuEngineering` reusa `getCMPonderado` de C4, calculado con los ítems de venta de CADA categoría — no reescribe la fórmula del promedio ponderado). El comentario que argumentaba (incorrectamente) que ponderar sesga el umbral se corrigió.
 - Test del criterio exacto del encargo: 4 productos en una categoría donde promedio simple (250) y ponderado (400) dan resultados distintos para un producto (CM=300, no popular) — bajo el simple sería "enigma", bajo el ponderado (correcto) es "perro". El test verifica explícitamente que la clasificación NO es la que daría el promedio simple.
 - Ningún test de la Ronda 1 se rompió por este cambio (coincidencia de los números elegidos en esos fixtures, no porque el fix no tuviera efecto — verificado con el test nuevo, que sí distingue).
+
+### P3.2 · Pantalla de reportes de costeo — HECHA
+
+- Archivos: `js/core.js` (`getFoodCostPctRango`/`getPaperCostPctRango` nuevas — versión por rango exacto de `getFoodCostPct`/`getPaperCostPct`, que solo aceptaban `period+ref` y no podían expresar un rango personalizado), `index.html` (pestañas "Resumen"/"Costeo" dentro de Dashboard, `renderReportesCosteo` + `renderVarianzaNivel`, `getReportRangeISO`, `saveConfigFactorPrestacional` ahora editable desde dos lugares), `tests/core.test.js` (1 test para las funciones nuevas de rango).
+- **Verificado en el navegador con datos reales** (servidor estático local, sesión simulada): produje un lote (90% de rendimiento), vendí, conté físico con una diferencia en cada nivel, y confirmé que las 5 secciones muestran los números correctos — incluida la regla de presentación sin excepciones: con un rango sin snapshots de conteo, Varianza y AvT muestran el MOTIVO exacto ("Falta un snapshot de conteo en el inicio o el fin del rango"), nunca un guion ni un cero. Probado también el cambio real de pestaña (clic) y el flujo real de rango personalizado (escribir en los `<input type="date">`, disparar `onReportRangeChange()`), sin errores de consola.
+- Las 5 secciones quedaron en el orden de importancia operativa que pide el encargo: break-even diario (grande, con lo ya vendido hoy al lado) → prime cost (semáforo contra 65%, factor prestacional editable ahí mismo) → food/paper/COGS % en tres números separados → menu engineering (cuadrantes por categoría con la acción recomendada) → varianza (dos niveles) + AvT.
+- Decisión no especificada: el factor prestacional ahora es editable desde DOS lugares (Ajustes y la pestaña de Costeo) — `saveConfigFactorPrestacional` se generalizó para leer del input que disparó el evento y sincronizar el otro, en vez de hardcodear un solo id.
+- El break-even "de hoy" usa el `bepDiarioContable`/`bepDiarioCaja` del PERÍODO SELECCIONADO (no recalcula un período distinto solo para esta tarjeta) — es una tasa diaria promedio de ese período, no "el break-even de las próximas 24 horas". "Llevas vendido hoy" sí es siempre el día calendario de hoy, independiente del período seleccionado, porque comparar contra otro período no tendría sentido.

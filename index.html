@@ -239,6 +239,13 @@ textarea.field{height:auto}
           <input type="date" id="r-rango-fin" onchange="onReportRangeChange()" class="field field-sm" style="width:auto">
         </div>
 
+        <!-- P3.2: pestañas Resumen/Costeo — comparten el mismo selector de período de arriba -->
+        <div class="pill-row" style="border-bottom:1px solid var(--line);padding-bottom:2px">
+          <button class="pill-btn active" id="dash-tab-btn-resumen" onclick="setDashTab('resumen')">Resumen</button>
+          <button class="pill-btn" id="dash-tab-btn-costeo" onclick="setDashTab('costeo')">Costeo</button>
+        </div>
+
+        <div id="dash-tab-resumen">
         <div class="kpi-grid">
           <div class="kpi-card">
             <div style="display:flex;align-items:center;justify-content:space-between">
@@ -335,6 +342,82 @@ textarea.field{height:auto}
             <div id="dash-productos-rentables"></div>
           </div>
         </div>
+        </div><!-- /dash-tab-resumen -->
+
+        <!-- P3.2: Costeo — C1/C3/C4/C5 tenían el motor hecho y probado
+             pero ninguna pantalla los mostraba. Orden = importancia
+             operativa: break-even primero (el número más accionable),
+             luego prime cost, luego los % de costo por separado, menu
+             engineering, y varianza/AvT al final (depende del conteo
+             físico). REGLA SIN EXCEPCIONES: ningún número se muestra
+             cuando la guarda dice suficiente:false — se muestra el
+             motivo, nunca un guion ni un cero (ver renderReportesCosteo). -->
+        <div id="dash-tab-costeo" style="display:none">
+
+          <div class="card" style="background:var(--ink);color:var(--white)">
+            <div class="item-sub" style="color:rgba(255,255,255,.6);margin-bottom:6px">Punto de equilibrio de hoy — lo más accionable del sistema</div>
+            <div id="costeo-bep-suficiente">
+              <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+                <div style="font-size:28px;font-weight:700" id="costeo-bep-diario">$0</div>
+                <div class="item-sub" style="color:rgba(255,255,255,.6)">hay que vender hoy para no perder plata</div>
+              </div>
+              <div style="display:flex;gap:18px;margin-top:10px;flex-wrap:wrap">
+                <div><span class="item-sub" style="color:rgba(255,255,255,.6)">Llevas vendido hoy: </span><strong id="costeo-bep-llevado">$0</strong></div>
+                <div><span class="item-sub" style="color:rgba(255,255,255,.6)">De caja (sin depreciación, con capex): </span><strong id="costeo-bep-caja">$0</strong></div>
+              </div>
+            </div>
+            <p class="item-sub" id="costeo-bep-motivo" style="color:rgba(255,255,255,.75);display:none"></p>
+          </div>
+
+          <div class="card">
+            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+              <div class="card-title">Prime cost</div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <span class="item-sub">Factor prestacional</span>
+                <input type="number" id="costeo-factor-prestacional" class="field field-sm" style="width:70px" min="1" step="0.01" oninput="saveConfigFactorPrestacional(this)">
+              </div>
+            </div>
+            <div id="costeo-primecost-suficiente">
+              <div style="display:flex;align-items:baseline;gap:10px;margin:8px 0">
+                <div style="font-size:26px;font-weight:700" id="costeo-primecost-pct">0%</div>
+                <span class="badge" id="costeo-primecost-semaforo">—</span>
+                <span class="item-sub">techo sano: 65%</span>
+              </div>
+              <div style="display:flex;gap:18px;flex-wrap:wrap">
+                <div><span class="item-sub">COGS: </span><strong id="costeo-primecost-cogs">$0</strong></div>
+                <div><span class="item-sub">Laboral cargado: </span><strong id="costeo-primecost-laboral">$0</strong></div>
+                <div><span class="item-sub">Nómina registrada: </span><strong id="costeo-primecost-nomina">$0</strong></div>
+              </div>
+            </div>
+            <p class="item-sub" id="costeo-primecost-motivo" style="display:none"></p>
+          </div>
+
+          <div class="card">
+            <div class="card-title" style="margin-bottom:10px">Costo de ventas — tres líneas, nunca sumadas en una</div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">
+              <div><div style="font-size:20px;font-weight:700" id="costeo-foodcost-pct">0%</div><div class="item-sub">Food cost %</div></div>
+              <div><div style="font-size:20px;font-weight:700" id="costeo-papercost-pct">0%</div><div class="item-sub">Paper cost %</div></div>
+              <div><div style="font-size:20px;font-weight:700" id="costeo-cogstotal-pct">0%</div><div class="item-sub">COGS total %</div></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title" style="margin-bottom:10px">Menu engineering</div>
+            <div id="costeo-menu-engineering"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title" style="margin-bottom:10px">Varianza — preparaciones (mostrador) y materia prima (cocina/recepción)</div>
+            <div id="costeo-varianza-preparaciones"></div>
+            <div id="costeo-varianza-materia" style="margin-top:14px"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-title" style="margin-bottom:10px">Actual vs Theoretical</div>
+            <div id="costeo-avt"></div>
+          </div>
+
+        </div><!-- /dash-tab-costeo -->
       </div>
 
       <!-- CAJA -->
@@ -985,7 +1068,7 @@ textarea.field{height:auto}
         <div class="card-title" style="margin-bottom:10px">Costeo</div>
         <div class="modal-field">
           <label class="field-label">Factor prestacional (nómina)</label>
-          <input type="number" id="cfg-factor-prestacional" class="field" min="1" step="0.01" oninput="saveConfigFactorPrestacional()">
+          <input type="number" id="cfg-factor-prestacional" class="field" min="1" step="0.01" oninput="saveConfigFactorPrestacional(this)">
         </div>
         <p class="item-sub">Multiplica la nómina registrada para el Prime Cost — cubre prestaciones sociales, seguridad social y parafiscales. No asumas 1,52 sin más: con salarios bajo 10 SMMLV puede aplicar la exoneración del art. 114-1 del ET (sin SENA, ICBF ni salud del empleador) y el factor real es menor. Confírmalo con tu contador.</p>
       </div>
@@ -2222,6 +2305,15 @@ function getReportGastos() { return hasCustomRange() ? CrumblyCore.getGastosByRa
 function getReportCascada() { return hasCustomRange() ? CrumblyCore.getCascadaUtilidadRango(state, reportRangeStart, reportRangeEnd) : CrumblyCore.getCascadaUtilidad(state, reportPeriod); }
 function getReportLabel() { return hasCustomRange() ? (reportRangeStart + ' a ' + reportRangeEnd) : getPeriodLabel(reportPeriod); }
 function getReportRangeLabel() { return hasCustomRange() ? (reportRangeStart + ' — ' + reportRangeEnd) : getPeriodRangeLabel(reportPeriod); }
+// P3.2: getBreakEven/getPrimeCost/getVarianza/getFoodCostPctRango... todas
+// piden un rango [inicio,fin] exacto (nunca period+ref) — un solo punto de
+// conversión, para que el tab de Costeo use SIEMPRE el mismo rango que ya
+// eligió la persona arriba (período estándar o personalizado).
+function getReportRangeISO() {
+  if (hasCustomRange()) return { inicio: reportRangeStart, fin: reportRangeEnd };
+  const inicio = CrumblyCore.getDateStart(reportPeriod).toISOString();
+  return { inicio, fin: new Date().toISOString() };
+}
 // Ranking de productos por ganancia del período — usado por el reporte PDF
 // de ventas y por la card "Detalle financiero" del Dashboard, para no
 // calcular esto dos veces.
@@ -2345,6 +2437,126 @@ function renderReportes() {
   renderDashboardAlerts();
   renderCierreCaja();
   renderDetalleFinanciero();
+  renderReportesCosteo();
+}
+
+/* ─── P3.2: pestaña Costeo (C1/C3/C4/C5 — motor hecho en la Ronda 2,
+     sin pantalla hasta ahora) ───────────────────────────────────────
+   Regla de presentación SIN EXCEPCIONES: cuando la guarda de varianza
+   dice suficiente:false, se muestra el MOTIVO, nunca un número — un
+   cero ahí se leería como "no hay pérdidas", justo lo contrario. */
+let dashTabActivo = 'resumen';
+function setDashTab(tab) {
+  dashTabActivo = tab;
+  document.getElementById('dash-tab-resumen').style.display = tab === 'resumen' ? 'block' : 'none';
+  document.getElementById('dash-tab-costeo').style.display = tab === 'costeo' ? 'block' : 'none';
+  document.getElementById('dash-tab-btn-resumen').classList.toggle('active', tab === 'resumen');
+  document.getElementById('dash-tab-btn-costeo').classList.toggle('active', tab === 'costeo');
+  if (tab === 'costeo') renderReportesCosteo();
+}
+
+const PRIME_COST_TECHO = 0.65;
+const MENU_ACCION = {
+  estrella: 'Mantener — es tu producto ideal, protege su calidad y precio.',
+  'caballo de batalla': 'Alta venta, bajo margen — sube el precio o bájale el costo sin que se note.',
+  enigma: 'Buen margen, poca venta — promociónalo o reubícalo en el menú.',
+  perro: 'Baja venta y bajo margen — reconsidera si sigue en el menú.'
+};
+const MENU_ORDEN = ['estrella', 'caballo de batalla', 'enigma', 'perro'];
+const MENU_LABEL = { estrella: 'Estrella', 'caballo de batalla': 'Caballo de batalla', enigma: 'Enigma', perro: 'Perro' };
+
+function renderReportesCosteo() {
+  const factorInput = document.getElementById('costeo-factor-prestacional');
+  if (factorInput) factorInput.value = state.config.factorPrestacional;
+  const { inicio, fin } = getReportRangeISO();
+
+  // 1. Break-even diario
+  const be = CrumblyCore.getBreakEven(state, inicio, fin);
+  const llevadoHoy = getVentasByPeriod('dia').reduce((a, v) => a + v.total, 0);
+  document.getElementById('costeo-bep-diario').textContent = isFinite(be.bepDiarioContable) ? fmt(be.bepDiarioContable) : 'Sin margen de contribución positivo';
+  document.getElementById('costeo-bep-llevado').textContent = fmt(llevadoHoy);
+  document.getElementById('costeo-bep-caja').textContent = isFinite(be.bepDiarioCaja) ? fmt(be.bepDiarioCaja) : '—';
+
+  // 2. Prime cost
+  const pc = CrumblyCore.getPrimeCost(state, inicio, fin);
+  document.getElementById('costeo-primecost-pct').textContent = (pc.primeCostPct * 100).toFixed(1) + '%';
+  const semaforo = document.getElementById('costeo-primecost-semaforo');
+  const sobreTecho = pc.primeCostPct > PRIME_COST_TECHO;
+  semaforo.textContent = sobreTecho ? 'Sobre el techo' : 'Dentro del techo';
+  semaforo.style.background = sobreTecho ? 'var(--danger)' : 'var(--success, #1a7f4e)';
+  semaforo.style.color = '#fff';
+  document.getElementById('costeo-primecost-cogs').textContent = fmt(pc.cogs);
+  document.getElementById('costeo-primecost-laboral').textContent = fmt(pc.costoLaboral);
+  document.getElementById('costeo-primecost-nomina').textContent = fmt(pc.nominaRegistrada);
+
+  // 3. Food cost % / Paper cost % / COGS total % — tres líneas separadas, NUNCA sumadas.
+  document.getElementById('costeo-foodcost-pct').textContent = (CrumblyCore.getFoodCostPctRango(state, inicio, fin) * 100).toFixed(1) + '%';
+  document.getElementById('costeo-papercost-pct').textContent = (CrumblyCore.getPaperCostPctRango(state, inicio, fin) * 100).toFixed(1) + '%';
+  const cascRango = CrumblyCore.getCascadaUtilidadRango(state, inicio, fin);
+  const cogsTotalPct = cascRango.ingresos > 0 ? (cascRango.costoVentas / cascRango.ingresos) * 100 : 0;
+  document.getElementById('costeo-cogstotal-pct').textContent = cogsTotalPct.toFixed(1) + '%';
+
+  // 4. Menu engineering
+  const ventasRango = CrumblyCore.getVentasByRange(state.ventas, inicio, fin);
+  const menu = CrumblyCore.getMenuEngineering(state, ventasRango);
+  const porCategoria = {};
+  menu.forEach(m => { (porCategoria[m.categoria] = porCategoria[m.categoria] || []).push(m); });
+  const catKeys = Object.keys(porCategoria);
+  document.getElementById('costeo-menu-engineering').innerHTML = catKeys.length ? catKeys.map(cat => `
+    <div style="margin-bottom:14px">
+      <div class="item-sub" style="font-weight:600;color:var(--ink);margin-bottom:8px">${esc(cat)}</div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">
+        ${MENU_ORDEN.map(clas => {
+          const items = porCategoria[cat].filter(m => m.clasificacion === clas);
+          return `<div style="border:1px solid var(--line);border-radius:9px;padding:10px">
+            <div style="font-weight:600;font-size:12px;color:var(--ink)">${MENU_LABEL[clas]} (${items.length})</div>
+            <div class="item-sub" style="margin:4px 0 8px">${esc(MENU_ACCION[clas])}</div>
+            ${items.length ? items.map(m => `<div class="item-sub">${esc(m.nombre)} — ${fmt(m.cmUnitario)}/u</div>`).join('') : '<div class="item-sub">—</div>'}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`).join('') : '<p class="empty">Sin ventas de productos en este período</p>';
+
+  // 5. Varianza (dos niveles) y AvT — nunca un número si suficiente:false.
+  const varianza = CrumblyCore.getVarianza(state, inicio, fin);
+  renderVarianzaNivel('costeo-varianza-preparaciones', 'Preparaciones (sobre-porcionado en el mostrador)', varianza.preparaciones);
+  renderVarianzaNivel('costeo-varianza-materia', 'Materia prima / empaques / toppings (cocina y recepción)', varianza.materiaPrima);
+
+  const avt = CrumblyCore.getActualVsTheoretical(state, inicio, fin);
+  const avtEl = document.getElementById('costeo-avt');
+  if (!avt.suficiente) {
+    avtEl.innerHTML = `<p class="item-sub" style="color:var(--danger)">Sin datos suficientes: ${esc(avt.motivo)}</p>`;
+  } else {
+    avtEl.innerHTML = `<div style="display:flex;gap:24px;flex-wrap:wrap">
+      <div><div style="font-size:20px;font-weight:700">${(avt.foodCostRealPct * 100).toFixed(1)}%</div><div class="item-sub">Food cost REAL</div></div>
+      <div><div style="font-size:20px;font-weight:700">${(avt.foodCostTeoricoPct * 100).toFixed(1)}%</div><div class="item-sub">Food cost TEÓRICO</div></div>
+      <div><div style="font-size:20px;font-weight:700;color:${avt.diferenciaPuntos > 0 ? 'var(--danger)' : 'var(--ink)'}">${avt.diferenciaPuntos > 0 ? '+' : ''}${avt.diferenciaPuntos.toFixed(1)} pts</div><div class="item-sub">Diferencia</div></div>
+    </div>`;
+  }
+}
+
+// Nunca muestra un número cuando `nivel.suficiente` es false — muestra
+// el motivo (qué snapshot, qué bucket) en su lugar. Un guion o un cero
+// ahí se leería como "no hay pérdidas".
+function renderVarianzaNivel(elId, titulo, nivel) {
+  const el = document.getElementById(elId);
+  if (!nivel.suficiente) {
+    el.innerHTML = `<div class="item-sub" style="font-weight:600;color:var(--ink);margin-bottom:4px">${esc(titulo)}</div>
+      <p class="item-sub" style="color:var(--danger)">Sin datos suficientes: ${esc(nivel.motivo)}</p>`;
+    return;
+  }
+  const top = nivel.lineas.slice(0, 5);
+  el.innerHTML = `<div class="item-sub" style="font-weight:600;color:var(--ink);margin-bottom:4px">${esc(titulo)}</div>
+    ${top.length ? top.map(l => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line)">
+        <span class="item-sub">${esc(nombreDeInsumoVarianza(l))}</span>
+        <span class="item-sub" style="font-weight:600;color:${l.varianzaValor < 0 ? 'var(--danger)' : 'var(--ink)'}">${fmt(l.varianzaValor)} (${l.varianzaPct !== null ? (l.varianzaPct * 100).toFixed(0) + '%' : 'sin base teórica'})</span>
+      </div>`).join('') : '<p class="empty">Sin varianza en este período</p>'}
+    ${nivel.noContados.length ? `<p class="item-sub" style="margin-top:6px">${nivel.noContados.length} insumo(s) no contado(s), excluidos (no se asumen en cero).</p>` : ''}`;
+}
+function nombreDeInsumoVarianza(l) {
+  const lista = l.insumoTipo === 'preparaciones' ? state.preparaciones : state[l.insumoTipo];
+  const item = (lista || []).find(x => x.id === l.insumoId);
+  return item ? item.nombre : '(eliminado)';
 }
 
 /* ─── CIERRE DE CAJA DIARIO — solo reporte, no bloquea datos ─── */
@@ -2729,11 +2941,19 @@ function saveConfigEmail() {
   state.config.email = document.getElementById('cfg-email').value.trim();
   saveState();
 }
-function saveConfigFactorPrestacional() {
-  const v = parseFloat(document.getElementById('cfg-factor-prestacional').value);
+// P3.2: el factor también se puede editar desde la pestaña de Costeo,
+// no solo desde Ajustes — se llama desde los dos <input>, así que lee
+// el valor del que disparó el evento y deja el OTRO sincronizado.
+function saveConfigFactorPrestacional(el) {
+  const origen = el || document.getElementById('cfg-factor-prestacional');
+  const v = parseFloat(origen.value);
   if (!(v >= 1)) return; // factor por debajo de 1 no tiene sentido (estaría descontando la nómina)
   state.config.factorPrestacional = v;
   saveState();
+  ['cfg-factor-prestacional', 'costeo-factor-prestacional'].forEach(id => {
+    const input = document.getElementById(id);
+    if (input && input !== origen) input.value = v;
+  });
   renderReportes(); // el Prime Cost mostrado depende de este factor
 }
 function downloadCSV(filename, rows) {
