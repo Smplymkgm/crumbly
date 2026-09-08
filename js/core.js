@@ -146,7 +146,7 @@
       // directo por el early-return de migrateState. Bug real encontrado
       // al verificar en el navegador: un usuario nuevo (sin estado
       // previo) quedaba con factorPrestacional undefined.
-      config: { email: '', backendUrl: '', backendToken: '', lastSync: null, factorPrestacional: 1.38 }
+      config: { email: '', backendUrl: '', backendToken: '', lastSync: null, factorPrestacional: 1.38, comportamientoCategorias: {} }
     };
   }
 
@@ -256,6 +256,11 @@
     // desde Ajustes — nunca se asume que aplica sin que alguien lo
     // confirme para su propia nómina.
     if (s.config.factorPrestacional === undefined) s.config.factorPrestacional = 1.38;
+    // C4: comportamiento de costo por categoría operativa — { categoria:
+    // { comportamiento: 'fijo'|'variable'|'mixto', pctVariable } }. Vacío
+    // por defecto: una categoría sin clasificar se trata como 'fijo' (el
+    // atajo tradicional), hasta que alguien la reclasifique a propósito.
+    if (!s.config.comportamientoCategorias || typeof s.config.comportamientoCategorias !== 'object') s.config.comportamientoCategorias = {};
 
     // v1 → v2: productos ganan empaquesUsados[] / empaqueManual (heredado
     // del costo manual de empaque de la versión anterior a toppings/empaque).
@@ -1769,6 +1774,113 @@
     };
   }
 
+  // C4: comportamiento de costo por categoría operativa. Sin clasificar
+  // → 'fijo' (el atajo tradicional, nunca se asume 'variable' sin que
+  // alguien lo confirme).
+  function getComportamientoCategoria(state, categoria) {
+    var cfg = (state.config && state.config.comportamientoCategorias) || {};
+    var c = cfg[categoria];
+    if (!c) return { comportamiento: 'fijo', pctVariable: 0 };
+    var pct = Math.min(1, Math.max(0, Number(c.pctVariable) || 0));
+    return { comportamiento: c.comportamiento === 'variable' || c.comportamiento === 'mixto' ? c.comportamiento : 'fijo', pctVariable: pct };
+  }
+
+  // Separa un conjunto de gastos operativos en su porción fija y su
+  // porción variable (monto, en pesos — la porción variable se convierte
+  // a ratio-sobre-ingresos en getBreakEven, que es quien conoce los
+  // ingresos del período).
+  function getCostosFijosYVariables(state, gastosOperativos) {
+    var fijo = 0, variableMonto = 0;
+    (gastosOperativos || []).forEach(function (g) {
+      var c = getComportamientoCategoria(state, g.categoria);
+      if (c.comportamiento === 'variable') {
+        variableMonto += g.monto;
+      } else if (c.comportamiento === 'mixto') {
+        variableMonto += g.monto * c.pctVariable;
+        fijo += g.monto * (1 - c.pctVariable);
+      } else {
+        fijo += g.monto;
+      }
+    });
+    return { fijo: fijo, variableMonto: variableMonto };
+  }
+
+  // Contribución promedio ponderada por mix (por volumen, no por
+  // producto) — reusa item.precio/item.costo ya congelados en cada venta
+  // (el mismo dato que ya construye `ganancia`, ver applyVenta): no hay
+  // costo fijo prorrateado por producto en este modelo (ver nota en
+  // getMargenProducto), así que CM unitario === margen unitario.
+  function getCMPonderado(state, ventas) {
+    var totalQty = 0, cmTotalPesos = 0, ingresosTotal = 0;
+    (ventas || []).forEach(function (v) {
+      (v.items || []).forEach(function (item) {
+        var qty = Number(item.qty) || 0;
+        var cmUnit = (Number(item.precio) || 0) - (Number(item.costo) || 0);
+        totalQty += qty;
+        cmTotalPesos += cmUnit * qty;
+        ingresosTotal += (Number(item.precio) || 0) * qty;
+      });
+    });
+    return {
+      cmPromedioPesos: totalQty > 0 ? cmTotalPesos / totalQty : 0,
+      cmPromedioRatio: ingresosTotal > 0 ? cmTotalPesos / ingresosTotal : 0,
+      cmTotalPesos: cmTotalPesos,
+      ingresosTotal: ingresosTotal
+    };
+  }
+
+  // Punto de equilibrio del período — dos versiones, porque responden
+  // preguntas distintas (auditoría de costeo, hallazgo de metodología):
+  // - bepContable: con la depreciación dentro de los costos fijos (lo que
+  //   diría un estado de resultados).
+  // - bepCaja: SIN depreciación (no es salida de caja) pero CON el capex
+  //   completo del período (sí lo es) — cuánta plata hay que facturar
+  //   para no quedarse sin caja, no para "no perder en libros".
+  //
+  // El costo operativo 'variable'/'mixto' se convierte a un ratio sobre
+  // ingresos del MISMO período (aproximación: asume que ese gasto escaló
+  // proporcional a las ventas de este período) y se resta del CM ratio —
+  // un gasto variable también reduce lo que queda por cada peso vendido,
+  // no es "costo fijo que no se cuenta".
+  //
+  // OJO (no adivinar la dirección del error): tratar todo lo operativo
+  // como fijo NO siempre subestima el punto de equilibrio. Subestima solo
+  // cuando el negocio está por debajo de su propio equilibrio (CM ratio <
+  // costos operativos/ventas); si es rentable, el atajo SOBREestima. Ver
+  // el test con los dos escenarios — no hay ninguna heurística acá que
+  // asuma una dirección fija.
+  function getBreakEven(state, startISO, endISO) {
+    var b = rangeBounds(startISO, endISO);
+    var dias = Math.max(1, (b.end - b.start) / (1000 * 60 * 60 * 24));
+    var ventas = getVentasByRange(state.ventas, startISO, endISO);
+    var gastosRango = getGastosByRange(state.gastos, startISO, endISO);
+    var operativos = gastosRango.filter(function (g) { return g.tipo === 'operativo'; });
+    var capexPeriodo = gastosRango.filter(function (g) { return g.tipo === 'capex'; }).reduce(function (a, g) { return a + g.monto; }, 0);
+    var depreciacion = getDepreciacionRango(state, startISO, endISO);
+
+    var cm = getCMPonderado(state, ventas);
+    var clasif = getCostosFijosYVariables(state, operativos);
+    var variableOpexRate = cm.ingresosTotal > 0 ? clasif.variableMonto / cm.ingresosTotal : 0;
+    var cmRatioAjustado = cm.cmPromedioRatio - variableOpexRate;
+
+    var fijosContable = clasif.fijo + depreciacion;
+    var fijosCaja = clasif.fijo + capexPeriodo;
+    var bepContable = cmRatioAjustado > 0 ? fijosContable / cmRatioAjustado : Infinity;
+    var bepCaja = cmRatioAjustado > 0 ? fijosCaja / cmRatioAjustado : Infinity;
+
+    return {
+      cmRatioAjustado: cmRatioAjustado,
+      costosFijos: clasif.fijo,
+      costosVariablesOperativos: clasif.variableMonto,
+      depreciacion: depreciacion,
+      capexPeriodo: capexPeriodo,
+      bepContable: bepContable,
+      bepCaja: bepCaja,
+      bepDiarioContable: isFinite(bepContable) ? bepContable / dias : Infinity,
+      bepDiarioCaja: isFinite(bepCaja) ? bepCaja / dias : Infinity
+    };
+  }
+
   // ─── Dependencias (P1-4: no romper recetas al borrar un insumo) ───
 
   // Solo detecta uso DIRECTO en la receta de un producto (tipo:'materia').
@@ -1889,6 +2001,10 @@
     GASTO_CATEGORIAS_LABORALES: GASTO_CATEGORIAS_LABORALES,
     getCostoLaboral: getCostoLaboral,
     getPrimeCost: getPrimeCost,
+    getComportamientoCategoria: getComportamientoCategoria,
+    getCostosFijosYVariables: getCostosFijosYVariables,
+    getCMPonderado: getCMPonderado,
+    getBreakEven: getBreakEven,
     MARGEN_VARIABILIDAD_PCT: MARGEN_VARIABILIDAD_PCT
   };
 });

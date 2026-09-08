@@ -1849,6 +1849,83 @@ test('getPrimeCost = (COGS + costo laboral cargado) / ingresos, y se recalcula a
   assert.strictEqual(p2.costoLaboral, p2.nominaRegistrada);
 });
 
+console.log('\n== C4: comportamiento de costo y punto de equilibrio ==');
+
+function stateBreakEven() {
+  return C.migrateState({
+    materia: [{ id: 'm1', nombre: 'Insumo', cantidad: 1000000, costo: 500, minimo: 0 }],
+    productos: [{ id: 'p1', nombre: 'Producto', precio: 1000, componentes: [{ tipo: 'materia', refId: 'm1', gramos: 1 }], empaquesUsados: [], empaqueManual: 0 }]
+  });
+}
+
+test('getComportamientoCategoria: sin clasificar es "fijo" por defecto (el atajo tradicional, nunca "variable" sin confirmarlo)', () => {
+  const s = stateBreakEven();
+  assert.deepStrictEqual(C.getComportamientoCategoria(s, 'Arriendo'), { comportamiento: 'fijo', pctVariable: 0 });
+});
+
+test('getCostosFijosYVariables separa fijo/variable/mixto según la config', () => {
+  const s = stateBreakEven();
+  s.config.comportamientoCategorias = {
+    Arriendo: { comportamiento: 'fijo' },
+    Publicidad: { comportamiento: 'variable' },
+    Servicios: { comportamiento: 'mixto', pctVariable: 0.4 }
+  };
+  const gastos = [
+    { categoria: 'Arriendo', monto: 1000 },
+    { categoria: 'Publicidad', monto: 500 },
+    { categoria: 'Servicios', monto: 1000 } // 400 variable, 600 fijo
+  ];
+  const c = C.getCostosFijosYVariables(s, gastos);
+  assert.strictEqual(c.fijo, 1000 + 600);
+  assert.strictEqual(c.variableMonto, 500 + 400);
+});
+
+test('getCMPonderado: CM ponderado por volumen, en pesos y en ratio', () => {
+  const s = stateBreakEven();
+  C.applyVenta(s, [{ productoId: 'p1', qty: 10, toppings: [] }], [], {}); // CM unitario = 1000-500=500
+  const cm = C.getCMPonderado(s, s.ventas);
+  assert.strictEqual(cm.cmPromedioPesos, 500);
+  assert.strictEqual(cm.cmPromedioRatio, 0.5);
+});
+
+test('C4 — OJO: tratar todo lo operativo como fijo NO siempre subestima el punto de equilibrio (verifica la DIRECCIÓN, no una heurística fija)', () => {
+  // Fijo real=3000, variable real=1000 (categoría "Publicidad"), sin
+  // depreciación. CM ratio bruto = 0.5 (precio 1000, costo 500).
+  // Atajo (todo fijo): naive = (3000+1000)/0.5 = 8000.
+  function build(qty) {
+    const s = stateBreakEven();
+    s.config.comportamientoCategorias = { Arriendo: { comportamiento: 'fijo' }, Publicidad: { comportamiento: 'variable' } };
+    C.applyVenta(s, [{ productoId: 'p1', qty, toppings: [] }], [], { fecha: '2026-02-10T00:00:00' });
+    C.registrarGasto(s, { tipo: 'operativo', categoria: 'Arriendo', monto: 3000, fecha: '2026-02-10T00:00:00' });
+    C.registrarGasto(s, { tipo: 'operativo', categoria: 'Publicidad', monto: 1000, fecha: '2026-02-10T00:00:00' });
+    return s;
+  }
+  const naive = 8000; // calculado a mano arriba — el mismo para ambos escenarios
+
+  // Escenario deficitario: ingresos (5000) por debajo del propio break-even correcto.
+  const sDeficit = build(5); // 5 unidades × 1000 = 5000 de ingresos
+  const beDeficit = C.getBreakEven(sDeficit, '2026-02-01', '2026-02-28');
+  assert.ok(5000 < beDeficit.bepContable, 'el escenario debe estar realmente por debajo de SU PROPIO punto de equilibrio');
+  assert.ok(naive < beDeficit.bepContable, 'deficitario: el atajo (todo fijo) SUBESTIMA el punto de equilibrio real');
+
+  // Escenario rentable: ingresos (20000) por encima del propio break-even correcto.
+  const sRentable = build(20); // 20 unidades × 1000 = 20000 de ingresos
+  const beRentable = C.getBreakEven(sRentable, '2026-02-01', '2026-02-28');
+  assert.ok(20000 > beRentable.bepContable, 'el escenario debe estar realmente por encima de SU PROPIO punto de equilibrio');
+  assert.ok(naive > beRentable.bepContable, 'rentable: el atajo (todo fijo) SOBREESTIMA el punto de equilibrio real');
+});
+
+test('getBreakEven: bepCaja usa el capex completo del período (sin depreciación); bepContable usa la depreciación (sin capex)', () => {
+  const s = stateBreakEven();
+  C.applyVenta(s, [{ productoId: 'p1', qty: 20, toppings: [] }], [], { fecha: '2026-03-10T00:00:00' });
+  C.registrarGasto(s, { tipo: 'operativo', categoria: 'Arriendo', monto: 3000, fecha: '2026-03-10T00:00:00' });
+  C.registrarGasto(s, { tipo: 'capex', categoria: 'Equipos de cocina', monto: 12000, vidaUtilMeses: 12, fecha: '2026-03-10T00:00:00' });
+  const be = C.getBreakEven(s, '2026-03-01', '2026-03-31');
+  assert.ok(be.capexPeriodo === 12000);
+  assert.ok(be.depreciacion > 0 && be.depreciacion < 12000); // prorrateado, no el capex completo
+  assert.notStrictEqual(be.bepCaja, be.bepContable);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);
