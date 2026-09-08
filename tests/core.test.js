@@ -363,6 +363,16 @@ test('eliminarGasto restaura también el faltante al snapshot previo a la compra
   assert.strictEqual(s.materia[0].costo, 10);
 });
 
+test('migrateState agrega conteoEnProgreso:{} a un estado viejo', () => {
+  const s = C.migrateState({ materia: [] });
+  assert.deepStrictEqual(s.conteoEnProgreso, {});
+});
+
+test('migrateState conserva un conteoEnProgreso ya existente', () => {
+  const s = C.migrateState({ conteoEnProgreso: { 'materia:m1': { cantidad: 900, motivo: 'Robo' } } });
+  assert.deepStrictEqual(s.conteoEnProgreso, { 'materia:m1': { cantidad: 900, motivo: 'Robo' } });
+});
+
 test('migrateState inicializa faltante:0 en insumos viejos que no lo tenían', () => {
   const s = C.migrateState({ materia: [{ id: 'm1', nombre: 'Harina', cantidad: 100, costo: 5, minimo: 10 }] });
   assert.strictEqual(s.materia[0].faltante, 0);

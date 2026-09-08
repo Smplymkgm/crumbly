@@ -133,6 +133,7 @@
       mermas: [],
       ajustes: [],
       snapshots: [],
+      conteoEnProgreso: {},
       clientes: [],
       config: { email: '', backendUrl: '', backendToken: '', lastSync: null }
     };
@@ -222,6 +223,12 @@
       mermas: Array.isArray(raw.mermas) ? raw.mermas : [], // v7 -> v8
       ajustes: Array.isArray(raw.ajustes) ? raw.ajustes : [], // v8 -> v9
       snapshots: Array.isArray(raw.snapshots) ? raw.snapshots : [], // v8 -> v9 (B1)
+      // Conteo físico en curso, sin cerrar (B2): { 'tipo:id': { cantidad,
+      // motivo, observaciones } }. Vive en el estado (no en localStorage
+      // suelto) para que sobreviva un reload y se sincronice entre
+      // dispositivos igual que todo lo demás — es justo lo que hace falta
+      // para "contar materia prima hoy, toppings mañana".
+      conteoEnProgreso: (raw.conteoEnProgreso && typeof raw.conteoEnProgreso === 'object') ? raw.conteoEnProgreso : {},
       config: (raw.config && typeof raw.config === 'object') ? raw.config : {}
     };
     if (s.config.email === undefined) s.config.email = '';

@@ -371,9 +371,12 @@ textarea.field{height:auto}
 
       <!-- INVENTARIO -->
       <div class="page-view" id="page-inventario">
-        <div style="display:flex;align-items:center;justify-content:space-between">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
           <div class="page-title">Inventario</div>
-          <button class="btn" onclick="openInsumoModal()"><i class="ph ph-plus"></i> Agregar insumo</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-outline" onclick="openModalConteo()"><i class="ph ph-clipboard-text"></i> Conteo físico</button>
+            <button class="btn" onclick="openInsumoModal()"><i class="ph ph-plus"></i> Agregar insumo</button>
+          </div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap" id="inv-chips-tipo"></div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px" id="inv-chips"></div>
@@ -494,8 +497,14 @@ textarea.field{height:auto}
       </div>
     </div>
     <div class="modal-field">
-      <label class="field-label">Cantidad disponible</label>
+      <label class="field-label">Cantidad disponible (inicial)</label>
       <input type="number" id="ins-cantidad" class="field" placeholder="0" min="0" step="0.01">
+      <!-- B2: la cantidad de un insumo YA CREADO no se edita a mano acá
+           (era la única vía de ajuste y no dejaba rastro) — se corrige
+           con una compra, una venta/merma, o el Conteo físico, que sí
+           quedan trazados. Solo es editable al crear el insumo (el stock
+           inicial no es un "ajuste" de nada, es el primer dato). -->
+      <p class="item-sub" id="ins-cantidad-nota" style="display:none;margin-top:4px">No se edita acá — usa <b>Inventario → Conteo físico</b> para corregir la cantidad con motivo y trazabilidad.</p>
     </div>
     <!-- Bug real: acá se cargaba el precio del PAQUETE completo directo
          como si fuera el costo de una sola unidad/gramo — un waffle que
@@ -524,7 +533,7 @@ textarea.field{height:auto}
     </div>
     <label class="checkbox-row">
       <input type="checkbox" id="ins-precio-variable" style="width:18px;height:18px;accent-color:var(--ink)">
-      <span style="font-size:12px;color:var(--text)">Precio variable (margen del 8%)</span>
+      <span style="font-size:12px;color:var(--text)">Precio variable (solo informativo — ya no recarga el costo de inventario, ver "Reportes")</span>
     </label>
     <label class="checkbox-row">
       <input type="checkbox" id="ins-es-adicion" style="width:18px;height:18px;accent-color:var(--ink)" onchange="document.getElementById('ins-adicion-fields').style.display=this.checked?'block':'none'">
@@ -816,6 +825,27 @@ textarea.field{height:auto}
     <div class="modal-btns">
       <button class="btn-cancel" onclick="closeModal('modal-merma')">Cancelar</button>
       <button class="btn-save" onclick="saveMerma()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CONTEO FÍSICO (B2) -->
+<div class="modal-overlay" id="modal-conteo">
+  <div class="modal modal-wide">
+    <div class="modal-title-row">
+      <span class="modal-title">Conteo físico</span>
+      <button class="modal-close" onclick="closeModal('modal-conteo')"><i class="ph ph-x"></i></button>
+    </div>
+    <p class="item-sub" style="margin-top:-8px;margin-bottom:12px">Cantidad teórica = lo que el sistema cree que hay. Cantidad contada = lo que se encontró físicamente. Se puede guardar parcial y seguir después — nada se descuenta hasta que cierres el conteo.</p>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px" id="conteo-chips-tipo"></div>
+    <div id="conteo-list" style="display:flex;flex-direction:column;gap:8px;max-height:44vh;overflow-y:auto;margin-bottom:12px"></div>
+    <div class="total-row" style="margin-bottom:10px">
+      <span>Diferencia de lo contado hasta ahora</span>
+      <strong id="conteo-diferencia-total">$0</strong>
+    </div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="guardarConteoParcial(true)">Guardar y seguir después</button>
+      <button class="btn-save" onclick="cerrarConteoUI()">Cerrar conteo</button>
     </div>
   </div>
 </div>
@@ -1265,6 +1295,8 @@ function openInsumoModal(id) {
     document.getElementById('ins-categoria').value = item.categoria || '';
     document.getElementById('ins-tipo-medicion').value = UNIDAD_TIPO_MEDICION[item.unidad] || 'unidad';
     document.getElementById('ins-cantidad').value = item.cantidad;
+    document.getElementById('ins-cantidad').disabled = true;
+    document.getElementById('ins-cantidad-nota').style.display = 'block';
     document.getElementById('ins-costo').value = item.costo;
     document.getElementById('ins-minimo').value = item.minimo || 0;
     document.getElementById('ins-precio-variable').checked = !!item.margenVariable;
@@ -1280,6 +1312,8 @@ function openInsumoModal(id) {
     document.getElementById('ins-tipo-insumo-nota').style.display = 'none';
     document.getElementById('ins-modal-title').textContent = 'Agregar insumo';
     ['ins-nombre','ins-categoria','ins-cantidad','ins-costo','ins-nombre-adicion','ins-precio-adicion','ins-porcion'].forEach(x => document.getElementById(x).value = '');
+    document.getElementById('ins-cantidad').disabled = false;
+    document.getElementById('ins-cantidad-nota').style.display = 'none';
     document.getElementById('ins-tipo-medicion').value = 'gramos';
     document.getElementById('ins-minimo').value = 0;
     document.getElementById('ins-precio-variable').checked = false;
@@ -1314,7 +1348,6 @@ function saveInsumo() {
   const datos = {
     nombre,
     categoria: document.getElementById('ins-categoria').value.trim(),
-    cantidad: parseFloat(document.getElementById('ins-cantidad').value) || 0,
     costo: parseFloat(document.getElementById('ins-costo').value) || 0,
     minimo: parseFloat(document.getElementById('ins-minimo').value) || 0,
     margenVariable: document.getElementById('ins-precio-variable').checked,
@@ -1328,6 +1361,10 @@ function saveInsumo() {
   if (editId) {
     // Edición: nunca cambia de colección — solo actualiza sus campos +
     // reetiqueta la unidad (no convierte cantidades entre medidas).
+    // B2: `cantidad` NUNCA se toca acá (el campo está deshabilitado en el
+    // modal) — se corrige con Inventario → Conteo físico, que sí deja
+    // rastro (motivo, usuario, ajuste). Editarla a mano era la única vía
+    // de ajuste y no dejaba ninguno.
     const list = state[editTipo];
     const idx = list.findIndex(x => x.id === editId);
     list[idx] = { ...list[idx], ...datos, unidad: TIPO_MEDICION_UNIDAD[tipoMedicion] };
@@ -1339,7 +1376,8 @@ function saveInsumo() {
     // latas, frutas enteras) a la categoría de empaques por error — bug
     // real reportado por el usuario.
     const bucket = document.getElementById('ins-tipo-insumo').value;
-    const nuevo = { id: uid(), ...datos, unidad: TIPO_MEDICION_UNIDAD[tipoMedicion] };
+    const cantidadInicial = parseFloat(document.getElementById('ins-cantidad').value) || 0;
+    const nuevo = { id: uid(), ...datos, cantidad: cantidadInicial, unidad: TIPO_MEDICION_UNIDAD[tipoMedicion] };
     state[bucket].push(nuevo);
   }
   saveState(); closeModal('modal-insumo'); renderInventario(); renderReportes();
@@ -2920,6 +2958,134 @@ function eliminarMerma(id) {
   renderReportes();
   showToast('Merma eliminada');
 }
+// ─── Conteo físico (B2) ───────────────────────────────────────────────
+// Vive en state.conteoEnProgreso (persistido/sincronizado como el resto
+// del estado) para poder contar materia prima hoy y toppings mañana sin
+// perder lo ya tecleado. Solo al "Cerrar conteo" se llama a
+// CrumblyCore.cerrarConteo — hasta entonces nada se descuenta ni se
+// valida (index.html solo arma la lista y lee el resultado; toda la
+// lógica de diferencia/ajuste/snapshot vive en core.js).
+let conteoTipoActivo = 'materia';
+function conteoKey(tipo, id) { return tipo + ':' + id; }
+
+function openModalConteo() {
+  conteoTipoActivo = 'materia';
+  renderConteoChipsTipo();
+  renderConteoList();
+  openModal('modal-conteo');
+}
+function renderConteoChipsTipo() {
+  const tipos = [['materia', 'Materia prima'], ['empaques', 'Empaques'], ['toppings', 'Toppings']];
+  document.getElementById('conteo-chips-tipo').innerHTML = tipos.map(([t, label]) =>
+    `<button class="chip ${t === conteoTipoActivo ? 'active' : ''}" onclick="setConteoTipo('${t}')">${esc(label)}</button>`
+  ).join('');
+}
+function setConteoTipo(tipo) {
+  conteoTipoActivo = tipo;
+  renderConteoChipsTipo();
+  renderConteoList();
+}
+function renderConteoList() {
+  const items = state[conteoTipoActivo] || [];
+  const el = document.getElementById('conteo-list');
+  el.innerHTML = items.length ? items.map(item => {
+    const key = conteoKey(conteoTipoActivo, item.id);
+    const entry = state.conteoEnProgreso[key];
+    return `<div style="border:1px solid var(--line);border-radius:9px;padding:10px 12px;display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+        <div>
+          <div style="font-weight:600;font-size:13px;color:var(--ink)">${esc(item.nombre)}</div>
+          <div class="item-sub">Teórica: ${(Number(item.cantidad) || 0).toFixed(2)} ${esc(item.unidad || '')}</div>
+        </div>
+        <input type="number" class="field field-sm" style="width:110px" placeholder="Contada" value="${entry ? entry.cantidad : ''}" min="0" step="0.01" oninput="onConteoCantidadInput('${item.id}', this.value)">
+      </div>
+      <div id="conteo-dif-${item.id}" class="item-sub" style="font-weight:600" hidden></div>
+      <select id="conteo-motivo-${item.id}" class="field field-sm" onchange="onConteoMotivoInput('${item.id}', this.value)" hidden>
+        <option value="">-- Motivo del ajuste (obligatorio) --</option>
+        ${CrumblyCore.AJUSTE_MOTIVOS.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('')}
+      </select>
+    </div>`;
+  }).join('') : '<p class="empty">No hay insumos de este tipo</p>';
+  // Pinta el estado de cada fila (por si ya había cantidades guardadas de
+  // una sesión anterior de "guardar parcial"). Va por fuera del template
+  // de arriba a propósito: NO se vuelve a llamar en cada tecla que se
+  // escribe (ver onConteoCantidadInput) — reconstruir el innerHTML en
+  // cada input le quita el foco al campo mientras la persona está
+  // escribiendo un número de varias cifras.
+  items.forEach(item => actualizarFilaConteo(item.id));
+  actualizarDiferenciaTotal();
+}
+// Actualiza SOLO la línea de diferencia + el select de motivo de un
+// insumo, sin tocar el <input> — así escribir "2100" no pierde el foco
+// a mitad de camino (ver nota en renderConteoList).
+function actualizarFilaConteo(id) {
+  const item = (state[conteoTipoActivo] || []).find(x => x.id === id);
+  const difEl = document.getElementById('conteo-dif-' + id);
+  const motivoEl = document.getElementById('conteo-motivo-' + id);
+  if (!item || !difEl || !motivoEl) return;
+  const key = conteoKey(conteoTipoActivo, id);
+  const entry = state.conteoEnProgreso[key];
+  const preview = entry ? CrumblyCore.previsualizarConteo(state, [{ insumoTipo: conteoTipoActivo, insumoId: id, cantidadContada: entry.cantidad }]) : null;
+  const p = preview && preview.lineas[0];
+  if (!p || !p.requiereMotivo) { difEl.hidden = true; motivoEl.hidden = true; return; }
+  difEl.hidden = false;
+  difEl.style.color = p.diferencia < 0 ? 'var(--danger)' : 'var(--ink)';
+  difEl.textContent = 'Diferencia: ' + (p.diferencia > 0 ? '+' : '') + p.diferencia.toFixed(2) + ' ' + (item.unidad || '') + ' (' + fmt(p.valor) + ')';
+  motivoEl.hidden = false;
+  motivoEl.value = entry.motivo || '';
+}
+function onConteoCantidadInput(id, value) {
+  const key = conteoKey(conteoTipoActivo, id);
+  if (value === '') {
+    delete state.conteoEnProgreso[key];
+  } else {
+    state.conteoEnProgreso[key] = Object.assign({ cantidad: 0, motivo: '', observaciones: '' }, state.conteoEnProgreso[key], { cantidad: parseFloat(value) || 0 });
+  }
+  actualizarFilaConteo(id);
+  actualizarDiferenciaTotal();
+}
+function onConteoMotivoInput(id, motivo) {
+  const key = conteoKey(conteoTipoActivo, id);
+  if (state.conteoEnProgreso[key]) state.conteoEnProgreso[key].motivo = motivo;
+}
+function conteoLineasCompletas() {
+  return Object.keys(state.conteoEnProgreso).map(key => {
+    const sep = key.indexOf(':');
+    const tipo = key.slice(0, sep), id = key.slice(sep + 1);
+    const entry = state.conteoEnProgreso[key];
+    return { insumoTipo: tipo, insumoId: id, cantidadContada: entry.cantidad, motivo: entry.motivo, observaciones: entry.observaciones };
+  });
+}
+function actualizarDiferenciaTotal() {
+  const preview = CrumblyCore.previsualizarConteo(state, conteoLineasCompletas());
+  document.getElementById('conteo-diferencia-total').textContent = fmt(preview.totalDiferenciaValor);
+}
+function guardarConteoParcial() {
+  saveState();
+  closeModal('modal-conteo');
+  showToast('Conteo guardado — puedes seguir después');
+}
+function cerrarConteoUI() {
+  const lineas = conteoLineasCompletas();
+  if (!lineas.length) { showToast('No has contado ningún insumo todavía'); return; }
+  const preview = CrumblyCore.previsualizarConteo(state, lineas);
+  const conDiferencia = preview.lineas.filter(l => l.requiereMotivo).length;
+  if (!confirm('Vas a cerrar el conteo: ' + lineas.length + ' insumo(s) contado(s), ' + conDiferencia + ' con diferencia.\nDiferencia total: ' + fmt(preview.totalDiferenciaValor) + '.\n\n¿Confirmar?')) return;
+  let resultado;
+  try {
+    resultado = CrumblyCore.cerrarConteo(state, { usuarioEmail: state.config.email || '', lineas });
+  } catch (e) {
+    showToast(e.message);
+    return;
+  }
+  state.conteoEnProgreso = {};
+  saveState();
+  closeModal('modal-conteo');
+  renderInventario();
+  renderReportes();
+  showToast('Conteo cerrado ✓ ' + resultado.ajustes.length + ' ajuste(s) · diferencia total ' + fmt(resultado.totalDiferenciaValor));
+}
+
 function setMermaPeriodo(p, el) {
   mermaPeriodo = p;
   document.querySelectorAll('#merma-period-row .pill-btn').forEach(b => b.classList.remove('active'));
