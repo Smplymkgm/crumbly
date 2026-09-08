@@ -1674,6 +1674,51 @@ test('applyVenta/registrarMerma con fecha de HOY (no futura) siguen funcionando 
   assert.ok(venta);
 });
 
+console.log('\n== C6/C10: puerta única de dependencias para borrar un insumo ==');
+
+function statePrepConDependencias() {
+  return C.migrateState({
+    materia: [{ id: 'harina', nombre: 'Harina', cantidad: 1000, costo: 5, minimo: 0 }],
+    empaques: [{ id: 'caja', nombre: 'Caja', cantidad: 50, costo: 200, minimo: 0 }],
+    toppings: [{ id: 'choco', nombre: 'Chispas', cantidad: 100, costo: 10, precio: 500, minimo: 0 }],
+    preparaciones: [{ id: 'masa', nombre: 'Masa', modo: 'directo', componentes: [{ tipo: 'materia', refId: 'harina', gramos: 100 }] }],
+    productos: [
+      { id: 'p1', nombre: 'Waffle', precio: 20000, componentes: [{ tipo: 'preparacion', refId: 'masa', gramos: 100 }], empaquesUsados: [{ empaqueId: 'caja', cantidad: 1 }] },
+      // C10: un topping usado DIRECTO como componente de receta (no como
+      // "topping suelto" ni adición) — antes ningún chequeo lo detectaba.
+      { id: 'p2', nombre: 'Waffle con chispas', precio: 21000, componentes: [{ tipo: 'toppings', refId: 'choco', gramos: 20 }], empaquesUsados: [] }
+    ]
+  });
+}
+
+test('findProductosUsandoInsumo detecta un empaque referenciado en empaquesUsados', () => {
+  const s = statePrepConDependencias();
+  const usado = C.findProductosUsandoInsumo(s, 'caja');
+  assert.strictEqual(usado.productos.length, 1);
+  assert.strictEqual(usado.productos[0].id, 'p1');
+});
+
+test('findProductosUsandoInsumo detecta un TOPPING usado directo como componente de receta (antes invisible)', () => {
+  const s = statePrepConDependencias();
+  const usado = C.findProductosUsandoInsumo(s, 'choco');
+  assert.strictEqual(usado.productos.length, 1);
+  assert.strictEqual(usado.productos[0].id, 'p2');
+});
+
+test('findProductosUsandoInsumo también detecta una preparación que referencia la materia directo', () => {
+  const s = statePrepConDependencias();
+  const usado = C.findProductosUsandoInsumo(s, 'harina');
+  assert.strictEqual(usado.preparaciones.length, 1);
+  assert.strictEqual(usado.preparaciones[0].id, 'masa');
+});
+
+test('findProductosUsandoInsumo no encuentra nada para un insumo sin uso', () => {
+  const s = statePrepConDependencias();
+  const usado = C.findProductosUsandoInsumo(s, 'no-existe');
+  assert.strictEqual(usado.productos.length, 0);
+  assert.strictEqual(usado.preparaciones.length, 0);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);

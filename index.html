@@ -525,7 +525,7 @@ textarea.field{height:auto}
     </div>
     <div class="modal-field">
       <label class="field-label">Costo por unidad (se calcula solo — ajustalo si hace falta)</label>
-      <input type="number" id="ins-costo" class="field" placeholder="$" min="0" step="0.001">
+      <input type="number" id="ins-costo" class="field" placeholder="$" min="0" step="0.001" oninput="actualizarMargenAdicion()">
     </div>
     <div class="modal-field">
       <label class="field-label">Alerta de stock mínimo</label>
@@ -536,7 +536,7 @@ textarea.field{height:auto}
       <span style="font-size:12px;color:var(--text)">Precio variable (solo informativo — ya no recarga el costo de inventario, ver "Reportes")</span>
     </label>
     <label class="checkbox-row">
-      <input type="checkbox" id="ins-es-adicion" style="width:18px;height:18px;accent-color:var(--ink)" onchange="document.getElementById('ins-adicion-fields').style.display=this.checked?'block':'none'">
+      <input type="checkbox" id="ins-es-adicion" style="width:18px;height:18px;accent-color:var(--ink)" onchange="document.getElementById('ins-adicion-fields').style.display=this.checked?'block':'none'; actualizarMargenAdicion()">
       <span style="font-size:12px;color:var(--text)">Disponible como adición en ventas</span>
     </label>
     <div id="ins-adicion-fields" style="display:none">
@@ -547,13 +547,14 @@ textarea.field{height:auto}
       <div style="display:flex;gap:10px">
         <div class="modal-field" style="flex:1">
           <label class="field-label">Precio de venta como adición</label>
-          <input type="number" id="ins-precio-adicion" class="field" placeholder="$" min="0">
+          <input type="number" id="ins-precio-adicion" class="field" placeholder="$" min="0" oninput="actualizarMargenAdicion()">
         </div>
         <div class="modal-field" style="flex:1">
-          <label class="field-label">Porción consumida por venta</label>
-          <input type="number" id="ins-porcion" class="field" placeholder="0" min="0" step="0.01">
+          <label class="field-label">Porción consumida por venta (obligatoria, mayor a 0)</label>
+          <input type="number" id="ins-porcion" class="field" placeholder="0" min="0" step="0.01" oninput="actualizarMargenAdicion()">
         </div>
       </div>
+      <p class="item-sub" id="ins-adicion-margen" style="font-weight:600;margin-top:-6px;margin-bottom:10px"></p>
     </div>
     <input type="hidden" id="ins-edit-id">
     <input type="hidden" id="ins-edit-tipo">
@@ -687,9 +688,15 @@ textarea.field{height:auto}
         <option value="capex">Implementos (equipos, mobiliario...)</option>
       </select>
     </div>
-    <div class="modal-field">
-      <label>Categoría</label>
-      <select id="g-categoria"></select>
+    <div style="display:flex;gap:10px">
+      <div class="modal-field" style="flex:1">
+        <label>Categoría</label>
+        <select id="g-categoria"></select>
+      </div>
+      <div class="modal-field" style="flex:1">
+        <label>Fecha</label>
+        <input type="date" id="g-fecha">
+      </div>
     </div>
 
     <div id="g-campos-inventario">
@@ -1326,6 +1333,7 @@ function openInsumoModal(id) {
   ).join('');
   document.getElementById('ins-calc-precio').value = '';
   document.getElementById('ins-calc-contenido').value = '';
+  actualizarMargenAdicion();
   openModal('modal-insumo');
 }
 // Bug real que esto previene: cargar el precio del PAQUETE completo
@@ -1333,6 +1341,22 @@ function openInsumoModal(id) {
 // aviso de "costo sospechoso" en Inventario. "Precio del paquete" +
 // "Contenido" son los primeros campos que se llenan (lo que la persona
 // tiene a mano de verdad, la etiqueta) — esto solo hace la división.
+// C11 (auditoría): antes no se veía el margen de una adición hasta
+// venderla y descubrir que dejaba plata o, peor, perdía. Se calcula en
+// vivo con los mismos tres campos que ya se están llenando.
+function actualizarMargenAdicion() {
+  const el = document.getElementById('ins-adicion-margen');
+  if (!el) return;
+  if (!document.getElementById('ins-es-adicion').checked) { el.textContent = ''; return; }
+  const precio = parseFloat(document.getElementById('ins-precio-adicion').value) || 0;
+  const porcion = parseFloat(document.getElementById('ins-porcion').value) || 0;
+  const costo = parseFloat(document.getElementById('ins-costo').value) || 0;
+  const costoPorcion = porcion * costo;
+  const margen = precio - costoPorcion;
+  const margenPct = precio > 0 ? (margen / precio * 100) : 0;
+  el.style.color = margen <= 0 ? 'var(--danger)' : 'var(--muted)';
+  el.textContent = 'Costo de esta porción: ' + fmt(costoPorcion) + ' · Margen: ' + fmt(margen) + ' (' + margenPct.toFixed(0) + '%)';
+}
 function calcularCostoInsumo() {
   const precio = parseFloat(document.getElementById('ins-calc-precio').value) || 0;
   const contenido = parseFloat(document.getElementById('ins-calc-contenido').value) || 0;
@@ -1345,6 +1369,14 @@ function saveInsumo() {
   if (!nombre) { showToast('Ingresa el nombre del insumo'); return; }
   const tipoMedicion = document.getElementById('ins-tipo-medicion').value;
   const esAdicion = document.getElementById('ins-es-adicion').checked;
+  // C11 (auditoría): sin esto, una adición con porción 0 se vendía gratis
+  // — el precio de venta quedaba puesto pero el consumo de stock era cero,
+  // así que ganaba plata sin gastar nada del insumo (o al revés, según
+  // cómo se leyera el reporte).
+  if (esAdicion && !(parseFloat(document.getElementById('ins-porcion').value) > 0)) {
+    showToast('La porción consumida debe ser mayor a 0 para una adición');
+    return;
+  }
   const datos = {
     nombre,
     categoria: document.getElementById('ins-categoria').value.trim(),
@@ -1388,22 +1420,18 @@ function deleteInsumo() {
   if (!id) return;
   const found = CrumblyCore.findInsumoConTipo(state, id);
   if (!found) return;
-  if (found.tipo === 'materia') {
-    const usadosProductos = CrumblyCore.findProductosUsandoMateria(state, id);
-    const usadasPreparaciones = CrumblyCore.findPreparacionesUsandoMateria(state, id);
-    if (usadosProductos.length || usadasPreparaciones.length) {
-      const partes = [];
-      if (usadosProductos.length) partes.push(usadosProductos.length + ' producto(s) — ' + usadosProductos.map(p => p.nombre).join(', '));
-      if (usadasPreparaciones.length) partes.push(usadasPreparaciones.length + ' preparación(es) — ' + usadasPreparaciones.map(p => p.nombre).join(', '));
-      alert('No se puede eliminar: lo usan ' + partes.join(' y ') + '.\n\nQuítalo de esas recetas primero.');
-      return;
-    }
-  } else if (found.tipo === 'empaques') {
-    const usados = CrumblyCore.findProductosUsandoEmpaque(state, id);
-    if (usados.length) {
-      alert('No se puede eliminar: lo usan ' + usados.length + ' producto(s) — ' + usados.map(p => p.nombre).join(', ') + '.\n\nQuítalo de esas recetas primero.');
-      return;
-    }
+  // C10 (auditoría): una sola puerta para los tres buckets — antes
+  // "empaques" solo chequeaba `empaquesUsados` (no `componentes`, donde
+  // el rediseño también permite usar un empaque/topping directo en la
+  // receta) y "toppings" no chequeaba NADA, así que se podía borrar un
+  // topping usado en una receta y dejarla con una referencia rota.
+  const usado = CrumblyCore.findProductosUsandoInsumo(state, id);
+  if (usado.productos.length || usado.preparaciones.length) {
+    const partes = [];
+    if (usado.productos.length) partes.push(usado.productos.length + ' producto(s) — ' + usado.productos.map(p => p.nombre).join(', '));
+    if (usado.preparaciones.length) partes.push(usado.preparaciones.length + ' preparación(es) — ' + usado.preparaciones.map(p => p.nombre).join(', '));
+    alert('No se puede eliminar: lo usan ' + partes.join(' y ') + '.\n\nQuítalo de esas recetas primero.');
+    return;
   }
   if (!confirm('¿Eliminar este insumo?')) return;
   state[found.tipo] = state[found.tipo].filter(x => x.id !== id);
@@ -2743,6 +2771,8 @@ function shareReportByEmail() {
 /* ─── GASTOS (HANDOFF §9) ─── */
 let gastoComprobanteNombre = '';
 function openModalGasto() {
+  document.getElementById('g-fecha').value = todayLocalISO();
+  document.getElementById('g-fecha').max = todayLocalISO(); // I3: no se puede elegir una fecha futura
   document.getElementById('g-tipo').value = 'inventario';
   document.getElementById('g-monto').value = '';
   document.getElementById('g-proveedor').value = '';
@@ -2817,6 +2847,14 @@ function saveGasto() {
   const descripcion = document.getElementById('g-descripcion').value.trim();
   const metodoPago = document.getElementById('g-metodo-pago').value;
   const input = { tipo, categoria, monto, proveedor, descripcion, comprobante: gastoComprobanteNombre, metodoPago };
+  // I4: antes no había campo de fecha acá — todo gasto quedaba fechado a
+  // "ahora mismo", aunque se estuviera cargando la compra de ayer.
+  const fechaInput = document.getElementById('g-fecha').value;
+  if (fechaInput && fechaInput !== todayLocalISO()) {
+    const [y, m, d] = fechaInput.split('-').map(Number);
+    const now = new Date();
+    input.fecha = new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds()).toISOString();
+  }
   if (metodoPago === 'dividido') {
     input.montoEfectivo = parseFloat(document.getElementById('g-monto-efectivo').value) || 0;
     input.montoTransferencia = parseFloat(document.getElementById('g-monto-transferencia').value) || 0;

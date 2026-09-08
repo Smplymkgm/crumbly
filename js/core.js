@@ -1640,6 +1640,29 @@
     });
   }
 
+  // C10 (auditoría): findProductosUsandoMateria/findProductosUsandoEmpaque
+  // arriba solo cubren materia en `componentes` y empaque en
+  // `empaquesUsados` — el rediseño (DISENO_HANDOFF.md) permite que
+  // `componentes` referencie CUALQUIER insumo (empaques o toppings
+  // también, no solo materia — ver COLECCION_POR_TIPO en
+  // getCostoProducto), y no había ningún chequeo para eso ni para
+  // toppings en absoluto. Puerta única para deleteInsumo, sirve para los
+  // tres buckets (materia/empaques/toppings): recorre `componentes` SIN
+  // filtrar por tipo (cualquier refId que coincida cuenta), más
+  // `empaquesUsados`, más las preparaciones que también podrían
+  // referenciar el insumo directamente en su propia receta.
+  function findProductosUsandoInsumo(state, insumoId) {
+    var productos = (state.productos || []).filter(function (p) {
+      var enComponentes = (p.componentes || []).some(function (c) { return c.refId === insumoId; });
+      var enEmpaquesUsados = (p.empaquesUsados || []).some(function (e) { return e.empaqueId === insumoId; });
+      return enComponentes || enEmpaquesUsados;
+    });
+    var preparaciones = (state.preparaciones || []).filter(function (prep) {
+      return (prep.componentes || []).some(function (c) { return c.refId === insumoId; });
+    });
+    return { productos: productos, preparaciones: preparaciones };
+  }
+
   return {
     SCHEMA_VERSION: SCHEMA_VERSION,
     formatCOP: formatCOP,
@@ -1662,6 +1685,7 @@
     calcInventoryNeeds: calcInventoryNeeds,
     findProductosUsandoMateria: findProductosUsandoMateria,
     findProductosUsandoEmpaque: findProductosUsandoEmpaque,
+    findProductosUsandoInsumo: findProductosUsandoInsumo,
     GASTO_CATEGORIAS: GASTO_CATEGORIAS,
     costoPromedioPonderado: costoPromedioPonderado,
     registrarGasto: registrarGasto,
