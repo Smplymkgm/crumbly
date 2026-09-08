@@ -1799,6 +1799,56 @@ test('C2: la utilidad NETA final es idéntica a la fórmula vieja (mermas restan
   assert.strictEqual(c.utilidadNeta, utilidadNetaVieja);
 });
 
+console.log('\n== C3: costo laboral y prime cost ==');
+
+function stateConNomina() {
+  const s = stateBase(); // p1: 22000, receta 150g m1@5.8 + 1 empaque@2550
+  s.materia[0].cantidad = 100000;
+  return s;
+}
+
+test('migrateState pone factorPrestacional:1.38 por defecto (nunca 1.52 hardcodeado)', () => {
+  const s = C.migrateState({});
+  assert.strictEqual(s.config.factorPrestacional, 1.38);
+});
+
+test('emptyState/migrateState(null) — un usuario NUEVO sin estado previo también trae factorPrestacional:1.38 (bug real: el early-return de migrateState no pasaba por el bloque de defaults)', () => {
+  assert.strictEqual(C.emptyState().config.factorPrestacional, 1.38);
+  assert.strictEqual(C.migrateState(null).config.factorPrestacional, 1.38);
+});
+
+test('getCostoLaboral carga la nómina registrada por el factor prestacional configurado', () => {
+  const s = stateConNomina();
+  C.registrarGasto(s, { tipo: 'operativo', categoria: 'Nómina', monto: 1000000, fecha: '2026-01-10T00:00:00' });
+  C.registrarGasto(s, { tipo: 'operativo', categoria: 'Arriendo', monto: 500000, fecha: '2026-01-10T00:00:00' }); // NO es laboral
+  const l = C.getCostoLaboral(s, '2026-01-01', '2026-01-31');
+  assert.strictEqual(l.nominaRegistrada, 1000000);
+  assert.strictEqual(l.factorPrestacional, 1.38);
+  assert.ok(Math.abs(l.costoLaboralCargado - 1380000) < 0.01);
+});
+
+test('con factorPrestacional 1.0, el costo laboral cargado equivale a la nómina tal como se registra', () => {
+  const s = stateConNomina();
+  s.config.factorPrestacional = 1.0;
+  C.registrarGasto(s, { tipo: 'operativo', categoria: 'Nómina', monto: 800000, fecha: '2026-01-10T00:00:00' });
+  const l = C.getCostoLaboral(s, '2026-01-01', '2026-01-31');
+  assert.strictEqual(l.costoLaboralCargado, l.nominaRegistrada);
+});
+
+test('getPrimeCost = (COGS + costo laboral cargado) / ingresos, y se recalcula al cambiar el factor', () => {
+  const s = stateConNomina();
+  C.applyVenta(s, [{ productoId: 'p1', qty: 10, toppings: [] }], [], { fecha: '2026-01-05T00:00:00' });
+  C.registrarGasto(s, { tipo: 'operativo', categoria: 'Nómina', monto: 1000000, fecha: '2026-01-10T00:00:00' });
+  const p1 = C.getPrimeCost(s, '2026-01-01', '2026-01-31');
+  assert.ok(Math.abs(p1.primeCostTotal - (p1.cogs + p1.costoLaboral)) < 0.01);
+  assert.ok(Math.abs(p1.primeCostPct - (p1.primeCostTotal / p1.ingresos)) < 0.0001);
+
+  s.config.factorPrestacional = 1.0;
+  const p2 = C.getPrimeCost(s, '2026-01-01', '2026-01-31');
+  assert.ok(p2.primeCostTotal < p1.primeCostTotal); // bajó el factor, baja el prime cost
+  assert.strictEqual(p2.costoLaboral, p2.nominaRegistrada);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);

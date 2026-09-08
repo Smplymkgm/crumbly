@@ -140,7 +140,13 @@
       snapshots: [],
       conteoEnProgreso: {},
       clientes: [],
-      config: { email: '', backendUrl: '', backendToken: '', lastSync: null }
+      // factorPrestacional (C3) va también acá, no solo en el bloque de
+      // defaults de migrateState más abajo — ese bloque nunca corre para
+      // un estado nuevo (raw null/no-objeto), que devuelve ESTE literal
+      // directo por el early-return de migrateState. Bug real encontrado
+      // al verificar en el navegador: un usuario nuevo (sin estado
+      // previo) quedaba con factorPrestacional undefined.
+      config: { email: '', backendUrl: '', backendToken: '', lastSync: null, factorPrestacional: 1.38 }
     };
   }
 
@@ -243,6 +249,13 @@
     if (s.config.backendUrl === undefined) s.config.backendUrl = '';
     if (s.config.backendToken === undefined) s.config.backendToken = '';
     if (s.config.lastSync === undefined) s.config.lastSync = null;
+    // C3 (auditoría de costeo): NO se hardcodea en 1.52 — con salarios
+    // bajo 10 SMMLV aplica la exoneración del art. 114-1 del ET (sin
+    // SENA, ICBF ni salud del empleador), así que el factor real casi
+    // siempre es menor. 1.38 es un valor por defecto razonable, editable
+    // desde Ajustes — nunca se asume que aplica sin que alguien lo
+    // confirme para su propia nómina.
+    if (s.config.factorPrestacional === undefined) s.config.factorPrestacional = 1.38;
 
     // v1 → v2: productos ganan empaquesUsados[] / empaqueManual (heredado
     // del costo manual de empaque de la versión anterior a toppings/empaque).
@@ -1092,6 +1105,10 @@
     operativo: ['Publicidad', 'Arriendo', 'Servicios', 'Transporte', 'Nómina', 'Aseo', 'Otros'],
     capex: ['Equipos de cocina', 'Mobiliario', 'Tecnología', 'Adecuaciones']
   };
+  // C3: qué categorías de gasto operativo son costo LABORAL — hoy solo
+  // "Nómina", pero se deja como lista (no un `=== 'Nómina'` suelto) para
+  // que sumar una categoría laboral nueva no obligue a tocar getPrimeCost.
+  var GASTO_CATEGORIAS_LABORALES = ['Nómina'];
 
   // Costo promedio ponderado: al comprar más stock a un precio distinto,
   // el costo unitario del insumo se recalcula ponderando por cantidad —
@@ -1714,6 +1731,44 @@
     return computeCascada(ventas, gastosRango, depreciacion, mermasValor);
   }
 
+  // C3 (auditoría de costeo): nómina REGISTRADA (lo que efectivamente se
+  // pagó/anotó como gasto) cargada por el factor prestacional configurado
+  // — sin ese cargo, comparar el food cost contra el prime cost siempre
+  // sale optimista, porque la nómina real de Colombia trae encima
+  // prestaciones sociales + seguridad social + parafiscales que nunca
+  // aparecen en lo que se anota día a día.
+  function getCostoLaboral(state, startISO, endISO) {
+    var gastosRango = getGastosByRange(state.gastos, startISO, endISO);
+    var factor = (state.config && isFinite(Number(state.config.factorPrestacional))) ? Number(state.config.factorPrestacional) : 1.38;
+    var nominaRegistrada = gastosRango
+      .filter(function (g) { return g.tipo === 'operativo' && GASTO_CATEGORIAS_LABORALES.indexOf(g.categoria) !== -1; })
+      .reduce(function (a, g) { return a + g.monto; }, 0);
+    return { nominaRegistrada: nominaRegistrada, factorPrestacional: factor, costoLaboralCargado: nominaRegistrada * factor };
+  }
+
+  // Prime cost % = (costo de ventas + costo laboral cargado) / ingresos.
+  // Reusa computeCascada para el costo de ventas (mismo COGS que ya
+  // reporta Caja/Reportes tras C2, mermas incluidas) — no inventa un
+  // segundo cálculo de costo de ventas.
+  function getPrimeCost(state, startISO, endISO) {
+    var ventas = getVentasByRange(state.ventas, startISO, endISO);
+    var ingresos = ventas.reduce(function (a, v) { return a + v.total; }, 0);
+    var gastosRango = getGastosByRange(state.gastos, startISO, endISO);
+    var mermasValor = getValorTotalMermas(getMermasByRange(state.mermas, startISO, endISO));
+    var cogs = computeCascada(ventas, gastosRango, 0, mermasValor).costoVentas;
+    var laboral = getCostoLaboral(state, startISO, endISO);
+    var primeCostTotal = cogs + laboral.costoLaboralCargado;
+    return {
+      cogs: cogs,
+      nominaRegistrada: laboral.nominaRegistrada,
+      factorPrestacional: laboral.factorPrestacional,
+      costoLaboral: laboral.costoLaboralCargado,
+      ingresos: ingresos,
+      primeCostTotal: primeCostTotal,
+      primeCostPct: ingresos > 0 ? primeCostTotal / ingresos : 0
+    };
+  }
+
   // ─── Dependencias (P1-4: no romper recetas al borrar un insumo) ───
 
   // Solo detecta uso DIRECTO en la receta de un producto (tipo:'materia').
@@ -1831,6 +1886,9 @@
     getGastosByRange: getGastosByRange,
     getDepreciacionRango: getDepreciacionRango,
     getCascadaUtilidadRango: getCascadaUtilidadRango,
+    GASTO_CATEGORIAS_LABORALES: GASTO_CATEGORIAS_LABORALES,
+    getCostoLaboral: getCostoLaboral,
+    getPrimeCost: getPrimeCost,
     MARGEN_VARIABILIDAD_PCT: MARGEN_VARIABILIDAD_PCT
   };
 });
