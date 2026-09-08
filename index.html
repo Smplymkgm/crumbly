@@ -327,7 +327,7 @@ textarea.field{height:auto}
               <div><div style="font-size:15px;font-weight:600" id="df-utilidad-bruta">$0</div><div class="item-sub">Utilidad bruta</div></div>
               <div><div style="font-size:15px;font-weight:600" id="df-gastos-operativos">$0</div><div class="item-sub">Gastos operativos</div></div>
               <div><div style="font-size:15px;font-weight:600" id="df-depreciacion">$0</div><div class="item-sub">Depreciación</div></div>
-              <div><div style="font-size:15px;font-weight:600;color:var(--danger)" id="df-mermas">$0</div><div class="item-sub">Mermas</div></div>
+              <div><div style="font-size:15px;font-weight:600;color:var(--danger)" id="df-mermas">$0</div><div class="item-sub">Mermas (ya incluidas en costo de ventas)</div></div>
               <div><div style="font-size:15px;font-weight:600" id="df-utilidad-neta">$0</div><div class="item-sub">Utilidad neta</div></div>
               <div><div style="font-size:15px;font-weight:600" id="df-flujo-caja">$0</div><div class="item-sub">Flujo de caja</div></div>
             </div>
@@ -2371,7 +2371,7 @@ function renderDetalleFinanciero() {
   document.getElementById('df-utilidad-bruta').textContent = fmt(casc.utilidadBruta);
   document.getElementById('df-gastos-operativos').textContent = '-' + fmt(casc.totalOperativos);
   document.getElementById('df-depreciacion').textContent = '-' + fmt(casc.depreciacion);
-  document.getElementById('df-mermas').textContent = '-' + fmt(casc.mermas);
+  document.getElementById('df-mermas').textContent = fmt(casc.mermas); // C2: informativo, ya está dentro de utilidadBruta
   document.getElementById('df-utilidad-neta').textContent = fmt(casc.utilidadNeta);
   document.getElementById('df-flujo-caja').textContent = fmt(casc.flujoCaja);
 
@@ -2555,11 +2555,13 @@ function generateSalesReportPDF() {
   pdfSectionLabel(doc, 'Utilidad neta y flujo de caja', y); y += 7;
   y = pdfMinimalTable(doc, {
     startY: y,
-    // Mermas resta de la utilidad neta (p\u00e9rdida econ\u00f3mica real) pero NO
-    // del flujo de caja (nunca sali\u00f3 dinero de la caja) \u2014 mismo criterio
-    // que la depreciaci\u00f3n. Ver CrumblyCore.computeCascada.
-    head: [['Utilidad bruta', 'Gastos operativos', 'Depreciaci\u00f3n', 'Mermas', 'Utilidad neta', 'Flujo de caja']],
-    body: [[fmt(casc.utilidadBruta), '-' + fmt(casc.totalOperativos), '-' + fmt(casc.depreciacion), '-' + fmt(casc.mermas), fmt(casc.utilidadNeta), fmt(casc.flujoCaja)]],
+    // C2: la merma ya est\u00e1 restada DENTRO de "Utilidad bruta" (es costo de
+    // ventas) \u2014 esta columna es solo informativa (cu\u00e1nto de ese costo de
+    // ventas fue merma), NO se vuelve a restar para llegar a la neta.
+    // Nunca sale de la caja tampoco, igual que la depreciaci\u00f3n. Ver
+    // CrumblyCore.computeCascada.
+    head: [['Utilidad bruta', 'Gastos operativos', 'Depreciaci\u00f3n', 'Mermas (en costo de ventas)', 'Utilidad neta', 'Flujo de caja']],
+    body: [[fmt(casc.utilidadBruta), '-' + fmt(casc.totalOperativos), '-' + fmt(casc.depreciacion), fmt(casc.mermas), fmt(casc.utilidadNeta), fmt(casc.flujoCaja)]],
     columnStyles: { 0: { halign: 'right' }, 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } }
   }) + 14;
 

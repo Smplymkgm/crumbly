@@ -1656,16 +1656,23 @@
   // es estrictamente efectivo que entró/salió de la caja, y una merma no
   // es una salida de caja (mismo criterio que ya aplica la depreciación,
   // que tampoco toca flujoCaja).
+  // C2 (auditoría de costeo): la merma es inventario que se fue sin
+  // vender — es costo de ventas por definición, igual que lo que sí se
+  // vendió. Antes se restaba DEBAJO de la utilidad bruta (al nivel de
+  // gastos operativos), lo que dejaba el food cost/margen bruto
+  // estructuralmente por debajo del real. Se mueve dentro del costo de
+  // ventas — la utilidad neta final no cambia, solo dónde aparece la
+  // línea (verificado con test: idéntica antes/después).
   function computeCascada(ventas, gastos, depreciacion, mermasValor) {
     mermasValor = Number(mermasValor) || 0;
     var ingresos = ventas.reduce(function (a, v) { return a + v.total; }, 0);
     var gananciaVentas = ventas.reduce(function (a, v) { return a + v.ganancia; }, 0);
-    var costoVentas = ingresos - gananciaVentas;
-    var utilidadBruta = gananciaVentas;
+    var costoVentas = (ingresos - gananciaVentas) + mermasValor;
+    var utilidadBruta = ingresos - costoVentas;
 
     var operativos = gastos.filter(function (g) { return g.tipo === 'operativo'; });
     var totalOperativos = operativos.reduce(function (a, g) { return a + g.monto; }, 0);
-    var utilidadNeta = utilidadBruta - totalOperativos - depreciacion - mermasValor;
+    var utilidadNeta = utilidadBruta - totalOperativos - depreciacion;
 
     var comprasInventario = gastos.filter(function (g) { return g.tipo === 'inventario'; }).reduce(function (a, g) { return a + g.monto; }, 0);
     var capexPeriodo = gastos.filter(function (g) { return g.tipo === 'capex'; }).reduce(function (a, g) { return a + g.monto; }, 0);

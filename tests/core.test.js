@@ -1776,6 +1776,29 @@ test('un topping suelto o una adición van 100% a alimento (no tienen empaque pr
   assert.ok(food > 0);
 });
 
+console.log('\n== C2: la merma vive DENTRO del costo de ventas, no debajo de la utilidad bruta ==');
+
+test('C2: la merma ahora resta de la utilidad BRUTA (costo de ventas), no solo de la neta', () => {
+  const c = C.computeCascada([{ total: 20000, ganancia: 18750 }], [], 0, 100);
+  // costoVentas = (20000-18750) + 100 = 1350 ; utilidadBruta = 20000-1350 = 18650
+  assert.strictEqual(c.costoVentas, 1350);
+  assert.strictEqual(c.utilidadBruta, 18650);
+});
+
+test('C2: el margen bruto % baja EXACTAMENTE en la proporción de la merma sobre ingresos', () => {
+  const sinMerma = C.computeCascada([{ total: 20000, ganancia: 18750 }], [], 0, 0);
+  const conMerma = C.computeCascada([{ total: 20000, ganancia: 18750 }], [], 0, 100);
+  const caidaEsperadaPct = (100 / 20000) * 100;
+  assert.ok(Math.abs((sinMerma.margenBrutoPct - conMerma.margenBrutoPct) - caidaEsperadaPct) < 0.0001);
+});
+
+test('C2: la utilidad NETA final es idéntica a la fórmula vieja (mermas restando debajo de la bruta) — solo cambió dónde aparece la línea', () => {
+  const ingresos = 20000, gananciaVentas = 18750, mermasValor = 100, totalOperativos = 500, depreciacion = 50;
+  const utilidadNetaVieja = gananciaVentas - totalOperativos - depreciacion - mermasValor; // fórmula pre-C2
+  const c = C.computeCascada([{ total: ingresos, ganancia: gananciaVentas }], [{ tipo: 'operativo', categoria: 'Otros', monto: totalOperativos }], depreciacion, mermasValor);
+  assert.strictEqual(c.utilidadNeta, utilidadNetaVieja);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);
