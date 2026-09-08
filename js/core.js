@@ -261,7 +261,7 @@
     });
 
     s.preparaciones = s.preparaciones.map(function (prep) {
-      var out = Object.assign({ modo: 'porcentaje', baseGramos: 0, rendimientoPct: 100 }, prep); // rendimientoPct: v9 (B3)
+      var out = Object.assign({ modo: 'porcentaje', baseGramos: 0, rendimientoPct: 100, cantidad: 0 }, prep); // rendimientoPct: v9 (B3) ; cantidad: v9 (B4, WIP)
       if (!Array.isArray(out.componentes)) out.componentes = [];
       return out;
     });
@@ -466,8 +466,74 @@
     var rendimientoPct = input.rendimientoPct !== undefined ? Number(input.rendimientoPct) : 100;
     var prep = { id: id, nombre: nombre, modo: modo, baseGramos: Number(input.baseGramos) || 0, componentes: componentes, rendimientoPct: rendimientoPct };
     var idx = state.preparaciones.findIndex(function (x) { return x.id === id; });
-    if (idx === -1) state.preparaciones.push(prep); else state.preparaciones[idx] = prep;
+    if (idx === -1) {
+      prep.cantidad = 0;
+      state.preparaciones.push(prep);
+    } else {
+      // B4: `cantidad` es stock de WIP ya producido, no una propiedad de
+      // la receta — editar porcentajes/rendimiento no debe borrarlo (esta
+      // asignación reemplaza el objeto completo).
+      prep.cantidad = state.preparaciones[idx].cantidad;
+      state.preparaciones[idx] = prep;
+    }
     return prep;
+  }
+
+  // Produce un lote de una preparación (B4, WIP): descuenta las materias
+  // primas expandidas (reusa aplicarComponentes — mismo motor que
+  // applyVenta/registrarMerma, incluida la recursión si un componente es
+  // otra preparación) y acredita los gramos REALMENTE obtenidos al stock
+  // de la preparación. rendimientoPct se actualiza con el dato medido de
+  // ESTE lote (no un promedio histórico — la fórmula del encargo pide el
+  // dato medido, sin especificar un suavizado).
+  //
+  // input: { preparacionId, multiplicador (tamaño del lote, en "veces la
+  //          receta base"), gramosObtenidos (medido), fecha, usuarioEmail }
+  function producirPreparacion(state, input) {
+    input = input || {};
+    var prep = getPreparacion(state, input.preparacionId);
+    if (!prep) throw new Error('Preparación no encontrada');
+    var multiplicador = Number(input.multiplicador) || 0;
+    if (multiplicador <= 0) throw new Error('El tamaño del lote debe ser mayor a 0');
+    var gramosObtenidos = Number(input.gramosObtenidos);
+    if (!isFinite(gramosObtenidos) || gramosObtenidos <= 0) throw new Error('Los gramos obtenidos deben ser mayores a 0');
+
+    // Cada componente de la receta, resuelto a gramos absolutos para ESTE
+    // lote (gramosDeComponentePreparacion ya sabe leer porcentaje/directo).
+    var resueltos = (prep.componentes || []).map(function (c) {
+      return { tipo: c.tipo, refId: c.refId, gramos: gramosDeComponentePreparacion(prep, c) * multiplicador };
+    });
+    var gramosTeoricos = resueltos.reduce(function (a, c) { return a + c.gramos; }, 0);
+
+    var consumoReal = { materia: {}, empaques: {}, toppings: {} };
+    function deduct(bucket, id, cant) {
+      var m = (state[bucket] || []).find(function (x) { return x.id === id; });
+      if (!m || cant <= 0) return;
+      var antes = m.cantidad;
+      var deficit = Math.max(0, cant - antes); // mismo criterio que A2/applyVenta: nunca se pierde el déficit
+      m.cantidad = Math.max(0, antes - cant);
+      var real = antes - m.cantidad;
+      consumoReal[bucket][id] = (consumoReal[bucket][id] || 0) + real;
+      if (deficit > 0) m.faltante = (Number(m.faltante) || 0) + deficit;
+    }
+    aplicarComponentes(state, resueltos, 1, deduct);
+
+    var rendimientoMedido = gramosTeoricos > 0 ? (gramosObtenidos / gramosTeoricos) * 100 : (Number(prep.rendimientoPct) || 100);
+    prep.cantidad = (Number(prep.cantidad) || 0) + gramosObtenidos;
+    prep.rendimientoPct = rendimientoMedido;
+
+    return {
+      id: genId(), fecha: input.fecha || new Date().toISOString(),
+      preparacionId: prep.id, multiplicador: multiplicador,
+      gramosTeoricos: gramosTeoricos, gramosObtenidos: gramosObtenidos,
+      rendimientoMedido: rendimientoMedido, consumoReal: consumoReal,
+      usuarioEmail: input.usuarioEmail || ''
+    };
+    // ponytail: no se persiste una bitácora de producciones aparte (no
+    // hay forma de revertir un lote todavía) — el efecto que importa
+    // (stock de la preparación + rendimiento actualizado) ya queda en el
+    // estado. Agregar el log/revert cuando haga falta auditar lotes
+    // individuales o deshacer uno mal cargado.
   }
 
   function findProductosUsandoPreparacion(state, prepId) {
@@ -1082,6 +1148,7 @@
     if (origenTipo === 'empaques') return state.empaques;
     if (origenTipo === 'toppings') return state.toppings;
     if (origenTipo === 'producto') return state.productos;
+    if (origenTipo === 'preparacion') return state.preparaciones; // B4 (WIP)
     return null;
   }
 
@@ -1103,7 +1170,7 @@
     var origen = list.find(function (x) { return x.id === input.origenId; });
     if (!origen) throw new Error('Producto o insumo no encontrado');
 
-    var consumoReal = { materia: {}, empaques: {}, toppings: {} };
+    var consumoReal = { materia: {}, empaques: {}, toppings: {}, preparaciones: {} };
     function deduct(bucket, id, cant) {
       var l = state[bucket];
       var m = (l || []).find(function (x) { return x.id === id; });
@@ -1121,6 +1188,13 @@
       (origen.empaquesUsados || []).forEach(function (e) {
         deduct('empaques', e.empaqueId, (Number(e.cantidad) || 0) * cantidad);
       });
+    } else if (origenTipo === 'preparacion') {
+      // B4: se merma el WIP ya producido (descuento directo 1:1, NO se
+      // vuelve a expandir a materia prima — esa materia ya se descontó
+      // cuando se produjo el lote). El costo es el de la preparación
+      // misma (getPreparacionCosto), que no tiene campo `costo` propio.
+      costoUnitario = getPreparacionCosto(state, origen.id).costoPorGramo;
+      deduct('preparaciones', origen.id, cantidad);
     } else {
       costoUnitario = Number(origen.costo) || 0;
       deduct(origenTipo, origen.id, cantidad);
@@ -1159,6 +1233,7 @@
     restore('materia');
     restore('empaques');
     restore('toppings');
+    restore('preparaciones'); // B4 (WIP)
     state.mermas = state.mermas.filter(function (m) { return m.id !== id; });
   }
 
@@ -1217,7 +1292,14 @@
     var materia = valorBucket(state.materia);
     var empaques = valorBucket(state.empaques);
     var toppings = valorBucket(state.toppings);
-    return { total: materia + empaques + toppings, materia: materia, empaques: empaques, toppings: toppings };
+    // B4 (parcial: solo valorización): una preparación no tiene `costo`
+    // propio como insumo, su costo/gramo se deriva (getPreparacionCosto) —
+    // sin este bucket, toda la masa/salsa ya producida y guardada en la
+    // nevera el día del conteo queda invisible en el valor de inventario.
+    var preparaciones = (state.preparaciones || []).reduce(function (acc, p) {
+      return acc + (Number(p.cantidad) || 0) * getPreparacionCosto(state, p.id).costoPorGramo;
+    }, 0);
+    return { total: materia + empaques + toppings + preparaciones, materia: materia, empaques: empaques, toppings: toppings, preparaciones: preparaciones };
   }
 
   var SNAPSHOT_BUCKETS = [['materia'], ['empaques'], ['toppings']];
@@ -1237,6 +1319,17 @@
           var costoUnitario = Number(item.costo) || 0;
           lineas.push({ insumoTipo: b[0], insumoId: item.id, cantidad: cantidad, costoUnitario: costoUnitario, valor: cantidad * costoUnitario });
         });
+      });
+      // B4 (parcial): el WIP de preparaciones también se congela en el
+      // snapshot de sistema, con su costo/gramo derivado (no tiene campo
+      // `costo` propio). Todavía no es contable a mano en el flujo de
+      // conteo físico (B2) — eso queda para cuando exista una UI de
+      // conteo de preparaciones — así que no entra en SNAPSHOT_BUCKETS ni
+      // en `noContados`.
+      (state.preparaciones || []).forEach(function (prep) {
+        var cantidad = Number(prep.cantidad) || 0;
+        var costoUnitario = getPreparacionCosto(state, prep.id).costoPorGramo;
+        lineas.push({ insumoTipo: 'preparaciones', insumoId: prep.id, cantidad: cantidad, costoUnitario: costoUnitario, valor: cantidad * costoUnitario });
       });
     } else {
       var contadosSet = {};
@@ -1576,6 +1669,7 @@
     expandGramosAMateria: expandGramosAMateria,
     wouldCreateCiclo: wouldCreateCiclo,
     savePreparacion: savePreparacion,
+    producirPreparacion: producirPreparacion,
     findProductosUsandoPreparacion: findProductosUsandoPreparacion,
     findPreparacionesUsandoPreparacion: findPreparacionesUsandoPreparacion,
     findPreparacionesUsandoMateria: findPreparacionesUsandoMateria,

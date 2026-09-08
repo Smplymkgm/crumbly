@@ -1543,6 +1543,94 @@ test('cerrarConteo sin diferencia no exige motivo y no crea ajuste, pero sí gen
   assert.strictEqual(r.snapshot.tipo, 'conteo');
 });
 
+console.log('\n== B4 (parcial): valorización y producción de preparaciones (WIP) ==');
+
+function statePrepWIP() {
+  return C.migrateState({
+    materia: [
+      { id: 'harina', nombre: 'Harina', cantidad: 100000, costo: 5, minimo: 0 },
+      { id: 'agua', nombre: 'Agua', cantidad: 100000, costo: 0, minimo: 0 }
+    ],
+    preparaciones: [{
+      id: 'masa', nombre: 'Masa', modo: 'directo',
+      componentes: [
+        { tipo: 'materia', refId: 'harina', gramos: 600 },
+        { tipo: 'materia', refId: 'agua', gramos: 400 }
+      ]
+    }]
+  });
+}
+
+test('getValorInventario incluye el WIP de preparaciones (costo derivado, no un campo costo propio)', () => {
+  const s = statePrepWIP();
+  s.preparaciones[0].cantidad = 500; // 500g de masa ya producida, costo $3/g (600*5+400*0)/1000
+  const v = C.getValorInventario(s);
+  assert.strictEqual(v.preparaciones, 1500);
+  assert.strictEqual(v.total, v.materia + v.empaques + v.toppings + 1500);
+});
+
+test('crearSnapshot tipo sistema incluye una línea por preparación', () => {
+  const s = statePrepWIP();
+  s.preparaciones[0].cantidad = 500;
+  const snap = C.crearSnapshot(s, { tipo: 'sistema' });
+  const linea = snap.lineas.find(l => l.insumoTipo === 'preparaciones');
+  assert.ok(linea);
+  assert.strictEqual(linea.cantidad, 500);
+  assert.strictEqual(linea.valor, 1500);
+  assert.strictEqual(snap.valorTotal, C.getValorInventario(s).total);
+});
+
+test('producirPreparacion: lote de 8x descuenta las materias primas expandidas y acredita lo obtenido al stock', () => {
+  const s = statePrepWIP();
+  const r = C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 8, gramosObtenidos: 8000 });
+  assert.strictEqual(s.materia[0].cantidad, 100000 - 4800); // harina: 600*8
+  assert.strictEqual(s.materia[1].cantidad, 100000 - 3200); // agua: 400*8
+  assert.strictEqual(s.preparaciones[0].cantidad, 8000);
+  assert.strictEqual(r.gramosTeoricos, 8000);
+  assert.strictEqual(s.preparaciones[0].rendimientoPct, 100); // obtenidos == teóricos
+});
+
+test('producirPreparacion actualiza rendimientoPct con el dato medido cuando hay merma de cocción', () => {
+  const s = statePrepWIP();
+  C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 1, gramosObtenidos: 850 });
+  assert.strictEqual(s.preparaciones[0].cantidad, 850);
+  assert.strictEqual(s.preparaciones[0].rendimientoPct, 85);
+});
+
+test('producirPreparacion no cambia el valor total del inventario — solo mueve de un bucket a otro', () => {
+  const s = statePrepWIP();
+  const antes = C.getValorInventario(s).total;
+  C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 8, gramosObtenidos: 8000 });
+  const despues = C.getValorInventario(s).total;
+  assert.ok(Math.abs(despues - antes) < 0.001);
+});
+
+test('producirPreparacion registra faltante (A2) si no alcanza la materia prima, en vez de perder el déficit', () => {
+  const s = statePrepWIP();
+  s.materia[0].cantidad = 100; // solo 100g de harina, la receta pide 600*multiplicador
+  C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 1, gramosObtenidos: 500 });
+  assert.strictEqual(s.materia[0].cantidad, 0);
+  assert.strictEqual(s.materia[0].faltante, 500); // 600 pedidos - 100 disponibles
+});
+
+test('savePreparacion preserva `cantidad` (stock de WIP) al editar la receta — no es una propiedad de la receta', () => {
+  const s = statePrepWIP();
+  s.preparaciones[0].cantidad = 500;
+  C.savePreparacion(s, { id: 'masa', nombre: 'Masa', modo: 'directo', componentes: [{ tipo: 'materia', refId: 'harina', gramos: 700 }] });
+  assert.strictEqual(s.preparaciones[0].cantidad, 500);
+});
+
+test("registrarMerma con origenTipo 'preparacion' descuenta el WIP 1:1 al costo derivado de la preparación", () => {
+  const s = statePrepWIP();
+  C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 8, gramosObtenidos: 8000 }); // rendimiento 100, costo $3/g
+  const merma = C.registrarMerma(s, { origenTipo: 'preparacion', origenId: 'masa', cantidad: 8000, motivo: 'Vencido' });
+  assert.strictEqual(s.preparaciones[0].cantidad, 0);
+  assert.strictEqual(merma.costoUnitario, 3);
+  assert.strictEqual(merma.valorTotal, 24000);
+  C.eliminarMerma(s, merma.id);
+  assert.strictEqual(s.preparaciones[0].cantidad, 8000);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);
