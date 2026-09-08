@@ -1397,7 +1397,7 @@ function renderInventario() {
     return `<div class="list-row" style="padding:12px 16px;cursor:pointer" onclick="openInsumoModal('${it.id}')">
       <div style="flex:1;min-width:0">
         <div class="item-name">${esc(it.nombre)}</div>
-        <div class="item-sub" style="${sospechoso ? 'color:var(--danger)' : ''}">${esc(it.categoria || '—')} · ${it.cantidad.toLocaleString('es-CO')} ${esc(it.unidad)} · ${fmt(it.costo)}/${esc(it.unidad)}${sospechoso ? ' · revisá este costo' : ''}</div>
+        <div class="item-sub" style="${sospechoso ? 'color:var(--danger)' : ''}">${esc(it.categoria || '—')} · ${Math.round(it.cantidad).toLocaleString('es-CO')} ${esc(it.unidad)} · ${fmt(it.costo)}/${esc(it.unidad)}${sospechoso ? ' · revisá este costo' : ''}</div>
       </div>
       ${bajo ? '<span class="badge">Bajo stock</span>' : ''}
       <i class="ph ph-caret-right" style="color:var(--soft);font-size:12px;margin-left:10px"></i>
@@ -2210,7 +2210,7 @@ function renderDashboardAlerts() {
   el.innerHTML = bajos.length
     ? bajos.map(m => `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 9px;height:38px;background:var(--bg);border-radius:7px">
         <span style="font-size:12px;color:var(--text);font-weight:500">${esc(m.nombre)}</span>
-        <span style="font-size:12px;color:var(--muted);font-weight:600">${m.cantidad.toLocaleString('es-CO')} / min ${m.minimo}</span>
+        <span style="font-size:12px;color:var(--muted);font-weight:600">${Math.round(m.cantidad).toLocaleString('es-CO')} / min ${m.minimo}</span>
       </div>`).join('')
     : '<p class="empty" style="color:var(--success)">Todo en orden</p>';
 }
@@ -2582,7 +2582,7 @@ function generateMermasReportPDF() {
   y = pdfMinimalTable(doc, {
     startY: y,
     head: [['Producto / insumo', 'Cantidad', 'Valor perdido']],
-    body: origenesOrdenados.length ? origenesOrdenados.map(([n, d]) => [n, d.cantidad.toLocaleString('es-CO'), fmt(d.valor)]) : [['—', '—', '—']],
+    body: origenesOrdenados.length ? origenesOrdenados.map(([n, d]) => [n, Math.round(d.cantidad).toLocaleString('es-CO'), fmt(d.valor)]) : [['—', '—', '—']],
     columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' } }
   }) + 14;
 
@@ -2591,7 +2591,7 @@ function generateMermasReportPDF() {
   const rows = mermas.slice().sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).map(m => {
     const d = new Date(m.fecha);
     const fecha = d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' });
-    return [fecha, CrumblyCore.getMermaOrigenNombre(state, m), m.motivo, m.cantidad.toLocaleString('es-CO') + ' ' + mermaOrigenUnidad(m), fmt(m.valorTotal)];
+    return [fecha, CrumblyCore.getMermaOrigenNombre(state, m), m.motivo, Math.round(m.cantidad).toLocaleString('es-CO') + ' ' + mermaOrigenUnidad(m), fmt(m.valorTotal)];
   });
   pdfMinimalTable(doc, {
     startY: y,
@@ -2853,7 +2853,7 @@ function saveMerma() {
     const list = CrumblyCore.getMermaOrigenList(state, origenTipo) || [];
     const origen = list.find(x => x.id === origenId);
     if (origen && cantidad > origen.cantidad) {
-      if (!confirm('Solo hay ' + origen.cantidad.toLocaleString('es-CO') + ' disponible — la merma dejará el stock en 0.\n\n¿Registrarla de todas formas?')) return;
+      if (!confirm('Solo hay ' + Math.round(origen.cantidad).toLocaleString('es-CO') + ' disponible — la merma dejará el stock en 0.\n\n¿Registrarla de todas formas?')) return;
       stockInsuficiente = true;
     }
   }
@@ -2926,7 +2926,7 @@ function renderMermas() {
         return `<div class="list-row" style="padding:12px 16px">
           <div style="flex:1;min-width:0">
             <div class="item-name">${esc(nombre)}</div>
-            <div class="item-sub">${esc(m.motivo)} · ${m.cantidad.toLocaleString('es-CO')} ${esc(unidad)} · ${fecha}${m.stockInsuficiente ? ' · <span style="color:var(--danger)">stock insuficiente</span>' : ''}</div>
+            <div class="item-sub">${esc(m.motivo)} · ${Math.round(m.cantidad).toLocaleString('es-CO')} ${esc(unidad)} · ${fecha}${m.stockInsuficiente ? ' · <span style="color:var(--danger)">stock insuficiente</span>' : ''}</div>
           </div>
           <span style="font-size:12px;font-weight:600;color:var(--danger)">-${fmt(m.valorTotal)}</span>
           <button class="btn-icon danger" style="margin-left:8px" onclick="eliminarMerma('${m.id}')"><i class="ph ph-trash"></i></button>
