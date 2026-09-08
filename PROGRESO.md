@@ -16,7 +16,7 @@ Ninguna — la decisión de la ronda 1 (modo del motor de expansión) ya venía 
 | P0.2 · Preparaciones contables en el conteo | ✅ HECHA |
 | P0.3 · Congelar desglose alimento/empaque en la venta | ✅ HECHA |
 | P1.1 · Parámetro de modo en el motor de expansión | ✅ HECHA |
-| P1.2 · Consumo parcial y faltante de preparación | PENDIENTE |
+| P1.2 · Consumo parcial y faltante de preparación | ✅ HECHA |
 | P1.3 · Bitácora de lotes | PENDIENTE |
 | P2.1 · Reestructurar getVarianza (dos niveles) | PENDIENTE |
 | P2.2 · Ajustar getActualVsTheoretical | PENDIENTE |
@@ -52,3 +52,11 @@ Ninguna — la decisión de la ronda 1 (modo del motor de expansión) ya venía 
 - Archivos: `js/core.js` (`aplicarComponentes` gana un 5º parámetro `opts.modo`, `'crudo'` por defecto; `getConsumptionRolling`/`consumoTeoricoDeVentas` pasa `{modo:'crudo'}` explícito; `aplicarComponentes` se exporta para poder testearlo directo), `tests/core.test.js` (6 tests: los dos modos por separado, consumo parcial, los dos criterios exactos del encargo, no-regresión de `getConsumptionRolling`).
 - `applyVenta`, `computeSaleConsumption`, `checkStockShortage` y `registrarMerma` **todavía NO pasan `{modo:'stock'}`** — eso es P1.2, porque implica además el consumo parcial + `faltante` de preparación + `revertVenta` en dos niveles, todo en el mismo cambio (no se puede separar "usar modo stock" de "manejar el faltante que ese modo puede generar").
 - **Limitación conocida, documentada en el código (opción conservadora, no bloqueante)**: en una simulación de solo lectura (`computeSaleConsumption`), si el MISMO carrito tiene dos líneas distintas que usan la MISMA preparación, cada línea lee `prep.cantidad` por separado (la simulación nunca muta nada) y ambas podrían creer que hay stock de sobra — el aviso de faltante PRE-venta podría subestimarse en ese caso puntual. La deducción REAL (`applyVenta`) no tiene este problema porque `apply` sí muta el estado entre líneas. No es una pérdida de datos ni un error de contabilidad — en el peor caso, el aviso previo es optimista y el faltante real de A2 lo captura igual en el momento del descuento real.
+
+### P1.2 · Consumo parcial y faltante de preparación — HECHA
+
+- Archivos: `js/core.js` (`applyVenta` y `registrarMerma(origen producto)` pasan `{modo:'stock'}`; `computeSaleConsumption`/`checkStockShortage` ganan el bucket `preparaciones`; `revertVenta`/`eliminarMerma` reponen los DOS niveles — cantidad y faltante; `registrarMerma` gana tracking de `faltanteGenerado` que antes no tenía; `faltante:0` en preparaciones (migración) y preservado en `savePreparacion`), `tests/core.test.js` (8 tests, incluida la regresión real de P0.1 ya en verde).
+- **El test de P0.1 ahora pasa** (confirmado también con el script del scratchpad, no solo el test): producir un lote y vender el producto descuenta la harina UNA sola vez; la preparación baja a 0 al venderse, no se queda creciendo para siempre.
+- **Verificado en el navegador con el flujo real de venta** (Registrar venta → buscar producto → agregar → confirmar), dos veces: (1) 1 unidad con 200g de stock de sobra → consume 100% de la preparación, la materia prima queda intacta; (2) 3 unidades más (300g pedidos, solo 100g de stock) → consume el resto de la preparación (100g) y expande el faltante (200g) a materia prima, sin errores de consola.
+- **Bug encontrado y corregido, no pedido explícitamente pero necesario**: `registrarMerma` nunca implementó el mecanismo de `faltante` de A2 para NINGÚN bucket (ni materia, ni empaques, ni toppings) — su `deduct` solo clampeaba a 0 sin registrar el déficit. Con el modo `'stock'` cascadeando preparación → materia en una merma de producto, dejar ese hueco habría reintroducido la misma clase de bug que A2 corrigió, ahora en mermas. Se agregó `faltanteGenerado` + su reversión simétrica en `eliminarMerma`, mismo patrón que `revertVenta`.
+- `checkStockShortage` incluye un chequeo de `preparaciones` por completitud/consistencia con los demás buckets, aunque por construcción (el motor nunca pide más de lo disponible en modo `'stock'`) nunca va a marcar un faltante ahí — documentado en el comentario.

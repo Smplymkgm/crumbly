@@ -2326,6 +2326,83 @@ test('NO-REGRESIÓN: getConsumptionRolling da exactamente lo mismo con o sin sto
   assert.strictEqual(consumoConStock.materia.harina, 100); // siempre expande a materia, tenga o no stock la preparación
 });
 
+console.log('\n== P1.2 (Ronda 2): consumo parcial y faltante de preparación ==');
+
+function statePrepVenta(cantidadPrep) {
+  return C.migrateState({
+    materia: [{ id: 'harina', nombre: 'Harina', cantidad: 100000, costo: 5, minimo: 0 }],
+    preparaciones: [{ id: 'masa', nombre: 'Masa', modo: 'directo', cantidad: cantidadPrep, componentes: [{ tipo: 'materia', refId: 'harina', gramos: 100 }] }],
+    productos: [{ id: 'p1', nombre: 'Waffle', precio: 20000, componentes: [{ tipo: 'preparacion', refId: 'masa', gramos: 100 }], empaquesUsados: [], empaqueManual: 0 }]
+  });
+}
+
+test('REGRESIÓN DE P0.1 (ya corregida): producir un lote y vender el producto descuenta la materia prima UNA sola vez', () => {
+  const s = statePrepVenta(0);
+  const cantidadInicial = s.materia[0].cantidad;
+  C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 1, gramosObtenidos: 100 });
+  assert.strictEqual(s.materia[0].cantidad, cantidadInicial - 100);
+  assert.strictEqual(s.preparaciones[0].cantidad, 100);
+
+  C.applyVenta(s, [{ productoId: 'p1', qty: 1, toppings: [] }], [], {});
+
+  assert.strictEqual(cantidadInicial - s.materia[0].cantidad, 100, 'la harina se descontó una sola vez, no dos');
+  assert.strictEqual(s.preparaciones[0].cantidad, 0, 'el stock de la preparación bajó al venderse');
+});
+
+test('CRITERIO: 200g de salsa en stock, venta que pide 500g -> la preparación queda en 0 y la materia prima se descuenta SOLO por los 300g faltantes', () => {
+  const s = statePrepVenta(200);
+  const harinaAntes = s.materia[0].cantidad;
+  const venta = C.applyVenta(s, [{ productoId: 'p1', qty: 5, toppings: [] }], [], {}); // 5 × 100g = 500g de masa pedidos
+  assert.strictEqual(s.preparaciones[0].cantidad, 0);
+  assert.strictEqual(harinaAntes - s.materia[0].cantidad, 300); // 3x100g de harina, solo por el resto
+  assert.strictEqual(venta.consumoReal.preparaciones.masa, 200);
+  assert.strictEqual(venta.consumoReal.materia.harina, 300);
+});
+
+test('revertVenta deshace los DOS niveles: repone el stock de la preparación Y la materia prima consumida por el resto', () => {
+  const s = statePrepVenta(200);
+  const harinaAntes = s.materia[0].cantidad;
+  const venta = C.applyVenta(s, [{ productoId: 'p1', qty: 5, toppings: [] }], [], {});
+  C.revertVenta(s, venta);
+  assert.strictEqual(s.preparaciones[0].cantidad, 200);
+  assert.strictEqual(s.materia[0].cantidad, harinaAntes);
+});
+
+test('si tampoco alcanza la materia prima, el excedente va a `faltante` de materia (misma mecánica de A2)', () => {
+  const s = statePrepVenta(200);
+  s.materia[0].cantidad = 250; // solo alcanza para 2.5x100g, la venta pide 3x100g (el resto tras la preparación)
+  const venta = C.applyVenta(s, [{ productoId: 'p1', qty: 5, toppings: [] }], [], { stockInsuficiente: true }); // 500g pedidos: 200 de prep + 300 de materia, pero solo hay 250
+  assert.strictEqual(s.preparaciones[0].cantidad, 0);
+  assert.strictEqual(s.materia[0].cantidad, 0);
+  assert.strictEqual(s.materia[0].faltante, 50); // 300 pedidos - 250 disponibles
+  C.revertVenta(s, venta);
+  assert.strictEqual(s.materia[0].faltante, 0);
+  assert.strictEqual(s.materia[0].cantidad, 250);
+  assert.strictEqual(s.preparaciones[0].cantidad, 200);
+});
+
+test('registrarMerma de un producto (origen "producto") también usa modo stock: consume primero la preparación', () => {
+  const s = statePrepVenta(200);
+  const merma = C.registrarMerma(s, { origenTipo: 'producto', origenId: 'p1', cantidad: 5, motivo: 'Quemado' }); // 500g de masa
+  assert.strictEqual(s.preparaciones[0].cantidad, 0);
+  assert.strictEqual(merma.consumoReal.preparaciones.masa, 200);
+  assert.strictEqual(merma.consumoReal.materia.harina, 300);
+  C.eliminarMerma(s, merma.id);
+  assert.strictEqual(s.preparaciones[0].cantidad, 200);
+});
+
+test('migrateState pone faltante:0 en preparaciones viejas que no lo tenían', () => {
+  const s = C.migrateState({ preparaciones: [{ id: 'p1', nombre: 'Vieja', modo: 'directo', componentes: [] }] });
+  assert.strictEqual(s.preparaciones[0].faltante, 0);
+});
+
+test('savePreparacion preserva `faltante` (no solo `cantidad`) al editar la receta', () => {
+  const s = statePrepVenta(200);
+  s.preparaciones[0].faltante = 30;
+  C.savePreparacion(s, { id: 'masa', nombre: 'Masa', modo: 'directo', componentes: [{ tipo: 'materia', refId: 'harina', gramos: 90 }] });
+  assert.strictEqual(s.preparaciones[0].faltante, 30);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);

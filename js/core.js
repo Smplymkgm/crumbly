@@ -284,7 +284,7 @@
     });
 
     s.preparaciones = s.preparaciones.map(function (prep) {
-      var out = Object.assign({ modo: 'porcentaje', baseGramos: 0, rendimientoPct: 100, cantidad: 0 }, prep); // rendimientoPct: v9 (B3) ; cantidad: v9 (B4, WIP)
+      var out = Object.assign({ modo: 'porcentaje', baseGramos: 0, rendimientoPct: 100, cantidad: 0, faltante: 0 }, prep); // rendimientoPct: v9 (B3) ; cantidad: v9 (B4, WIP) ; faltante: v10 (P1.2)
       if (!Array.isArray(out.componentes)) out.componentes = [];
       return out;
     });
@@ -534,12 +534,14 @@
     var idx = state.preparaciones.findIndex(function (x) { return x.id === id; });
     if (idx === -1) {
       prep.cantidad = 0;
+      prep.faltante = 0;
       state.preparaciones.push(prep);
     } else {
-      // B4: `cantidad` es stock de WIP ya producido, no una propiedad de
-      // la receta — editar porcentajes/rendimiento no debe borrarlo (esta
-      // asignación reemplaza el objeto completo).
+      // B4/P1.2: `cantidad` y `faltante` son stock de WIP (y su deuda),
+      // no una propiedad de la receta — editar porcentajes/rendimiento no
+      // debe borrarlos (esta asignación reemplaza el objeto completo).
       prep.cantidad = state.preparaciones[idx].cantidad;
+      prep.faltante = state.preparaciones[idx].faltante;
       state.preparaciones[idx] = prep;
     }
     return prep;
@@ -860,7 +862,7 @@
   //   lineas: [{ productoId, qty, toppings: [{toppingId, qty}] }]
   //   toppingsSueltos: [{ toppingId, qty }]
   function computeSaleConsumption(lineas, toppingsSueltos, state) {
-    var consumo = { materia: {}, empaques: {}, toppings: {} };
+    var consumo = { materia: {}, empaques: {}, toppings: {}, preparaciones: {} };
     function add(bucket, id, cant) {
       consumo[bucket][id] = (consumo[bucket][id] || 0) + cant;
     }
@@ -871,7 +873,10 @@
         // Cada componente (materia directa, preparación, empaque o topping)
         // se expande hasta insumo hoja antes de sumarlo — así una receta con
         // preparaciones anidadas valida contra el stock real, no un intermedio.
-        aplicarComponentes(state, p.componentes, qty, add);
+        // P1.2: modo 'stock' — es lo que realmente va a salir del
+        // inventario si se confirma la venta (ver limitación conocida de
+        // P1.1 sobre dos líneas que compartan la misma preparación).
+        aplicarComponentes(state, p.componentes, qty, add, { modo: 'stock' });
         (p.empaquesUsados || []).forEach(function (e) {
           add('empaques', e.empaqueId, (Number(e.cantidad) || 0) * qty);
         });
@@ -917,6 +922,7 @@
     check('materia', state.materia);
     check('empaques', state.empaques);
     check('toppings', state.toppings);
+    check('preparaciones', state.preparaciones); // P1.2 — por construcción nunca marca faltante (aplicarComponentes en modo 'stock' nunca pide más de lo disponible), pero se deja por completitud y consistencia con los demás buckets.
     return faltantes;
   }
 
@@ -1029,12 +1035,14 @@
     validarFechaNoFutura(opts.fecha); // I3
     const items = [];
     let total = 0, ganancia = 0;
-    const consumoReal = { materia: {}, empaques: {}, toppings: {} };
+    // P1.2: preparaciones es un bucket más de consumoReal/faltanteGenerado
+    // — mismo campo, mismo comportamiento que materia/empaques/toppings.
+    const consumoReal = { materia: {}, empaques: {}, toppings: {}, preparaciones: {} };
     // A2: lo que la venta no alcanzó a descontar por falta de stock ya NO
     // se pierde en el clamp a 0 — se acumula en insumo.faltante (deuda de
     // inventario) y se registra aquí para que revertVenta pueda deshacerla
     // exacta, igual que consumoReal.
-    const faltanteGenerado = { materia: {}, empaques: {}, toppings: {} };
+    const faltanteGenerado = { materia: {}, empaques: {}, toppings: {}, preparaciones: {} };
 
     function deduct(bucket, list, id, cantidad) {
       const m = (list || []).find(function (x) { return x.id === id; });
@@ -1063,7 +1071,11 @@
           items.push({ productoId: p.id, nombre: p.nombre, qty: qty, precio: p.precio, costo: costo, costoAlimento: desglose.costoAlimento, costoEmpaque: desglose.costoEmpaque });
           total += p.precio * qty;
           ganancia += (p.precio - costo) * qty;
-          aplicarComponentes(state, p.componentes, qty, function (bucket, id, cant) { deduct(bucket, state[bucket], id, cant); });
+          // P1.2: modo 'stock' — descuenta primero lo que alcance del
+          // stock ya producido de la preparación; el resto (o todo, si
+          // no hay stock) se expande a materia prima. Es lo que
+          // realmente sale del inventario.
+          aplicarComponentes(state, p.componentes, qty, function (bucket, id, cant) { deduct(bucket, state[bucket], id, cant); }, { modo: 'stock' });
           (p.empaquesUsados || []).forEach(function (e) {
             deduct('empaques', state.empaques, e.empaqueId, (Number(e.cantidad) || 0) * qty);
           });
@@ -1143,6 +1155,7 @@
       restore('materia', state.materia);
       restore('empaques', state.empaques);
       restore('toppings', state.toppings);
+      restore('preparaciones', state.preparaciones); // P1.2: dos niveles — repone el stock de la preparación tal cual se descontó
       // A2: deshace también el faltante que esta venta haya generado —
       // nunca por debajo de 0 (si ya se saldó parcialmente con una compra
       // posterior antes de revertir, no se puede reconstruir con certeza
@@ -1156,6 +1169,7 @@
       restoreFaltante('materia', state.materia);
       restoreFaltante('empaques', state.empaques);
       restoreFaltante('toppings', state.toppings);
+      restoreFaltante('preparaciones', state.preparaciones);
     } else {
       venta.items.forEach(function (item) {
         if (item.productoId) {
@@ -1368,20 +1382,32 @@
     if (!origen) throw new Error('Producto o insumo no encontrado');
 
     var consumoReal = { materia: {}, empaques: {}, toppings: {}, preparaciones: {} };
+    // P1.2: mismo mecanismo de faltante que A2 (nunca se pierde el
+    // déficit en el clamp a 0) — necesario ahora que una merma de
+    // producto puede cascadear preparación → materia prima, igual que
+    // una venta.
+    var faltanteGenerado = { materia: {}, empaques: {}, toppings: {}, preparaciones: {} };
     function deduct(bucket, id, cant) {
       var l = state[bucket];
       var m = (l || []).find(function (x) { return x.id === id; });
       if (!m || cant <= 0) return;
       var antes = m.cantidad;
-      m.cantidad = Math.max(0, m.cantidad - cant);
+      var deficit = Math.max(0, cant - antes);
+      m.cantidad = Math.max(0, antes - cant);
       var real = antes - m.cantidad;
       consumoReal[bucket][id] = (consumoReal[bucket][id] || 0) + real;
+      if (deficit > 0) {
+        m.faltante = (Number(m.faltante) || 0) + deficit;
+        faltanteGenerado[bucket][id] = (faltanteGenerado[bucket][id] || 0) + deficit;
+      }
     }
 
     var costoUnitario;
     if (origenTipo === 'producto') {
       costoUnitario = getCostoProducto(origen, state);
-      aplicarComponentes(state, origen.componentes, cantidad, deduct);
+      // P1.2: modo 'stock' — se botó el producto terminado, con la
+      // preparación que ya tenía adentro (si había stock de sobra).
+      aplicarComponentes(state, origen.componentes, cantidad, deduct, { modo: 'stock' });
       (origen.empaquesUsados || []).forEach(function (e) {
         deduct('empaques', e.empaqueId, (Number(e.cantidad) || 0) * cantidad);
       });
@@ -1409,7 +1435,8 @@
       observaciones: input.observaciones || '',
       usuario: input.usuario || '',
       stockInsuficiente: !!input.stockInsuficiente,
-      consumoReal: consumoReal
+      consumoReal: consumoReal,
+      faltanteGenerado: faltanteGenerado
     };
     state.mermas.push(merma);
     return merma;
@@ -1431,6 +1458,18 @@
     restore('empaques');
     restore('toppings');
     restore('preparaciones'); // B4 (WIP)
+    // P1.2: mismo criterio que revertVenta — deshace el faltante que
+    // esta merma haya generado, nunca por debajo de 0.
+    function restoreFaltante(bucket) {
+      Object.keys((merma.faltanteGenerado || {})[bucket] || {}).forEach(function (iid) {
+        var m = (state[bucket] || []).find(function (x) { return x.id === iid; });
+        if (m) m.faltante = Math.max(0, (Number(m.faltante) || 0) - merma.faltanteGenerado[bucket][iid]);
+      });
+    }
+    restoreFaltante('materia');
+    restoreFaltante('empaques');
+    restoreFaltante('toppings');
+    restoreFaltante('preparaciones');
     state.mermas = state.mermas.filter(function (m) { return m.id !== id; });
   }
 
