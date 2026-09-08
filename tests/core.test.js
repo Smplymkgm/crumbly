@@ -1926,6 +1926,65 @@ test('getBreakEven: bepCaja usa el capex completo del período (sin depreciació
   assert.notStrictEqual(be.bepCaja, be.bepContable);
 });
 
+console.log('\n== C5: Menu Engineering (Kasavana & Smith) ==');
+
+function stateMenuEngineering() {
+  return C.migrateState({
+    materia: [{ id: 'ins', nombre: 'Insumo', cantidad: 10000000, costo: 1, minimo: 0 }],
+    productos: [
+      { id: 'x1', nombre: 'Limonada', categoria: 'Bebidas', precio: 1000, componentes: [{ tipo: 'materia', refId: 'ins', gramos: 500 }], empaquesUsados: [], empaqueManual: 0 },
+      { id: 'y1', nombre: 'Té frío', categoria: 'Bebidas', precio: 1200, componentes: [{ tipo: 'materia', refId: 'ins', gramos: 600 }], empaquesUsados: [], empaqueManual: 0 },
+      { id: 'z1', nombre: 'Torta', categoria: 'Postres', precio: 8000, componentes: [{ tipo: 'materia', refId: 'ins', gramos: 3000 }], empaquesUsados: [], empaqueManual: 0 },
+      { id: 'w1', nombre: 'Cheesecake', categoria: 'Postres', precio: 9000, componentes: [{ tipo: 'materia', refId: 'ins', gramos: 3000 }], empaquesUsados: [], empaqueManual: 0 }
+    ]
+  });
+}
+
+test('C5 — un producto barato de alta rotación en SU categoría es "estrella", no "perro", aunque otra categoría tenga CM 10x mayor', () => {
+  const s = stateMenuEngineering();
+  // Bebidas: x1 CM=500 (mix 20%, baja rotación) ; y1 CM=600 (mix 80%, alta rotación)
+  C.applyVenta(s, [{ productoId: 'x1', qty: 20, toppings: [] }], [], {});
+  C.applyVenta(s, [{ productoId: 'y1', qty: 80, toppings: [] }], [], {});
+  // Postres: z1 CM=5000 (mix 50%) ; w1 CM=6000 (mix 50%) — 10x más rentables en pesos absolutos
+  C.applyVenta(s, [{ productoId: 'z1', qty: 5, toppings: [] }], [], {});
+  C.applyVenta(s, [{ productoId: 'w1', qty: 5, toppings: [] }], [], {});
+
+  const menu = C.getMenuEngineering(s, s.ventas);
+  const porId = Object.fromEntries(menu.map(m => [m.productoId, m]));
+
+  // y1: dentro de Bebidas es popular (80% >> 35%) y rentable (600 >= 550 promedio de su categoría)
+  assert.strictEqual(porId.y1.clasificacion, 'estrella');
+  // x1: dentro de Bebidas, baja rotación (20% < 35%) y por debajo del promedio de SU categoría -> perro
+  assert.strictEqual(porId.x1.clasificacion, 'perro');
+  // Postres, mismo patrón pero con cifras 10x mayores
+  assert.strictEqual(porId.w1.clasificacion, 'estrella');
+  assert.strictEqual(porId.z1.clasificacion, 'caballo de batalla'); // popular pero bajo el promedio de SU categoría
+});
+
+test('C5: agrupa por productoId, nunca por nombre — dos productos con el mismo nombre en categorías distintas no se mezclan', () => {
+  const s = C.migrateState({
+    materia: [{ id: 'ins', nombre: 'Insumo', cantidad: 1000000, costo: 1, minimo: 0 }],
+    productos: [
+      { id: 'a1', nombre: 'Waffle', categoria: 'Desayuno', precio: 5000, componentes: [{ tipo: 'materia', refId: 'ins', gramos: 100 }], empaquesUsados: [], empaqueManual: 0 },
+      { id: 'b1', nombre: 'Waffle', categoria: 'Postres', precio: 9000, componentes: [{ tipo: 'materia', refId: 'ins', gramos: 100 }], empaquesUsados: [], empaqueManual: 0 }
+    ]
+  });
+  C.applyVenta(s, [{ productoId: 'a1', qty: 10, toppings: [] }], [], {});
+  C.applyVenta(s, [{ productoId: 'b1', qty: 10, toppings: [] }], [], {});
+  const menu = C.getMenuEngineering(s, s.ventas);
+  assert.strictEqual(menu.length, 2);
+  assert.deepStrictEqual(menu.map(m => m.productoId).sort(), ['a1', 'b1']);
+});
+
+test('C5: umbral de popularidad es (1/N) × 0,70 dentro de la categoría', () => {
+  const s = stateMenuEngineering();
+  C.applyVenta(s, [{ productoId: 'x1', qty: 20, toppings: [] }], [], {});
+  C.applyVenta(s, [{ productoId: 'y1', qty: 80, toppings: [] }], [], {});
+  const menu = C.getMenuEngineering(s, s.ventas);
+  const bebidas = menu.filter(m => m.categoria === 'Bebidas');
+  assert.ok(Math.abs(bebidas[0].umbralPopularidad - 0.35) < 0.0001); // (1/2)*0.7
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);

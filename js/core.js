@@ -1881,6 +1881,77 @@
     };
   }
 
+  // C5: Menu Engineering — matriz de Kasavana & Smith. Dos cosas que la
+  // mayoría implementa mal, y acá no se pueden equivocar:
+  // 1. El eje de rentabilidad va en PESOS (CM unitario), nunca en
+  //    porcentaje — un producto caro con margen % bajo puede dejar más
+  //    plata por unidad que uno barato con margen % alto.
+  // 2. El mix (popularidad) y el umbral de rentabilidad se calculan
+  //    DENTRO de cada categoría, nunca sobre el menú entero — si no, un
+  //    producto barato de alta rotación en su propia categoría (bebidas)
+  //    siempre va a perder contra un postre premium y cae en "perro" sin
+  //    serlo.
+  // Agrupa por productoId, nunca por nombre (dos productos pueden
+  // compartir nombre en categorías distintas).
+  function getMenuEngineering(state, ventas) {
+    var porProducto = {};
+    (ventas || []).forEach(function (v) {
+      (v.items || []).forEach(function (item) {
+        if (!item.productoId) return; // solo productos del menú — toppings sueltos/adiciones no aplican
+        var qty = Number(item.qty) || 0;
+        var cm = (Number(item.precio) || 0) - (Number(item.costo) || 0);
+        var row = porProducto[item.productoId];
+        if (!row) {
+          var p = (state.productos || []).find(function (x) { return x.id === item.productoId; });
+          row = porProducto[item.productoId] = {
+            productoId: item.productoId,
+            nombre: p ? p.nombre : item.nombre,
+            categoria: (p && p.categoria) ? p.categoria : '(sin categoría)',
+            qty: 0,
+            cmTotalPesos: 0
+          };
+        }
+        row.qty += qty;
+        row.cmTotalPesos += cm * qty;
+      });
+    });
+
+    var porCategoria = {};
+    Object.keys(porProducto).forEach(function (pid) {
+      var row = porProducto[pid];
+      row.cmUnitario = row.qty > 0 ? row.cmTotalPesos / row.qty : 0;
+      (porCategoria[row.categoria] = porCategoria[row.categoria] || []).push(row);
+    });
+
+    var resultado = [];
+    Object.keys(porCategoria).forEach(function (categoria) {
+      var items = porCategoria[categoria];
+      var n = items.length;
+      var totalQtyCategoria = items.reduce(function (a, r) { return a + r.qty; }, 0);
+      // Umbral de popularidad estándar: (1 / n ítems de la categoría) × 0,70.
+      var umbralPopularidad = n > 0 ? (1 / n) * 0.7 : 0;
+      // Umbral de rentabilidad: promedio SIMPLE del CM unitario de la
+      // categoría (no ponderado por volumen — ponderar sesgaría el
+      // umbral hacia el producto ya popular, que nunca podría superarlo).
+      var umbralRentabilidad = n > 0 ? items.reduce(function (a, r) { return a + r.cmUnitario; }, 0) / n : 0;
+      items.forEach(function (r) {
+        var mix = totalQtyCategoria > 0 ? r.qty / totalQtyCategoria : 0;
+        var esPopular = mix >= umbralPopularidad;
+        var esRentable = r.cmUnitario >= umbralRentabilidad;
+        var clasificacion = esPopular
+          ? (esRentable ? 'estrella' : 'caballo de batalla')
+          : (esRentable ? 'enigma' : 'perro');
+        resultado.push({
+          productoId: r.productoId, nombre: r.nombre, categoria: categoria,
+          qty: r.qty, mix: mix, cmUnitario: r.cmUnitario,
+          umbralPopularidad: umbralPopularidad, umbralRentabilidad: umbralRentabilidad,
+          clasificacion: clasificacion
+        });
+      });
+    });
+    return resultado;
+  }
+
   // ─── Dependencias (P1-4: no romper recetas al borrar un insumo) ───
 
   // Solo detecta uso DIRECTO en la receta de un producto (tipo:'materia').
@@ -2005,6 +2076,7 @@
     getCostosFijosYVariables: getCostosFijosYVariables,
     getCMPonderado: getCMPonderado,
     getBreakEven: getBreakEven,
+    getMenuEngineering: getMenuEngineering,
     MARGEN_VARIABILIDAD_PCT: MARGEN_VARIABILIDAD_PCT
   };
 });
