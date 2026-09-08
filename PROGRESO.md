@@ -29,7 +29,7 @@ No se adivinó. Queda pendiente para una siguiente ronda con esa decisión ya to
 | C2 · Merma dentro del COGS | ✅ HECHA |
 | C3 · Costo laboral y prime cost | ✅ HECHA |
 | C4 · Comportamiento de costo y break-even | ✅ HECHA |
-| C5 · Menu engineering | PENDIENTE |
+| C5 · Menu engineering | ✅ HECHA |
 | C6 · Arreglos baratos (I3,I4,I5,C10,C11) | ✅ HECHA |
 | D1 · getVarianza | PENDIENTE |
 | D2 · Actual vs Theoretical | PENDIENTE |
@@ -120,3 +120,8 @@ Etapa 3 ("consumo en venta") quedó **BLOQUEADA** — ver la pregunta concreta a
 - `state.config.comportamientoCategorias{}` (sin clasificar = 'fijo'), `getComportamientoCategoria`, `getCostosFijosYVariables`, `getCMPonderado`, `getBreakEven` (bepContable/bepCaja + diarios).
 - El "OJO" del encargo (no asumir que el atajo siempre subestima) se cubrió con un test de DOS escenarios (deficitario/rentable) que verifica la dirección real del error en cada uno — no se implementó ninguna heurística.
 - Decisión no especificada: el gasto operativo clasificado 'variable'/'mixto' se convierte a un ratio sobre los INGRESOS DEL MISMO período (aproximación explícita en el comentario del código) y se resta del CM ratio, en vez de solo excluirlo del numerador de costos fijos — un gasto variable también reduce lo que queda por cada peso vendido, no es simplemente "costo fijo que no se cuenta".
+
+### C5 · Menu engineering — HECHA (commit e02e4ce)
+
+- `getMenuEngineering(state, ventas)`. Sin decisiones fuera de lo especificado — el encargo fue explícito en los dos puntos que "la mayoría implementa mal" (eje en pesos, mix dentro de cada categoría) y en el umbral de popularidad exacto; se siguieron literalmente.
+- Único detalle no cubierto por el texto: el umbral de rentabilidad (promedio de CM$ dentro de la categoría) se calculó como promedio SIMPLE de los productos, no ponderado por volumen — es el método estándar de Kasavana & Smith, y ponderar sesgaría el umbral hacia el producto ya popular (nunca podría superarlo). Documentado en el comentario del código.
