@@ -30,7 +30,7 @@ No se adivinó. Queda pendiente para una siguiente ronda con esa decisión ya to
 | C3 · Costo laboral y prime cost | PENDIENTE |
 | C4 · Comportamiento de costo y break-even | PENDIENTE |
 | C5 · Menu engineering | PENDIENTE |
-| C6 · Arreglos baratos (I3,I4,I5,C10,C11) | PENDIENTE |
+| C6 · Arreglos baratos (I3,I4,I5,C10,C11) | ✅ HECHA |
 | D1 · getVarianza | PENDIENTE |
 | D2 · Actual vs Theoretical | PENDIENTE |
 
@@ -85,4 +85,13 @@ Etapa 3 ("consumo en venta") quedó **BLOQUEADA** — ver la pregunta concreta a
 - `producirPreparacion` no persiste una bitácora de lotes ni permite revertir uno (a diferencia de ventas/gastos/mermas, que sí tienen su `consumoReal`+revert). Decisión de alcance, no especificada: el encargo pide "se acredita el stock y se actualiza rendimientoPct", no un log auditable — se puede agregar cuando haga falta revertir un lote mal cargado.
 - `rendimientoPct` se sobreescribe con el dato medido del ÚLTIMO lote producido, sin promediar contra el histórico — así lo pide literalmente el encargo ("se actualiza con el dato medido"), sin especificar suavizado.
 - Verificado con test que la producción NO cambia el valor total del inventario (solo lo mueve de materia prima a WIP) — es la prueba matemática de que `costoPorGramo`/`gramosObtenidos` de B3 y la valuación de B4 son consistentes entre sí.
+
+### C6 · Arreglos baratos (I3, I4, I5, C10, C11) — HECHA (commits a56df4e, ebb7478)
+
+- **I5** — `getDepreciacionPeriodo` prorrateaba con factores FIJOS (mes=1, año=12) sin importar el día del período; ahora reusa la misma proración por días transcurridos de `getDepreciacionRango`. Test viejo que afirmaba el comportamiento con bug fue reescrito.
+- **I3** — `getVentasByPeriod`/`getGastosByPeriod`/`getMermasByPeriod` ganan cota superior (`ref` es "hasta cuándo", no solo "desde cuándo"). `applyVenta`/`registrarMerma` rechazan una fecha futura en el origen (`validarFechaNoFutura`). Inputs de fecha en Venta/Merma/Gasto ganan `max=hoy`.
+  - Bug encontrado de paso: `registrarVenta()` en `index.html` llamaba a `CrumblyCore.applyVenta` sin try/catch — con la validación nueva, cualquier throw hubiera roto el flujo sin mostrar ningún toast. Envuelto igual que `saveMerma` ya lo hacía.
+- **I4** — Campo de fecha agregado al modal de gasto (antes no existía; `registrarGasto` ya lo aceptaba en su firma pero nunca se lo pasaban).
+- **C11** (primera auditoría) — `porcion > 0` es obligatoria cuando "Disponible como adición" está marcado; el formulario muestra costo de la porción y margen resultante en vivo.
+- **C10** (primera auditoría) — `findProductosUsandoInsumo(state, id)` nueva: puerta única para `deleteInsumo` en los tres buckets. Decisión no especificada: se agregó como función NUEVA sin tocar/eliminar `findProductosUsandoMateria`/`findProductosUsandoEmpaque` (siguen exportadas y testeadas) — solo dejaron de ser la puerta de `deleteInsumo`. Hallazgo real durante la implementación: **toppings no tenía NINGÚN chequeo de dependencias** — se podía borrar un topping usado directo en una receta y dejarla con una referencia rota; verificado a mano en el navegador que ahora se bloquea igual que materia prima.
 
