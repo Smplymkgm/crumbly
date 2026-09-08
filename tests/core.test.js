@@ -305,6 +305,69 @@ test('revertVenta sin consumoReal (venta legada) cae de vuelta a la receta actua
   assert.strictEqual(s.ventas.length, 0);
 });
 
+console.log('\n== A2: faltante — vender sin stock ya no pierde el déficit ==');
+
+test('vender sin stock suficiente acumula el déficit en faltante en vez de perderlo', () => {
+  const s = stateBase(); // receta: 150g de m1 por unidad
+  s.materia[0].cantidad = 50;
+  const venta = C.applyVenta(s, [{ productoId: 'p1', qty: 2, toppings: [] }], [], { stockInsuficiente: true }); // pide 300g
+  assert.strictEqual(s.materia[0].cantidad, 0);
+  assert.strictEqual(s.materia[0].faltante, 250);
+});
+
+test('una compra posterior salda primero el faltante; el promedio ponderado se calcula sobre la cantidad neta, no sobre lo comprado', () => {
+  const s = stateBase();
+  s.materia[0].cantidad = 50;
+  s.materia[0].costo = 10;
+  C.applyVenta(s, [{ productoId: 'p1', qty: 2, toppings: [] }], [], { stockInsuficiente: true }); // faltante 250
+  assert.strictEqual(s.materia[0].faltante, 250);
+  const gasto = C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 12000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 1000 });
+  // neto para stock/promedio = 1000 - 250 = 750, a $12/g ; stock previo era 0 -> el promedio pondera con cantidadActual 0, así que da 12 directo
+  assert.strictEqual(s.materia[0].cantidad, 750);
+  assert.strictEqual(s.materia[0].faltante, 0);
+  assert.strictEqual(s.materia[0].costo, 12);
+  assert.strictEqual(gasto.faltanteAntes, 250);
+});
+
+test('una compra que no alcanza a cubrir todo el faltante no suma nada a cantidad ni toca el costo', () => {
+  const s = stateBase();
+  s.materia[0].cantidad = 0;
+  s.materia[0].faltante = 250;
+  s.materia[0].costo = 10;
+  C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 1000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 100 });
+  assert.strictEqual(s.materia[0].cantidad, 0);
+  assert.strictEqual(s.materia[0].faltante, 150);
+  assert.strictEqual(s.materia[0].costo, 10); // sin compra neta, el costo no se toca
+});
+
+test('revertVenta deshace también el faltante que esa venta generó', () => {
+  const s = stateBase();
+  s.materia[0].cantidad = 50;
+  const venta = C.applyVenta(s, [{ productoId: 'p1', qty: 2, toppings: [] }], [], { stockInsuficiente: true });
+  assert.strictEqual(s.materia[0].faltante, 250);
+  C.revertVenta(s, venta);
+  assert.strictEqual(s.materia[0].cantidad, 50);
+  assert.strictEqual(s.materia[0].faltante, 0);
+});
+
+test('eliminarGasto restaura también el faltante al snapshot previo a la compra', () => {
+  const s = stateBase();
+  s.materia[0].cantidad = 0;
+  s.materia[0].faltante = 250;
+  s.materia[0].costo = 10;
+  const g = C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 12000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 1000 });
+  assert.strictEqual(s.materia[0].faltante, 0);
+  C.eliminarGasto(s, g.id);
+  assert.strictEqual(s.materia[0].faltante, 250);
+  assert.strictEqual(s.materia[0].cantidad, 0);
+  assert.strictEqual(s.materia[0].costo, 10);
+});
+
+test('migrateState inicializa faltante:0 en insumos viejos que no lo tenían', () => {
+  const s = C.migrateState({ materia: [{ id: 'm1', nombre: 'Harina', cantidad: 100, costo: 5, minimo: 10 }] });
+  assert.strictEqual(s.materia[0].faltante, 0);
+});
+
 console.log('\n== Dependencias al eliminar insumos (P1-4) ==');
 
 test('findProductosUsandoMateria detecta productos que referencian el insumo', () => {

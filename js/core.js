@@ -263,7 +263,7 @@
     // comprobante de pago en ventas/gastos con método de pago transferencia.
     var conAdiciones = function (defaults) {
       return function (item) {
-        var out = Object.assign({ categoria: '', esAdicion: false, precioAdicion: 0, porcion: 0, nombreAdicion: '' }, defaults, item);
+        var out = Object.assign({ categoria: '', esAdicion: false, precioAdicion: 0, porcion: 0, nombreAdicion: '', faltante: 0 }, defaults, item); // faltante: v9 (A2)
         return out;
       };
     };
@@ -757,14 +757,24 @@
     const items = [];
     let total = 0, ganancia = 0;
     const consumoReal = { materia: {}, empaques: {}, toppings: {} };
+    // A2: lo que la venta no alcanzó a descontar por falta de stock ya NO
+    // se pierde en el clamp a 0 — se acumula en insumo.faltante (deuda de
+    // inventario) y se registra aquí para que revertVenta pueda deshacerla
+    // exacta, igual que consumoReal.
+    const faltanteGenerado = { materia: {}, empaques: {}, toppings: {} };
 
     function deduct(bucket, list, id, cantidad) {
       const m = (list || []).find(function (x) { return x.id === id; });
       if (!m || cantidad <= 0) return;
       const antes = m.cantidad;
-      m.cantidad = Math.max(0, m.cantidad - cantidad);
+      const deficit = Math.max(0, cantidad - antes);
+      m.cantidad = Math.max(0, antes - cantidad);
       const real = antes - m.cantidad;
       consumoReal[bucket][id] = (consumoReal[bucket][id] || 0) + real;
+      if (deficit > 0) {
+        m.faltante = (Number(m.faltante) || 0) + deficit;
+        faltanteGenerado[bucket][id] = (faltanteGenerado[bucket][id] || 0) + deficit;
+      }
     }
 
     (lineas || []).forEach(function (line) {
@@ -830,6 +840,7 @@
       ganancia: ganancia,
       stockInsuficiente: !!opts.stockInsuficiente,
       consumoReal: consumoReal,
+      faltanteGenerado: faltanteGenerado,
       clienteId: opts.clienteId || null,
       metodoPago: opts.metodoPago || 'efectivo',
       comprobante: opts.comprobante || ''
@@ -853,6 +864,19 @@
       restore('materia', state.materia);
       restore('empaques', state.empaques);
       restore('toppings', state.toppings);
+      // A2: deshace también el faltante que esta venta haya generado —
+      // nunca por debajo de 0 (si ya se saldó parcialmente con una compra
+      // posterior antes de revertir, no se puede reconstruir con certeza
+      // cuánto de ese pago corresponde a esta venta).
+      function restoreFaltante(bucket, list) {
+        Object.keys((venta.faltanteGenerado || {})[bucket] || {}).forEach(function (id) {
+          var m = (list || []).find(function (x) { return x.id === id; });
+          if (m) m.faltante = Math.max(0, (Number(m.faltante) || 0) - venta.faltanteGenerado[bucket][id]);
+        });
+      }
+      restoreFaltante('materia', state.materia);
+      restoreFaltante('empaques', state.empaques);
+      restoreFaltante('toppings', state.toppings);
     } else {
       venta.items.forEach(function (item) {
         if (item.productoId) {
@@ -955,14 +979,26 @@
       gasto.cantidad = cantidad;
       gasto.costoAntes = insumo.costo;
       gasto.cantidadAntes = insumo.cantidad;
+      gasto.faltanteAntes = Number(insumo.faltante) || 0;
 
       // v9 (auditoría de costeo, hallazgo raíz): el costo de inventario es
       // el precio pagado, sin recargo. margenVariable ya NO toca la
       // valuación — solo alimenta getCostoConVolatilidad() como escenario
       // informativo. Antes de v9 esto aplicaba un +8% aquí mismo; retirado.
       var costoCompraUnitario = monto / cantidad;
-      insumo.costo = costoPromedioPonderado(insumo.costo, insumo.cantidad, costoCompraUnitario, cantidad);
-      insumo.cantidad = (Number(insumo.cantidad) || 0) + cantidad;
+      // A2: esta compra salda primero la deuda de faltante (ventas que se
+      // descontaron de más porque no había stock) — solo lo que sobra
+      // después de saldarla entra al promedio ponderado y al stock. Si no
+      // sobra nada, el costo NO se toca (comprar 0 neto no es una compra a
+      // ningún precio).
+      var faltanteActual = gasto.faltanteAntes;
+      var saldaFaltante = Math.min(faltanteActual, cantidad);
+      var netoParaStock = cantidad - saldaFaltante;
+      if (netoParaStock > 0) {
+        insumo.costo = costoPromedioPonderado(insumo.costo, insumo.cantidad, costoCompraUnitario, netoParaStock);
+      }
+      insumo.cantidad = (Number(insumo.cantidad) || 0) + netoParaStock;
+      insumo.faltante = faltanteActual - saldaFaltante;
       gasto.actualizoCosto = true;
     } else if (input.tipo === 'capex') {
       var vidaUtilMeses = Number(input.vidaUtilMeses) || 0;
@@ -987,6 +1023,7 @@
       if (insumo && gasto.costoAntes !== undefined && gasto.cantidadAntes !== undefined) {
         insumo.costo = gasto.costoAntes;
         insumo.cantidad = gasto.cantidadAntes;
+        if (gasto.faltanteAntes !== undefined) insumo.faltante = gasto.faltanteAntes; // A2
       }
     }
     state.gastos = state.gastos.filter(function (g) { return g.id !== id; });

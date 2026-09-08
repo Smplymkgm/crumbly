@@ -10,7 +10,7 @@ Rama: `auditoria/costeo`. Protocolo: test primero, suite completa verde, un comm
 
 | Tarea | Estado |
 |---|---|
-| A1 · Quitar recargo +8% | PENDIENTE |
+| A1 · Quitar recargo +8% | ✅ HECHA |
 | A2 · Registrar déficit de stock (`faltante`) | PENDIENTE |
 | B1 · Snapshots de inventario | PENDIENTE |
 | B2 · Flujo de conteo físico | PENDIENTE |
@@ -27,4 +27,13 @@ Rama: `auditoria/costeo`. Protocolo: test primero, suite completa verde, un comm
 
 ## Detalle por tarea
 
-(se llena a medida que se completa cada una: qué archivos, qué test la cubre, decisiones tomadas)
+### A1 · Quitar recargo +8% — HECHA (commit 382312f)
+
+- Archivos: `js/core.js` (SCHEMA_VERSION→9, `registrarGasto`, `getCostoConVolatilidad` nueva, `recalcularValuacionV9` nueva, `emptyState`/`migrateState`), `tests/core.test.js`.
+- Tests: sección "A1: recargo +8%..." (2 tests) + "Migración v9..." (4 tests) + 3 tests preexistentes de margenVariable actualizados (afirmaban el bug, ahora afirman el comportamiento correcto).
+- Decisiones no especificadas en el encargo:
+  - No existía ninguna colección para "movimiento de ajuste trazado" → se agregó `state.ajustes[]` como colección genérica nueva (v9), pensada para reutilizarse en B2 (el conteo físico también necesita registrar ajustes con motivo/usuario).
+  - La migración se gatea por `raw.schemaVersion < 9` (no por recálculo defensivo) — así es trivialmente idempotente: la segunda vez que corre, el estado ya viene en v9 y no se toca. Se probó explícitamente con un test.
+  - "Recalcular desde el historial" no necesita reconstruir el consumo entre compras: cada `gasto` de tipo inventario ya guarda su propio `cantidadAntes`/`costoAntes` real (el patrón P0-1 existente), y el costo unitario solo cambia al comprar. Se reproduce el promedio ponderado gasto por gasto con esos snapshots reales, sin el factor.
+  - Insumos que tienen `margenVariable` pero CERO gastos con `margenVariabilidadAplicado` en su historial no se tocan (no hay nada que corregir).
+
