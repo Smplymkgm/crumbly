@@ -16,7 +16,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var SCHEMA_VERSION = 8;
+  var SCHEMA_VERSION = 9;
 
   // decisión del 11 ago 2026: insumos de precio volátil llevan un +8% de
   // colchón al registrar su compra, para no subcostear cuando el proveedor
@@ -131,9 +131,69 @@
       ventas: [],
       gastos: [],
       mermas: [],
+      ajustes: [],
       clientes: [],
       config: { email: '', backendUrl: '', backendToken: '', lastSync: null }
     };
+  }
+
+  // Migración v9 (auditoría de costeo, hallazgo raíz): antes de esta
+  // versión, registrarGasto() inflaba el costoCompraUnitario de insumos
+  // margenVariable un +8% ANTES de mezclarlo al promedio ponderado, así que
+  // el costo en libros converge a 1,08x el precio realmente pagado en vez
+  // de a la realidad. Recalcula reproduciendo el historial de compras de
+  // cada insumo SIN el recargo. No hace falta reconstruir el consumo
+  // intermedio (ventas/mermas): cada gasto de inventario ya guardó su
+  // propio cantidadAntes/costoAntes reales (P0-1), y el costo unitario solo
+  // cambia al comprar, nunca al consumir. Si el primer registro del
+  // historial no trae esos snapshots (datos viejos/incompletos), no hay
+  // base para reconstruir: se deflacta el costo actual por el factor
+  // efectivo, y el cambio queda trazado en state.ajustes (nunca silencioso).
+  function recalcularValuacionV9(state) {
+    var buckets = [['materia', state.materia], ['empaques', state.empaques], ['toppings', state.toppings]];
+    buckets.forEach(function (b) {
+      var tipo = b[0], lista = b[1] || [];
+      lista.forEach(function (insumo) {
+        var historial = (state.gastos || [])
+          .filter(function (g) { return g.tipo === 'inventario' && g.insumoTipo === tipo && g.insumoId === insumo.id && g.margenVariabilidadAplicado; })
+          .sort(function (a, c) { return new Date(a.fecha) - new Date(c.fecha); });
+        if (!historial.length) return;
+
+        var costoAntesCorreccion = insumo.costo;
+        var suficiente = isFinite(historial[0].costoAntes) && isFinite(historial[0].cantidadAntes);
+        var runningCosto = historial[0].costoAntes;
+        if (suficiente) {
+          historial.forEach(function (g) {
+            var cant = Number(g.cantidad) || 0;
+            var monto = Number(g.monto) || 0;
+            if (cant <= 0 || monto <= 0 || !isFinite(g.cantidadAntes)) { suficiente = false; return; }
+            runningCosto = costoPromedioPonderado(runningCosto, g.cantidadAntes, monto / cant, cant);
+          });
+        }
+
+        if (suficiente) {
+          insumo.costo = runningCosto;
+        } else {
+          var factor = historial[historial.length - 1].margenVariabilidadAplicado || MARGEN_VARIABILIDAD_PCT;
+          insumo.costo = costoAntesCorreccion / (1 + factor);
+        }
+
+        state.ajustes.push({
+          id: genId(),
+          fecha: new Date().toISOString(),
+          tipo: 'valuacion',
+          insumoTipo: tipo,
+          insumoId: insumo.id,
+          cantidadAjuste: 0,
+          costoAntes: costoAntesCorreccion,
+          costoDespues: insumo.costo,
+          valorAjuste: (insumo.costo - costoAntesCorreccion) * (Number(insumo.cantidad) || 0),
+          motivo: 'corrección de valuación v9',
+          usuarioEmail: '',
+          nota: suficiente ? 'recalculado desde historial de compras' : 'historial insuficiente, deflactado por factor efectivo'
+        });
+      });
+    });
   }
 
   // Migra un estado crudo (posiblemente de una versión vieja o incompleto)
@@ -142,6 +202,11 @@
   function migrateState(raw) {
     var base = emptyState();
     if (!raw || typeof raw !== 'object') return base;
+
+    // v8 -> v9: se corrige ANTES de sobreescribir schemaVersion más abajo —
+    // si el estado que llega ya viene en v9, la corrección de valuación NO
+    // se vuelve a aplicar (idempotente por versión, no por recálculo).
+    var necesitaCorreccionV9 = (Number(raw.schemaVersion) || 0) < 9;
 
     var s = {
       schemaVersion: SCHEMA_VERSION,
@@ -154,6 +219,7 @@
       preparaciones: Array.isArray(raw.preparaciones) ? raw.preparaciones : [], // v3 -> v4
       clientes: Array.isArray(raw.clientes) ? raw.clientes : [], // v5 -> v6
       mermas: Array.isArray(raw.mermas) ? raw.mermas : [], // v7 -> v8
+      ajustes: Array.isArray(raw.ajustes) ? raw.ajustes : [], // v8 -> v9
       config: (raw.config && typeof raw.config === 'object') ? raw.config : {}
     };
     if (s.config.email === undefined) s.config.email = '';
@@ -223,6 +289,11 @@
     s.gastos = s.gastos.map(function (g) {
       return Object.assign({ comprobante: '' }, g);
     });
+
+    // v8 -> v9 (auditoría de costeo, hallazgo raíz): quita de la valuación
+    // el +8% de margenVariable que registrarGasto aplicaba antes de esta
+    // versión (ver recalcularValuacionV9 abajo).
+    if (necesitaCorreccionV9) recalcularValuacionV9(s);
 
     return s;
   }
@@ -428,6 +499,28 @@
       if (m) total += (Number(m.costo) || 0) * (Number(e.cantidad) || 0);
     });
     return total;
+  }
+
+  // Costo del producto si los insumos de precio volátil (margenVariable)
+  // subieran `pct` — escenario informativo (auditoría de costeo, hallazgo
+  // raíz de C9/A1: el +8% ya NO se mete en la valuación real). Se reusa
+  // getCostoProducto sobre una copia de las listas de insumos con el costo
+  // ya subido, en vez de reescribir el recorrido de componentes.
+  function getCostoConVolatilidad(state, productoId, pct) {
+    var p = (state.productos || []).find(function (x) { return x.id === productoId; });
+    if (!p) return 0;
+    var factor = 1 + (Number(pct) || 0);
+    function bump(list) {
+      return (list || []).map(function (i) {
+        return i.margenVariable ? Object.assign({}, i, { costo: (Number(i.costo) || 0) * factor }) : i;
+      });
+    }
+    var stateBump = Object.assign({}, state, {
+      materia: bump(state.materia),
+      empaques: bump(state.empaques),
+      toppings: bump(state.toppings)
+    });
+    return getCostoProducto(p, stateBump);
   }
 
   // ─── Margen bruto por producto ─────────────────────────────
@@ -863,15 +956,11 @@
       gasto.costoAntes = insumo.costo;
       gasto.cantidadAntes = insumo.cantidad;
 
+      // v9 (auditoría de costeo, hallazgo raíz): el costo de inventario es
+      // el precio pagado, sin recargo. margenVariable ya NO toca la
+      // valuación — solo alimenta getCostoConVolatilidad() como escenario
+      // informativo. Antes de v9 esto aplicaba un +8% aquí mismo; retirado.
       var costoCompraUnitario = monto / cantidad;
-      // Insumo de precio volátil: +8% de colchón sobre el costo de esta
-      // compra antes de mezclarlo al promedio ponderado — decisión del
-      // 11 ago 2026, para no subcostear cuando el proveedor sube de precio
-      // entre una compra y la siguiente.
-      if (insumo.margenVariable) {
-        costoCompraUnitario *= (1 + MARGEN_VARIABILIDAD_PCT);
-        gasto.margenVariabilidadAplicado = MARGEN_VARIABILIDAD_PCT;
-      }
       insumo.costo = costoPromedioPonderado(insumo.costo, insumo.cantidad, costoCompraUnitario, cantidad);
       insumo.cantidad = (Number(insumo.cantidad) || 0) + cantidad;
       gasto.actualizoCosto = true;
@@ -1218,6 +1307,7 @@
     migrateState: migrateState,
     getCostoProducto: getCostoProducto,
     getEmpaqueTotalProducto: getEmpaqueTotalProducto,
+    getCostoConVolatilidad: getCostoConVolatilidad,
     computeSaleConsumption: computeSaleConsumption,
     checkStockShortage: checkStockShortage,
     applyVenta: applyVenta,

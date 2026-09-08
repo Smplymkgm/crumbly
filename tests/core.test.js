@@ -424,6 +424,89 @@ test('registrarGasto rechaza monto <= 0', () => {
   assert.throws(() => C.registrarGasto(s, { tipo: 'operativo', categoria: 'Otros', monto: 0 }));
 });
 
+console.log('\n== A1: recargo +8% de margenVariable retirado de la valuación ==');
+
+function stateConGastosVolatil() {
+  return C.migrateState({
+    materia: [{ id: 'm1', nombre: 'Nutella', cantidad: 0, costo: 0, minimo: 100, margenVariable: true }],
+    productos: [{ id: 'p1', nombre: 'Waffle', precio: 20000, empaqueManual: 0, componentes: [{ tipo: 'materia', refId: 'm1', gramos: 50 }], empaquesUsados: [] }]
+  });
+}
+
+test('registrarGasto ya NO aplica +8%: doce compras seguidas a $10/g dejan el costo en $10,00/g exactos (antes daba $10,80)', () => {
+  const s = stateConGastosVolatil();
+  for (let i = 0; i < 12; i++) {
+    C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 1000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 100 });
+  }
+  assert.strictEqual(s.materia[0].costo, 10);
+  assert.strictEqual(s.gastos[0].margenVariabilidadAplicado, undefined);
+});
+
+test('getCostoConVolatilidad muestra el costo con insumos volátiles subidos pct, sin tocar la valuación real', () => {
+  const s = stateConGastosVolatil();
+  C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 1000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 100 });
+  assert.strictEqual(s.materia[0].costo, 10);
+  const costoConAlza = C.getCostoConVolatilidad(s, 'p1', 0.08);
+  assert.ok(Math.abs(costoConAlza - 50 * 10.8) < 0.001);
+  assert.strictEqual(s.materia[0].costo, 10); // no muta la valuación real
+});
+
+console.log('\n== Migración v9: recalcular valuación contaminada por el +8% ==');
+
+test('migrateState v9 recalcula el costo desde el historial de compras (dos compras de 100g a $10/g contaminadas a $10.8)', () => {
+  const raw = {
+    schemaVersion: 8,
+    materia: [{ id: 'm1', nombre: 'Nutella', cantidad: 200, costo: 10.8, minimo: 100, margenVariable: true }],
+    gastos: [
+      { id: 'g1', tipo: 'inventario', insumoTipo: 'materia', insumoId: 'm1', monto: 1000, cantidad: 100, costoAntes: 0, cantidadAntes: 0, margenVariabilidadAplicado: 0.08, fecha: '2026-01-01T00:00:00' },
+      { id: 'g2', tipo: 'inventario', insumoTipo: 'materia', insumoId: 'm1', monto: 1000, cantidad: 100, costoAntes: 10.8, cantidadAntes: 100, margenVariabilidadAplicado: 0.08, fecha: '2026-01-02T00:00:00' }
+    ]
+  };
+  const s = C.migrateState(raw);
+  assert.strictEqual(s.materia[0].costo, 10);
+  assert.strictEqual(s.ajustes.length, 1);
+  assert.strictEqual(s.ajustes[0].motivo, 'corrección de valuación v9');
+  assert.strictEqual(s.ajustes[0].nota, 'recalculado desde historial de compras');
+});
+
+test('migrateState v9 deflacta cuando el historial es insuficiente (gasto sin costoAntes/cantidadAntes)', () => {
+  const raw = {
+    schemaVersion: 8,
+    materia: [{ id: 'm1', nombre: 'Nutella', cantidad: 100, costo: 10.8, minimo: 100, margenVariable: true }],
+    gastos: [
+      { id: 'g1', tipo: 'inventario', insumoTipo: 'materia', insumoId: 'm1', monto: 1000, cantidad: 100, margenVariabilidadAplicado: 0.08, fecha: '2026-01-01T00:00:00' }
+    ]
+  };
+  const s = C.migrateState(raw);
+  assert.ok(Math.abs(s.materia[0].costo - 10) < 0.001);
+  assert.strictEqual(s.ajustes[0].nota, 'historial insuficiente, deflactado por factor efectivo');
+});
+
+test('migrateState v9 es idempotente: correrla dos veces da el mismo resultado y no duplica el ajuste', () => {
+  const raw = {
+    schemaVersion: 8,
+    materia: [{ id: 'm1', nombre: 'Nutella', cantidad: 100, costo: 10.8, minimo: 100, margenVariable: true }],
+    gastos: [
+      { id: 'g1', tipo: 'inventario', insumoTipo: 'materia', insumoId: 'm1', monto: 1000, cantidad: 100, costoAntes: 0, cantidadAntes: 0, margenVariabilidadAplicado: 0.08, fecha: '2026-01-01T00:00:00' }
+    ]
+  };
+  const s1 = C.migrateState(raw);
+  const s2 = C.migrateState(s1);
+  assert.strictEqual(s1.materia[0].costo, s2.materia[0].costo);
+  assert.strictEqual(s2.ajustes.length, 1);
+});
+
+test('migrateState v9 no toca insumos sin margenVariabilidadAplicado en su historial de gastos', () => {
+  const raw = {
+    schemaVersion: 8,
+    materia: [{ id: 'm1', nombre: 'Harina', cantidad: 100, costo: 10, minimo: 100 }],
+    gastos: [{ id: 'g1', tipo: 'inventario', insumoTipo: 'materia', insumoId: 'm1', monto: 1000, cantidad: 100, costoAntes: 0, cantidadAntes: 0, fecha: '2026-01-01T00:00:00' }]
+  };
+  const s = C.migrateState(raw);
+  assert.strictEqual(s.materia[0].costo, 10);
+  assert.strictEqual(s.ajustes.length, 0);
+});
+
 console.log('\n== eliminarGasto revierte el snapshot exacto (mismo patrón que revertVenta) ==');
 
 test('eliminarGasto de una compra de inventario devuelve el insumo a su costo/cantidad previos', () => {
@@ -939,24 +1022,23 @@ test('getCascadaUtilidadRango da el mismo resultado que getCascadaUtilidad para 
   assert.ok(Math.abs(porPeriodo.utilidadBruta - porRango.utilidadBruta) < 0.01);
 });
 
-console.log('\n== Margen de variabilidad 8% en insumos de precio volátil ==');
+console.log('\n== A1: margenVariable ya NO recarga la valuación (ver también los tests dedicados arriba) ==');
 
-test('insumo marcado margenVariable: la compra aplica +8% antes del promedio ponderado', () => {
+test('insumo marcado margenVariable: la compra NO aplica ningún recargo (retirado en v9 — antes daba +8%)', () => {
   const s = C.migrateState({ materia: [{ id: 'm1', nombre: 'Cacao', cantidad: 0, costo: 0, minimo: 0, margenVariable: true }] });
   const g = C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 10000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 1000 });
-  // costoCompra = 10000/1000 = 10 ; +8% = 10.8 ; stock previo 0 -> se usa directo
-  assert.ok(Math.abs(s.materia[0].costo - 10.8) < 0.001);
-  assert.strictEqual(g.margenVariabilidadAplicado, 0.08);
+  assert.ok(Math.abs(s.materia[0].costo - 10) < 0.001);
+  assert.strictEqual(g.margenVariabilidadAplicado, undefined);
 });
 
-test('insumo NO marcado margenVariable: la compra NO aplica el 8%', () => {
+test('insumo NO marcado margenVariable: idéntico comportamiento, sin recargo', () => {
   const s = C.migrateState({ materia: [{ id: 'm1', nombre: 'Harina', cantidad: 0, costo: 0, minimo: 0 }] });
   const g = C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 10000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 1000 });
   assert.ok(Math.abs(s.materia[0].costo - 10) < 0.001);
   assert.strictEqual(g.margenVariabilidadAplicado, undefined);
 });
 
-test('eliminarGasto revierte exacto incluso con el margen de variabilidad aplicado', () => {
+test('eliminarGasto revierte exacto al snapshot previo (independiente de margenVariable)', () => {
   const s = C.migrateState({ materia: [{ id: 'm1', nombre: 'Cacao', cantidad: 500, costo: 20, minimo: 0, margenVariable: true }] });
   const g = C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 10000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 1000 });
   C.eliminarGasto(s, g.id);
