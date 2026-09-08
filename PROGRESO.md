@@ -18,8 +18,8 @@ Ninguna — la decisión de la ronda 1 (modo del motor de expansión) ya venía 
 | P1.1 · Parámetro de modo en el motor de expansión | ✅ HECHA |
 | P1.2 · Consumo parcial y faltante de preparación | ✅ HECHA |
 | P1.3 · Bitácora de lotes | ✅ HECHA |
-| P2.1 · Reestructurar getVarianza (dos niveles) | PENDIENTE |
-| P2.2 · Ajustar getActualVsTheoretical | PENDIENTE |
+| P2.1 · Reestructurar getVarianza (dos niveles) | ✅ HECHA |
+| P2.2 · Ajustar getActualVsTheoretical | ✅ HECHA |
 | P3.1 · Umbral de menu engineering (ponderado) | PENDIENTE |
 | P3.2 · Pantalla de reportes de costeo | PENDIENTE |
 
@@ -68,3 +68,14 @@ Ninguna — la decisión de la ronda 1 (modo del motor de expansión) ya venía 
 - `getPromedioRendimientoObservado(state, preparacionId, n=5)` es la mitad de datos de "la app muestra el promedio... como sugerencia, con un botón para adoptarlo" — la función existe y está probada. **La mitad de UI (el botón, la pantalla) no se construyó**: no hay ninguna pantalla de "Producir lote" en `index.html` — P0.1 ya confirmó que `producirPreparacion` no está expuesta en absoluto. Construir esa pantalla desde cero es un proyecto de UI no pedido explícitamente por ninguna tarea de esta ronda (P1.2 solo decía "rehabilitar el control SI existía" — no había ninguno que rehabilitar). Opción conservadora, documentada: se implementó el motor completo y probado; la pantalla queda pendiente de una ronda de UI dedicada a producción.
 - `eliminarLote` sigue el mismo patrón que `eliminarGasto`/`eliminarMerma`: repone `consumoReal` + `faltanteGenerado`, y resta exactamente `gramosObtenidos` del stock de la preparación (nunca negativo, mismo criterio de "no se puede reconstruir con certeza qué le corresponde a este lote si ya se consumió stock desde entonces").
 - No se agregó ninguna verificación de navegador para esta tarea — no toca `index.html` (no hay UI que verificar).
+
+### P2.1 · Reestructurar getVarianza + P2.2 · Ajustar getActualVsTheoretical — HECHAS (una sola tanda de trabajo)
+
+Se implementaron juntas porque P2.2 no puede funcionar con la forma vieja de `getVarianza` a medio camino — el propio encargo las describe como una continuación directa ("hereda las guardas nuevas de P2.1").
+
+- `getVarianza` devuelve ahora `{ preparaciones: {...}, materiaPrima: {...} }` en vez de un reporte plano — **cambio de forma que rompe a cualquiera que llamara a la función vieja esperando `.lineas` en la raíz** (ya no existe `getVarianza(...).lineas`; ahora es `.preparaciones.lineas` / `.materiaPrima.lineas`). Es exactamente lo que pide el encargo ("Reestructurar getVarianza"), no un descuido.
+- **Decisión no especificada, clave para la implementación**: en vez de re-expandir el consumo teórico con `aplicarComponentes` (que dependería de la foto de stock de HOY, no de la de cada momento histórico), el teórico de cada nivel se lee directo de lo que P1.2 ya congeló en cada transacción real: teórico de preparaciones = Σ `venta.consumoReal.preparaciones` del rango; teórico de materia/empaques/toppings = Σ `lote.consumoReal` (producir WIP) + Σ `venta.consumoReal` del rango. Ningún dato se recalcula con la receta o el stock vigente — todo es histórico, congelado en su momento, mismo principio que P0.3.
+- **Empaques y toppings no tienen nivel propio** (el encargo solo nombra "Preparaciones" y "Materia prima") — nunca pasan por una preparación (`aplicarComponentes` solo desvía componentes tipo `'preparacion'`), así que su fórmula es idéntica a la de antes de esta ronda, sin ninguna ambigüedad. Opción conservadora: se mantuvieron DENTRO del nivel `materiaPrima` en vez de descartarlos (perder esa varianza sería una regresión real de la Ronda 1, y ninguna tarea pidió quitarla).
+- **Guarda nueva verificada con test dedicado**: un conteo que cuenta materia en ambos extremos pero NUNCA cuenta preparaciones (bucket con insumos pero cero líneas tocadas) hace que los DOS niveles devuelvan `suficiente:false` — incluida materia prima, tal como pide el encargo explícitamente ("sin saber cuánta salsa quedó no se puede separar...").
+- **Test más importante de la tanda**: un escenario con producción (rendimiento de cocina 90%, genera 30g de varianza de materia) y una merma directa de preparación (50g, genera varianza de preparación) en el MISMO período, verificando que los dos números salen DISTINTOS y cada uno mide lo que le corresponde — la prueba concreta de que "una pérdida de evaporación en la cocina y un robo en el mostrador" ya NO son indistinguibles.
+- La guarda de la Ronda 1 (snapshots de sistema → cero por construcción) se mantuvo intacta y su test sigue verde, ahora verificando ambos niveles.

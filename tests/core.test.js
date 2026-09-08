@@ -2113,7 +2113,7 @@ test('C5: umbral de popularidad es (1/N) × 0,70 dentro de la categoría', () =>
   assert.ok(Math.abs(bebidas[0].umbralPopularidad - 0.35) < 0.0001); // (1/2)*0.7
 });
 
-console.log('\n== D1: getVarianza (consumo real vs. teórico, snapshots sintéticos) ==');
+console.log('\n== P2.1 (Ronda 2): getVarianza reestructurada en dos niveles ==');
 
 function stateVarianza() {
   return C.migrateState({
@@ -2122,35 +2122,32 @@ function stateVarianza() {
   });
 }
 
-test('getVarianza: caso completo (compra + venta teórica + merma) da la varianza correcta sin doble conteo', () => {
+test('getVarianza (nivel materiaPrima, sin preparaciones en el sistema): caso completo da la varianza correcta sin doble conteo', () => {
   const s = stateVarianza();
   const inicioISO = '2026-09-01T00:00:00';
   const finISO = '2026-09-08T00:00:00';
   C.crearSnapshot(s, { tipo: 'conteo', fecha: inicioISO, conteo: [{ insumoTipo: 'materia', insumoId: 'm1', cantidad: 3000 }] });
-  // compra de 1000g a $10/g exactos (no mueve el promedio ponderado)
   C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 10000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 1000, fecha: '2026-09-03T00:00:00' });
-  // venta: 15 unidades × 100g = 1500g teóricos
-  C.applyVenta(s, [{ productoId: 'p1', qty: 15, toppings: [] }], [], { fecha: '2026-09-04T00:00:00' });
-  // merma directa de 200g, ya registrada
+  C.applyVenta(s, [{ productoId: 'p1', qty: 15, toppings: [] }], [], { fecha: '2026-09-04T00:00:00' }); // 1500g teóricos
   C.registrarMerma(s, { origenTipo: 'materia', origenId: 'm1', cantidad: 200, motivo: 'Vencido', fecha: '2026-09-05T00:00:00' });
-  // el conteo físico final encuentra 2000g (independiente de lo que el
-  // sistema calcule con lo de arriba: 3000+1000-1500-200=2300 — la
-  // diferencia de 300g es exactamente la varianza no explicada)
+  // conteo final físico: 2000g (el sistema calcularía 3000+1000-1500-200=2300 — la diferencia de 300g es la varianza no explicada)
   C.crearSnapshot(s, { tipo: 'conteo', fecha: finISO, conteo: [{ insumoTipo: 'materia', insumoId: 'm1', cantidad: 2000 }] });
 
   const v = C.getVarianza(s, inicioISO, finISO);
-  assert.strictEqual(v.suficiente, true);
-  assert.strictEqual(v.lineas.length, 1);
-  const l = v.lineas[0];
-  assert.strictEqual(l.consumoReal, 2000); // 3000 + 1000 - 2000
+  assert.strictEqual(v.preparaciones.suficiente, true);
+  assert.strictEqual(v.preparaciones.lineas.length, 0); // no hay preparaciones registradas
+  assert.strictEqual(v.materiaPrima.suficiente, true);
+  assert.strictEqual(v.materiaPrima.lineas.length, 1);
+  const l = v.materiaPrima.lineas[0];
+  assert.strictEqual(l.real, 2000); // 3000 + 1000 - 2000
   assert.strictEqual(l.mermaRegistrada, 200);
-  assert.strictEqual(l.consumoTeorico, 1500);
+  assert.strictEqual(l.teorico, 1500);
   assert.strictEqual(l.varianzaCantidad, 300); // 2000 - 200 - 1500
   assert.strictEqual(l.varianzaValor, 3000); // 300 × $10/g vigente
   assert.ok(Math.abs(l.varianzaPct - 0.2) < 0.0001); // 300/1500
 });
 
-test('D1 GUARDA CRÍTICA: con dos snapshots de tipo "sistema" (no "conteo"), la varianza se rehúsa a calcular en vez de dar cero', () => {
+test('GUARDA 1 (Ronda 1, intacta): con dos snapshots de tipo "sistema", los DOS niveles se rehúsan en vez de dar cero', () => {
   const s = stateVarianza();
   const inicioISO = '2026-09-01T00:00:00';
   const finISO = '2026-09-08T00:00:00';
@@ -2160,42 +2157,45 @@ test('D1 GUARDA CRÍTICA: con dos snapshots de tipo "sistema" (no "conteo"), la 
   C.crearSnapshot(s, { tipo: 'sistema', fecha: finISO });
 
   const v = C.getVarianza(s, inicioISO, finISO);
-  assert.strictEqual(v.suficiente, false);
-  assert.ok(/sistema/.test(v.motivo));
-  assert.strictEqual(v.lineas, undefined); // nunca un número — ni siquiera un array vacío que se pueda confundir con "sin varianza"
+  assert.strictEqual(v.preparaciones.suficiente, false);
+  assert.strictEqual(v.materiaPrima.suficiente, false);
+  assert.ok(/sistema/.test(v.materiaPrima.motivo));
+  assert.strictEqual(v.materiaPrima.lineas, undefined); // nunca un número
+  assert.strictEqual(v.preparaciones.lineas, undefined);
 });
 
-test('D1: un snapshot inicial de conteo + uno final de sistema también se rehúsa (basta con que UNO sea de sistema)', () => {
+test('un snapshot inicial de conteo + uno final de sistema también se rehúsa (basta con que UNO sea de sistema)', () => {
   const s = stateVarianza();
   C.crearSnapshot(s, { tipo: 'conteo', fecha: '2026-09-01T00:00:00', conteo: [{ insumoTipo: 'materia', insumoId: 'm1', cantidad: 3000 }] });
   C.crearSnapshot(s, { tipo: 'sistema', fecha: '2026-09-08T00:00:00' });
   const v = C.getVarianza(s, '2026-09-01T00:00:00', '2026-09-08T00:00:00');
-  assert.strictEqual(v.suficiente, false);
+  assert.strictEqual(v.materiaPrima.suficiente, false);
+  assert.strictEqual(v.preparaciones.suficiente, false);
 });
 
-test('D1: sin ningún snapshot en el rango, se rehúsa (no inventa un cero)', () => {
+test('sin ningún snapshot en el rango, los dos niveles se rehúsan (no inventan un cero)', () => {
   const s = stateVarianza();
   const v = C.getVarianza(s, '2026-09-01T00:00:00', '2026-09-08T00:00:00');
-  assert.strictEqual(v.suficiente, false);
+  assert.strictEqual(v.materiaPrima.suficiente, false);
+  assert.strictEqual(v.preparaciones.suficiente, false);
 });
 
-test('D1: un insumo que falta en el snapshot inicial (o el final) se excluye del reporte y se lista aparte, nunca en cero', () => {
+test('un insumo que falta en el snapshot inicial (o el final) se excluye del reporte y se lista aparte, nunca en cero', () => {
   const s = stateVarianza();
   s.empaques.push({ id: 'vaso', nombre: 'Vaso', cantidad: 500, costo: 200, minimo: 0 });
   const inicioISO = '2026-09-01T00:00:00', finISO = '2026-09-08T00:00:00';
   // inicial: solo se contó materia, no empaques (conteo parcial, "materia hoy, toppings mañana")
   C.crearSnapshot(s, { tipo: 'conteo', fecha: inicioISO, conteo: [{ insumoTipo: 'materia', insumoId: 'm1', cantidad: 3000 }] });
-  // final: ahora sí se cuentan ambos
   C.crearSnapshot(s, { tipo: 'conteo', fecha: finISO, conteo: [{ insumoTipo: 'materia', insumoId: 'm1', cantidad: 3000 }, { insumoTipo: 'empaques', insumoId: 'vaso', cantidad: 480 }] });
   const v = C.getVarianza(s, inicioISO, finISO);
-  assert.strictEqual(v.suficiente, true);
-  assert.strictEqual(v.lineas.length, 1); // solo materia, que sí está en AMBOS
-  assert.strictEqual(v.lineas[0].insumoId, 'm1');
-  assert.strictEqual(v.noContados.length, 1);
-  assert.strictEqual(v.noContados[0].insumoId, 'vaso');
+  assert.strictEqual(v.materiaPrima.suficiente, true);
+  assert.strictEqual(v.materiaPrima.lineas.length, 1); // solo materia, que sí está en AMBOS
+  assert.strictEqual(v.materiaPrima.lineas[0].insumoId, 'm1');
+  assert.strictEqual(v.materiaPrima.noContados.length, 1);
+  assert.strictEqual(v.materiaPrima.noContados[0].insumoId, 'vaso');
 });
 
-test('D1: las líneas quedan ordenadas por varianza en pesos, descendente', () => {
+test('las líneas de materiaPrima quedan ordenadas por varianza en pesos, descendente', () => {
   const s = C.migrateState({
     materia: [
       { id: 'a', nombre: 'A', cantidad: 100, costo: 1, minimo: 0 },
@@ -2207,11 +2207,75 @@ test('D1: las líneas quedan ordenadas por varianza en pesos, descendente', () =
   // "a" pierde 50 unidades a $1 = $50 de varianza ; "b" pierde 10 unidades a $100 = $1000 de varianza
   C.crearSnapshot(s, { tipo: 'conteo', fecha: finISO, conteo: [{ insumoTipo: 'materia', insumoId: 'a', cantidad: 50 }, { insumoTipo: 'materia', insumoId: 'b', cantidad: 90 }] });
   const v = C.getVarianza(s, inicioISO, finISO);
-  assert.strictEqual(v.lineas[0].insumoId, 'b'); // mayor varianza en pesos primero
-  assert.strictEqual(v.lineas[1].insumoId, 'a');
+  assert.strictEqual(v.materiaPrima.lineas[0].insumoId, 'b'); // mayor varianza en pesos primero
+  assert.strictEqual(v.materiaPrima.lineas[1].insumoId, 'a');
 });
 
-console.log('\n== D2: Actual vs Theoretical (food cost real % vs teórico %) ==');
+console.log('\n== P2.1: los dos niveles son independientes (evaporación en cocina vs. sobre-porcionado en el mostrador) ==');
+
+function stateVarianzaDosNiveles() {
+  return C.migrateState({
+    materia: [{ id: 'harina', nombre: 'Harina', cantidad: 100000, costo: 5, minimo: 0 }],
+    preparaciones: [{ id: 'masa', nombre: 'Masa', modo: 'directo', cantidad: 200, componentes: [{ tipo: 'materia', refId: 'harina', gramos: 100 }] }],
+    productos: [{ id: 'p1', nombre: 'Waffle', precio: 20000, componentes: [{ tipo: 'preparacion', refId: 'masa', gramos: 100 }], empaquesUsados: [], empaqueManual: 0 }]
+  });
+}
+
+test('CRITERIO: los dos niveles se calculan por separado — una pérdida de cocina (materia) y un sobre-porcionado (preparación) no se mezclan', () => {
+  const s = stateVarianzaDosNiveles();
+  const inicioISO = '2026-08-01T00:00:00', finISO = '2026-08-10T00:00:00';
+  C.crearSnapshot(s, { tipo: 'conteo', fecha: inicioISO, conteo: [{ insumoTipo: 'materia', insumoId: 'harina', cantidad: 100000 }, { insumoTipo: 'preparaciones', insumoId: 'masa', cantidad: 200 }] });
+
+  // producir 1 lote: 1000g teóricos de harina -> solo se obtienen 900g de masa (90% de rendimiento)
+  C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 10, gramosObtenidos: 900, fecha: '2026-08-02T00:00:00' });
+  // vender 5 unidades: 500g de masa teóricos, cubiertos por el stock (200+900=1100 disponibles)
+  C.applyVenta(s, [{ productoId: 'p1', qty: 5, toppings: [] }], [], { fecha: '2026-08-03T00:00:00' });
+  // merma directa de 50g de masa (ej. se cayó al piso)
+  C.registrarMerma(s, { origenTipo: 'preparacion', origenId: 'masa', cantidad: 50, motivo: 'Derrame', fecha: '2026-08-04T00:00:00' });
+
+  // el sistema esperaría: masa = 200+900-500-50 = 550 ; harina = 100000-1000 = 99000
+  // pero el conteo físico encuentra:
+  C.crearSnapshot(s, { tipo: 'conteo', fecha: finISO, conteo: [{ insumoTipo: 'materia', insumoId: 'harina', cantidad: 98970 }, { insumoTipo: 'preparaciones', insumoId: 'masa', cantidad: 500 }] });
+
+  const v = C.getVarianza(s, inicioISO, finISO);
+  assert.strictEqual(v.preparaciones.suficiente, true);
+  assert.strictEqual(v.materiaPrima.suficiente, true);
+
+  const lp = v.preparaciones.lineas.find(l => l.insumoId === 'masa');
+  // real = 200 + 900 (producido) - 500 (final) = 600 ; teórico (ventas) = 500 ; merma = 50 -> varianza = 50 (sobre-porcionado en el mostrador)
+  assert.strictEqual(lp.real, 600);
+  assert.strictEqual(lp.producido, 900);
+  assert.strictEqual(lp.teorico, 500);
+  assert.strictEqual(lp.mermaRegistrada, 50);
+  assert.strictEqual(lp.varianzaCantidad, 50);
+
+  const lm = v.materiaPrima.lineas.find(l => l.insumoId === 'harina');
+  // real = 100000 + 0 (compras) - 98970 = 1030 ; teórico (lote) = 1000 ; merma = 0 -> varianza = 30 (rendimiento de cocina / recepción)
+  assert.strictEqual(lm.real, 1030);
+  assert.strictEqual(lm.teorico, 1000);
+  assert.strictEqual(lm.mermaRegistrada, 0);
+  assert.strictEqual(lm.varianzaCantidad, 30);
+
+  // las dos varianzas son DISTINTAS entre sí — no se mezclan en un solo número
+  assert.notStrictEqual(lp.varianzaCantidad, lm.varianzaCantidad);
+});
+
+test('GUARDA NUEVA de P2.1: si el bucket de preparaciones no se contó, NINGÚN nivel produce varianza (ni siquiera el de materia prima)', () => {
+  const s = stateVarianzaDosNiveles();
+  const inicioISO = '2026-08-01T00:00:00', finISO = '2026-08-10T00:00:00';
+  // AMBOS snapshots cuentan materia, pero NINGUNO cuenta preparaciones
+  // (como si esa pestaña nunca se hubiera abierto durante el conteo)
+  C.crearSnapshot(s, { tipo: 'conteo', fecha: inicioISO, conteo: [{ insumoTipo: 'materia', insumoId: 'harina', cantidad: 100000 }] });
+  C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 10, gramosObtenidos: 900, fecha: '2026-08-02T00:00:00' });
+  C.crearSnapshot(s, { tipo: 'conteo', fecha: finISO, conteo: [{ insumoTipo: 'materia', insumoId: 'harina', cantidad: 99000 }] });
+
+  const v = C.getVarianza(s, inicioISO, finISO);
+  assert.strictEqual(v.preparaciones.suficiente, false);
+  assert.strictEqual(v.materiaPrima.suficiente, false, 'sin el WIP contado, ni siquiera la materia prima es confiable');
+  assert.ok(/preparacion/i.test(v.materiaPrima.motivo));
+});
+
+console.log('\n== P2.2 (Ronda 2): getActualVsTheoretical sobre la varianza consolidada de los dos niveles ==');
 
 function stateAvT() {
   return C.migrateState({
@@ -2261,6 +2325,32 @@ test('getActualVsTheoreticalHistorico arma un punto por cada par consecutivo de 
   assert.strictEqual(serie[1].inicio, '2026-08-08T00:00:00');
   assert.strictEqual(serie[1].fin, '2026-08-15T00:00:00');
   serie.forEach(p => assert.strictEqual(p.suficiente, true));
+});
+
+test('P2.2: getActualVsTheoretical consolida los DOS niveles (preparaciones + materiaPrima) en un solo food cost real %', () => {
+  const s = stateVarianzaDosNiveles();
+  const inicioISO = '2026-08-01T00:00:00', finISO = '2026-08-10T00:00:00';
+  C.crearSnapshot(s, { tipo: 'conteo', fecha: inicioISO, conteo: [{ insumoTipo: 'materia', insumoId: 'harina', cantidad: 100000 }, { insumoTipo: 'preparaciones', insumoId: 'masa', cantidad: 200 }] });
+  C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 10, gramosObtenidos: 900, fecha: '2026-08-02T00:00:00' });
+  C.applyVenta(s, [{ productoId: 'p1', qty: 5, toppings: [] }], [], { fecha: '2026-08-03T00:00:00' });
+  C.crearSnapshot(s, { tipo: 'conteo', fecha: finISO, conteo: [{ insumoTipo: 'materia', insumoId: 'harina', cantidad: 99000 }, { insumoTipo: 'preparaciones', insumoId: 'masa', cantidad: 500 }] });
+
+  const avt = C.getActualVsTheoretical(s, inicioISO, finISO);
+  const v = C.getVarianza(s, inicioISO, finISO);
+  assert.strictEqual(avt.suficiente, true);
+  const realEsperado = v.preparaciones.lineas[0].real * v.preparaciones.lineas[0].costoUnitario
+    + v.materiaPrima.lineas.find(l => l.insumoId === 'harina').real * v.materiaPrima.lineas.find(l => l.insumoId === 'harina').costoUnitario;
+  assert.ok(Math.abs(avt.costoAlimentoReal - realEsperado) < 0.0001);
+});
+
+test('P2.2: hereda la guarda NUEVA de P2.1 — sin el bucket de preparaciones contado, AvT tampoco calcula nada', () => {
+  const s = stateVarianzaDosNiveles();
+  const inicioISO = '2026-08-01T00:00:00', finISO = '2026-08-10T00:00:00';
+  C.crearSnapshot(s, { tipo: 'conteo', fecha: inicioISO, conteo: [{ insumoTipo: 'materia', insumoId: 'harina', cantidad: 100000 }] }); // sin preparaciones
+  C.crearSnapshot(s, { tipo: 'conteo', fecha: finISO, conteo: [{ insumoTipo: 'materia', insumoId: 'harina', cantidad: 100000 }] });
+  const avt = C.getActualVsTheoretical(s, inicioISO, finISO);
+  assert.strictEqual(avt.suficiente, false);
+  assert.strictEqual(avt.foodCostRealPct, undefined);
 });
 
 console.log('\n== P1.1 (Ronda 2): parámetro de modo en aplicarComponentes ==');

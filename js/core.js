@@ -2160,42 +2160,74 @@
     return resultado;
   }
 
-  // D1: Varianza (consumo real vs. teórico) por insumo.
+  function getLotesByRange(lotes, startISO, endISO) {
+    var b = rangeBounds(startISO, endISO);
+    return (lotes || []).filter(function (l) { var f = new Date(l.fecha); return f >= b.start && f <= b.end; });
+  }
+
+  // P2.1 (Ronda 2): con las ventas consumiendo preparación (P1.2), la
+  // varianza de un solo nivel deja de tener sentido — una pérdida de
+  // evaporación en cocina y un robo en el mostrador quedaban
+  // indistinguibles. Se reestructura en DOS niveles:
   //
-  //   Consumo teórico  = getConsumptionEnRango (mismo motor de
-  //                      getConsumptionRolling, ya probado)
-  //   Consumo real     = snapshot inicial + compras − snapshot final
-  //   Varianza (cant.) = Consumo real − merma registrada − Consumo teórico
-  //   Varianza ($)     = Varianza cant. × costo unitario vigente
-  //   Varianza %       = Varianza ÷ Consumo teórico
+  //   Preparaciones:
+  //     real     = inicial + producido − final
+  //     teórico  = Σ venta.consumoReal.preparaciones del rango (P1.2 ya
+  //                lo congela al momento de vender, con el stock REAL de
+  //                ese momento — no hay que re-expandir nada)
+  //     varianza = real − mermas_preparacion − teórico
+  //     → mide sobre-porcionado en el mostrador
   //
-  // GUARDA CRÍTICA — esto es lo más importante de la función: si el
-  // snapshot inicial o el final son de tipo 'sistema' en vez de
-  // 'conteo', la cantidad de sistema se mueve como
-  // `final = inicial + compras − teórico − mermas`, así que
-  // `inicial + compras − final = teórico + mermas`, y la varianza da
-  // IDÉNTICAMENTE CERO por construcción. Un cero ahí no significa que no
-  // haya pérdidas — significa que no se midió nada. Por eso se devuelve
-  // `{ suficiente: false, motivo }` y nunca un número en ese caso.
+  //   Materia prima / empaques / toppings ("materiaPrima"):
+  //     real     = inicial + compras − final
+  //     teórico  = Σ lote.consumoReal (producir WIP) + Σ venta.consumoReal
+  //                (directo, o lo que se cayó de preparación por falta de
+  //                stock — P1.2 también lo congela ahí)
+  //     varianza = real − mermas − teórico
+  //     → mide rendimiento de cocina y pérdida en recepción
   //
-  // La merma registrada es obligatoria en la resta: sin ella, la pérdida
-  // ya explicada (mermas) se contaría TAMBIÉN como varianza inexplicada,
-  // duplicándola. Se toma de merma.consumoReal (mismo patrón que
-  // ventas.consumoReal) para que una merma de un PRODUCTO (que expande a
-  // varios insumos) reparta correctamente, no solo las mermas directas
-  // de un insumo.
+  //   Empaques/toppings nunca pasan por una preparación (aplicarComponentes
+  //   solo desvía componentes tipo 'preparacion') — viven en el mismo
+  //   nivel que materia prima porque su fórmula es idéntica a la de
+  //   antes de esta ronda, sin ninguna ambigüedad de "¿de dónde salió?".
   //
-  // Los insumos que no aparezcan en AMBOS snapshots (inicial y final) se
-  // excluyen del reporte y se listan aparte en `noContados` — nunca se
+  // GUARDAS, todas obligatorias:
+  //
+  // 1. La de la Ronda 1 se mantiene INTACTA: snapshot inicial o final de
+  //    tipo 'sistema' → { suficiente: false }, nunca un número (la
+  //    cantidad de sistema se mueve exactamente como
+  //    final = inicial + compras − teórico − mermas, así que
+  //    inicial + compras − final da teórico + mermas y la varianza sale
+  //    CERO por construcción — un cero ahí no significa que no haya
+  //    pérdidas, significa que no se midió nada).
+  //
+  // 2. NUEVA: si el bucket de preparaciones (P0.2) no se contó en el
+  //    snapshot inicial o el final, NINGÚN nivel es confiable — ni
+  //    siquiera el de materia prima, porque sin saber cuánta salsa quedó
+  //    en la nevera no se puede separar lo que se consumió de lo que
+  //    sigue ahí. Un snapshot de ANTES de esta ronda ni siquiera tiene
+  //    el campo `bucketsContados` — se trata igual que "no contado",
+  //    nunca como "sí se contó" por omisión (defensivo a propósito, para
+  //    no tener que migrar snapshots viejos).
+  //
+  // Los insumos que no aparezcan en AMBOS snapshots se excluyen del
+  // reporte de su nivel y se listan aparte en `noContados` — nunca se
   // asumen en cero.
   function getVarianza(state, inicioISO, finISO) {
     var snapInicial = getSnapshotMasReciente(state, inicioISO);
     var snapFinal = getSnapshotMasReciente(state, finISO);
     if (!snapInicial || !snapFinal) {
-      return { suficiente: false, motivo: 'Falta un snapshot de conteo en el inicio o el fin del rango — todavía no hay conteo físico registrado ahí.' };
+      var faltaSnap = { suficiente: false, motivo: 'Falta un snapshot de conteo en el inicio o el fin del rango — todavía no hay conteo físico registrado ahí.' };
+      return { preparaciones: faltaSnap, materiaPrima: faltaSnap };
     }
     if (snapInicial.tipo !== 'conteo' || snapFinal.tipo !== 'conteo') {
-      return { suficiente: false, motivo: 'El snapshot inicial y/o final es de tipo "sistema", no "conteo": la varianza daría cero por construcción (no porque no haya pérdidas). Hace falta un conteo físico real en ambos extremos del rango.' };
+      var esSistema = { suficiente: false, motivo: 'El snapshot inicial y/o final es de tipo "sistema", no "conteo": la varianza daría cero por construcción (no porque no haya pérdidas). Hace falta un conteo físico real en ambos extremos del rango.' };
+      return { preparaciones: esSistema, materiaPrima: esSistema };
+    }
+    function prepContado(snap) { return !!(snap.bucketsContados && snap.bucketsContados.preparaciones === true); }
+    if (!prepContado(snapInicial) || !prepContado(snapFinal)) {
+      var faltaPrep = { suficiente: false, motivo: 'El bucket de preparaciones no se contó en el snapshot inicial y/o final — sin saber cuánta preparación quedó, no se puede separar lo consumido de lo que sigue en la nevera. Ningún nivel de varianza es confiable así.' };
+      return { preparaciones: faltaPrep, materiaPrima: faltaPrep };
     }
 
     function lineasPorKey(snap) {
@@ -2206,6 +2238,10 @@
     var inicialPorKey = lineasPorKey(snapInicial);
     var finalPorKey = lineasPorKey(snapFinal);
 
+    var ventasRango = getVentasByRange(state.ventas, inicioISO, finISO);
+    var mermasRango = getMermasByRange(state.mermas, inicioISO, finISO);
+    var lotesRango = getLotesByRange(state.lotes, inicioISO, finISO);
+
     var comprasPorKey = {};
     getGastosByRange(state.gastos, inicioISO, finISO)
       .filter(function (g) { return g.tipo === 'inventario' && g.insumoTipo && g.insumoId; })
@@ -2214,9 +2250,16 @@
         comprasPorKey[key] = (comprasPorKey[key] || 0) + (Number(g.cantidad) || 0);
       });
 
+    // Producido por preparación (lotes del rango).
+    var producidoPorPrepId = {};
+    lotesRango.forEach(function (l) {
+      producidoPorPrepId[l.preparacionId] = (producidoPorPrepId[l.preparacionId] || 0) + (Number(l.gramosObtenidos) || 0);
+    });
+
+    // Mermas registradas, por bucket:id — incluye 'preparaciones'.
     var mermaPorKey = {};
-    getMermasByRange(state.mermas, inicioISO, finISO).forEach(function (m) {
-      ['materia', 'empaques', 'toppings'].forEach(function (bucket) {
+    mermasRango.forEach(function (m) {
+      ['materia', 'empaques', 'toppings', 'preparaciones'].forEach(function (bucket) {
         Object.keys((m.consumoReal || {})[bucket] || {}).forEach(function (id) {
           var key = bucket + ':' + id;
           mermaPorKey[key] = (mermaPorKey[key] || 0) + m.consumoReal[bucket][id];
@@ -2224,68 +2267,121 @@
       });
     });
 
-    var teoricoPorKey = {};
-    var consumoTeorico = getConsumptionEnRango(state, inicioISO, finISO);
-    ['materia', 'empaques', 'toppings'].forEach(function (bucket) {
-      Object.keys(consumoTeorico[bucket] || {}).forEach(function (id) {
-        teoricoPorKey[bucket + ':' + id] = consumoTeorico[bucket][id];
+    // Teórico de preparaciones = consumoReal.preparaciones de las VENTAS
+    // (ya congelado al momento de vender por P1.2 — no se re-expande).
+    var teoricoPrepPorId = {};
+    ventasRango.forEach(function (v) {
+      Object.keys((v.consumoReal || {}).preparaciones || {}).forEach(function (id) {
+        teoricoPrepPorId[id] = (teoricoPrepPorId[id] || 0) + v.consumoReal.preparaciones[id];
       });
     });
 
-    var todasLasKeys = {};
-    Object.keys(inicialPorKey).forEach(function (k) { todasLasKeys[k] = true; });
-    Object.keys(finalPorKey).forEach(function (k) { todasLasKeys[k] = true; });
+    // Teórico de materia/empaques/toppings = consumoReal de los LOTES
+    // (producir WIP) + consumoReal de las VENTAS (directo, o lo que se
+    // cayó de preparación por falta de stock) del rango.
+    var teoricoDirectoPorKey = {};
+    function sumarTeoricoDirecto(consumoReal) {
+      ['materia', 'empaques', 'toppings'].forEach(function (bucket) {
+        Object.keys((consumoReal || {})[bucket] || {}).forEach(function (id) {
+          var key = bucket + ':' + id;
+          teoricoDirectoPorKey[key] = (teoricoDirectoPorKey[key] || 0) + consumoReal[bucket][id];
+        });
+      });
+    }
+    lotesRango.forEach(function (l) { sumarTeoricoDirecto(l.consumoReal); });
+    ventasRango.forEach(function (v) { sumarTeoricoDirecto(v.consumoReal); });
 
-    var lineas = [];
-    var noContados = [];
-    Object.keys(todasLasKeys).forEach(function (key) {
+    function todasLasKeysConPrefijo(prefijo) {
+      var out = {};
+      Object.keys(inicialPorKey).concat(Object.keys(finalPorKey)).forEach(function (k) {
+        if (k.indexOf(prefijo) === 0) out[k] = true;
+      });
+      return Object.keys(out);
+    }
+
+    // ── Nivel preparaciones ──
+    var lineasPrep = [], noContadosPrep = [];
+    todasLasKeysConPrefijo('preparaciones:').forEach(function (key) {
       var li = inicialPorKey[key], lf = finalPorKey[key];
       if (!li || !lf) {
         var sep = key.indexOf(':');
-        noContados.push({ insumoTipo: key.slice(0, sep), insumoId: key.slice(sep + 1) });
+        noContadosPrep.push({ insumoTipo: key.slice(0, sep), insumoId: key.slice(sep + 1) });
         return;
       }
-      var compras = comprasPorKey[key] || 0;
+      var producido = producidoPorPrepId[li.insumoId] || 0;
       var mermaRegistrada = mermaPorKey[key] || 0;
-      var teorico = teoricoPorKey[key] || 0;
-      var consumoReal = li.cantidad + compras - lf.cantidad;
-      var varianzaCantidad = consumoReal - mermaRegistrada - teorico;
-      lineas.push({
-        insumoTipo: li.insumoTipo, insumoId: li.insumoId,
-        inicial: li.cantidad, compras: compras, final: lf.cantidad,
-        consumoReal: consumoReal, mermaRegistrada: mermaRegistrada, consumoTeorico: teorico,
+      var teorico = teoricoPrepPorId[li.insumoId] || 0;
+      var real = li.cantidad + producido - lf.cantidad;
+      var varianzaCantidad = real - mermaRegistrada - teorico;
+      lineasPrep.push({
+        insumoTipo: 'preparaciones', insumoId: li.insumoId,
+        inicial: li.cantidad, producido: producido, final: lf.cantidad,
+        real: real, mermaRegistrada: mermaRegistrada, teorico: teorico,
         costoUnitario: lf.costoUnitario,
         varianzaCantidad: varianzaCantidad,
         varianzaValor: varianzaCantidad * lf.costoUnitario,
         varianzaPct: teorico !== 0 ? varianzaCantidad / teorico : null
       });
     });
+    lineasPrep.sort(function (a, b) { return b.varianzaValor - a.varianzaValor; });
 
-    lineas.sort(function (a, b) { return b.varianzaValor - a.varianzaValor; });
+    // ── Nivel materia prima (+ empaques + toppings) ──
+    var lineasMateria = [], noContadosMateria = [];
+    ['materia:', 'empaques:', 'toppings:'].forEach(function (prefijo) {
+      todasLasKeysConPrefijo(prefijo).forEach(function (key) {
+        var li = inicialPorKey[key], lf = finalPorKey[key];
+        if (!li || !lf) {
+          var sep = key.indexOf(':');
+          noContadosMateria.push({ insumoTipo: key.slice(0, sep), insumoId: key.slice(sep + 1) });
+          return;
+        }
+        var compras = comprasPorKey[key] || 0;
+        var mermaRegistrada = mermaPorKey[key] || 0;
+        var teorico = teoricoDirectoPorKey[key] || 0;
+        var real = li.cantidad + compras - lf.cantidad;
+        var varianzaCantidad = real - mermaRegistrada - teorico;
+        lineasMateria.push({
+          insumoTipo: li.insumoTipo, insumoId: li.insumoId,
+          inicial: li.cantidad, compras: compras, final: lf.cantidad,
+          real: real, mermaRegistrada: mermaRegistrada, teorico: teorico,
+          costoUnitario: lf.costoUnitario,
+          varianzaCantidad: varianzaCantidad,
+          varianzaValor: varianzaCantidad * lf.costoUnitario,
+          varianzaPct: teorico !== 0 ? varianzaCantidad / teorico : null
+        });
+      });
+    });
+    lineasMateria.sort(function (a, b) { return b.varianzaValor - a.varianzaValor; });
 
-    return { suficiente: true, snapInicialId: snapInicial.id, snapFinalId: snapFinal.id, lineas: lineas, noContados: noContados };
+    return {
+      preparaciones: { suficiente: true, snapInicialId: snapInicial.id, snapFinalId: snapFinal.id, lineas: lineasPrep, noContados: noContadosPrep },
+      materiaPrima: { suficiente: true, snapInicialId: snapInicial.id, snapFinalId: snapFinal.id, lineas: lineasMateria, noContados: noContadosMateria }
+    };
   }
 
-  // D2: Actual vs Theoretical — food cost REAL % (con lo que de verdad
-  // salió del inventario, según D1) contra food cost TEÓRICO % (con lo
-  // que la receta dice que debió salir, según C1). Es aritmética pura
-  // sobre esos dos — depende de que D1 tenga snapshots de conteo
-  // suficientes; hereda su misma guarda (nunca inventa un número si no
-  // los hay).
+  // P2.2: Actual vs Theoretical sobre la varianza CONSOLIDADA de los dos
+  // niveles (no sobre uno solo) — food cost REAL % (con lo que de verdad
+  // salió del inventario, sumando preparaciones + materia/empaques/
+  // toppings) contra food cost TEÓRICO % (con lo que la receta dice que
+  // debió salir, según C1). Hereda las guardas nuevas de P2.1: si
+  // cualquiera de los dos niveles no es suficiente, tampoco lo es AvT —
+  // no tendría sentido consolidar un nivel real con uno que no se pudo
+  // medir.
   function getActualVsTheoretical(state, inicioISO, finISO) {
     var varianza = getVarianza(state, inicioISO, finISO);
-    if (!varianza.suficiente) return { suficiente: false, motivo: varianza.motivo };
+    if (!varianza.preparaciones.suficiente) return { suficiente: false, motivo: varianza.preparaciones.motivo };
+    if (!varianza.materiaPrima.suficiente) return { suficiente: false, motivo: varianza.materiaPrima.motivo };
 
     var ventas = getVentasByRange(state.ventas, inicioISO, finISO);
     var ingresos = ventas.reduce(function (a, v) { return a + v.total; }, 0);
 
-    // Alimento = materia + toppings (un topping ES comida, igual criterio
-    // que C1); empaque = empaques. Acá se puede clasificar por
-    // insumoTipo directo porque D1 ya trabaja a nivel de insumo crudo,
-    // sin necesidad de expandir preparaciones/recetas.
-    var costoAlimentoReal = varianza.lineas
+    // Alimento = materia + toppings + preparaciones (todo lo que no sea
+    // empaque es comida, un topping o una salsa preparada incluidos —
+    // mismo criterio que C1).
+    var costoAlimentoReal = varianza.materiaPrima.lineas
       .filter(function (l) { return l.insumoTipo === 'materia' || l.insumoTipo === 'toppings'; })
-      .reduce(function (a, l) { return a + l.consumoReal * l.costoUnitario; }, 0);
+      .reduce(function (a, l) { return a + l.real * l.costoUnitario; }, 0)
+      + varianza.preparaciones.lineas.reduce(function (a, l) { return a + l.real * l.costoUnitario; }, 0);
 
     var desgloseTeorico = costosDesglosadosPeriodo(state, ventas);
     var foodCostRealPct = ingresos > 0 ? costoAlimentoReal / ingresos : 0;
@@ -2453,6 +2549,7 @@
     getCMPonderado: getCMPonderado,
     getBreakEven: getBreakEven,
     getMenuEngineering: getMenuEngineering,
+    getLotesByRange: getLotesByRange,
     getVarianza: getVarianza,
     getActualVsTheoretical: getActualVsTheoretical,
     getActualVsTheoreticalHistorico: getActualVsTheoreticalHistorico,
