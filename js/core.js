@@ -617,6 +617,93 @@
     return getCostoProducto(p, stateBump);
   }
 
+  // C1 (auditoría de costeo): el empaque hoy va MEZCLADO dentro del costo
+  // del plato — Toast y R365 lo reportan como línea aparte ("paper cost").
+  // Esta función desglosa exactamente el mismo recorrido que
+  // getCostoProducto (misma suma, particionada) — costoAlimento +
+  // costoEmpaque === costoTotal, y costoTotal es idéntico a lo que ya
+  // devuelve getCostoProducto. Se agrega aparte, sin tocar
+  // getCostoProducto ni su firma, para no romper a ninguno de sus
+  // llamadores actuales (applyVenta, registrarMerma, getMargenProducto...).
+  function getCostoProductoDesglosado(producto, state) {
+    if (!producto) return { costoAlimento: 0, costoEmpaque: 0, costoTotal: 0 };
+    var costoAlimento = 0;
+    var costoEmpaque = Number(producto.empaqueManual) || 0;
+    (producto.componentes || []).forEach(function (c) {
+      var gramos = Number(c.gramos) || 0;
+      if (c.tipo === 'preparacion') {
+        costoAlimento += gramos * getPreparacionCosto(state, c.refId).costoPorGramo;
+      } else if (c.tipo === 'empaques') {
+        var emp = (state.empaques || []).find(function (x) { return x.id === c.refId; });
+        if (emp) costoEmpaque += gramos * (Number(emp.costo) || 0);
+      } else if (c.tipo === 'toppings') {
+        // Un topping es comestible — food cost, no paper cost — aunque
+        // esté modelado en la misma colección que empaques a nivel de
+        // COLECCION_POR_TIPO.
+        var top = (state.toppings || []).find(function (x) { return x.id === c.refId; });
+        if (top) costoAlimento += gramos * (Number(top.costo) || 0);
+      } else {
+        var m = (state.materia || []).find(function (x) { return x.id === c.refId; });
+        if (m) costoAlimento += gramos * (Number(m.costo) || 0);
+      }
+    });
+    (producto.empaquesUsados || []).forEach(function (e) {
+      var m = (state.empaques || []).find(function (x) { return x.id === e.empaqueId; });
+      if (m) costoEmpaque += (Number(m.costo) || 0) * (Number(e.cantidad) || 0);
+    });
+    return { costoAlimento: costoAlimento, costoEmpaque: costoEmpaque, costoTotal: costoAlimento + costoEmpaque };
+  }
+
+  // Desglosa el costo YA CONGELADO de una línea de venta (item.costo,
+  // fijado en applyVenta al momento de vender — mismo dato que ya usa
+  // computeCascada para el COGS del período) en alimento/empaque,
+  // prorrateado según la proporción VIGENTE de la receta actual del
+  // producto. No se recalcula el costo total en vivo a propósito: si se
+  // hiciera, el food+paper cost del período dejaría de sumar exactamente
+  // el mismo COGS que ya reporta Caja/Reportes — sería una tercera cifra
+  // de costo de ventas distinta, justo el problema que señala la
+  // auditoría en su hallazgo raíz (Sección 0). Un topping suelto o una
+  // adición no tienen empaque propio: van 100% a alimento.
+  function getCostoDesglosadoVentaItem(item, state) {
+    var costoTotalItem = (Number(item.costo) || 0) * (Number(item.qty) || 0);
+    if (item.productoId) {
+      var p = (state.productos || []).find(function (x) { return x.id === item.productoId; });
+      if (p) {
+        var d = getCostoProductoDesglosado(p, state);
+        if (d.costoTotal > 0) {
+          var pctEmpaque = d.costoEmpaque / d.costoTotal;
+          return { costoAlimento: costoTotalItem * (1 - pctEmpaque), costoEmpaque: costoTotalItem * pctEmpaque };
+        }
+      }
+    }
+    return { costoAlimento: costoTotalItem, costoEmpaque: 0 };
+  }
+
+  function costosDesglosadosPeriodo(state, ventasPeriodo) {
+    var costoAlimento = 0, costoEmpaque = 0, ingresos = 0;
+    (ventasPeriodo || []).forEach(function (v) {
+      ingresos += Number(v.total) || 0;
+      (v.items || []).forEach(function (item) {
+        var d = getCostoDesglosadoVentaItem(item, state);
+        costoAlimento += d.costoAlimento;
+        costoEmpaque += d.costoEmpaque;
+      });
+    });
+    return { costoAlimento: costoAlimento, costoEmpaque: costoEmpaque, ingresos: ingresos };
+  }
+
+  // Food cost % y paper cost % del período — ratio (0-1), igual criterio
+  // que margenPct. Ver getCostoDesglosadoVentaItem para de dónde sale el
+  // desglose y por qué no recalcula el costo total en vivo.
+  function getFoodCostPct(state, period, ref) {
+    var d = costosDesglosadosPeriodo(state, getVentasByPeriod(state.ventas, period, ref));
+    return d.ingresos > 0 ? d.costoAlimento / d.ingresos : 0;
+  }
+  function getPaperCostPct(state, period, ref) {
+    var d = costosDesglosadosPeriodo(state, getVentasByPeriod(state.ventas, period, ref));
+    return d.ingresos > 0 ? d.costoEmpaque / d.ingresos : 0;
+  }
+
   // ─── Margen bruto por producto ─────────────────────────────
   // ponytail: sin recargo de costos fijos por producto (retirado a
   // petición del usuario el 11 ago 2026). El costo del producto es solo
@@ -1677,6 +1764,9 @@
     getCostoProducto: getCostoProducto,
     getEmpaqueTotalProducto: getEmpaqueTotalProducto,
     getCostoConVolatilidad: getCostoConVolatilidad,
+    getCostoProductoDesglosado: getCostoProductoDesglosado,
+    getFoodCostPct: getFoodCostPct,
+    getPaperCostPct: getPaperCostPct,
     computeSaleConsumption: computeSaleConsumption,
     checkStockShortage: checkStockShortage,
     applyVenta: applyVenta,

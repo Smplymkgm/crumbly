@@ -1719,6 +1719,63 @@ test('findProductosUsandoInsumo no encuentra nada para un insumo sin uso', () =>
   assert.strictEqual(usado.preparaciones.length, 0);
 });
 
+console.log('\n== C1: separar costo de alimento y costo de empaque ==');
+
+function stateProductoConEmpaque() {
+  return C.migrateState({
+    materia: [{ id: 'harina', nombre: 'Harina', cantidad: 100000, costo: 5, minimo: 0 }],
+    empaques: [{ id: 'caja', nombre: 'Caja', cantidad: 1000, costo: 300, minimo: 0 }],
+    toppings: [{ id: 'choco', nombre: 'Chispas', cantidad: 1000, costo: 10, precio: 500, minimo: 0 }],
+    productos: [{
+      id: 'p1', nombre: 'Waffle', precio: 20000, empaqueManual: 50,
+      componentes: [
+        { tipo: 'materia', refId: 'harina', gramos: 150 },   // 750 alimento
+        { tipo: 'toppings', refId: 'choco', gramos: 20 },     // 200 alimento (topping ES comida)
+        { tipo: 'empaques', refId: 'caja', gramos: 1 }        // 300 empaque (usado como componente, no empaquesUsados)
+      ],
+      empaquesUsados: [{ empaqueId: 'caja', cantidad: 1 }]    // 300 empaque más, vía el otro camino
+    }]
+  });
+}
+
+test('getCostoProductoDesglosado: costoAlimento + costoEmpaque === costoTotal, y costoTotal === getCostoProducto (sin romper al llamador actual)', () => {
+  const s = stateProductoConEmpaque();
+  const p = s.productos[0];
+  const d = C.getCostoProductoDesglosado(p, s);
+  const totalViejo = C.getCostoProducto(p, s);
+  assert.ok(Math.abs(d.costoAlimento + d.costoEmpaque - d.costoTotal) < 0.0001);
+  assert.ok(Math.abs(d.costoTotal - totalViejo) < 0.0001);
+  // alimento: 150*5 (harina) + 20*10 (choco, ES comida) = 950
+  assert.strictEqual(d.costoAlimento, 950);
+  // empaque: 50 (empaqueManual) + 1*300 (caja como componente) + 1*300 (empaquesUsados) = 650
+  assert.strictEqual(d.costoEmpaque, 650);
+});
+
+test('getCostoProducto (la función que ya usan applyVenta/registrarMerma) sigue devolviendo el mismo número de siempre, sin cambiar de firma', () => {
+  const s = stateProductoConEmpaque();
+  assert.strictEqual(C.getCostoProducto(s.productos[0], s), 1600); // 950 + 650
+});
+
+test('getFoodCostPct / getPaperCostPct de un período sobre ventas reales', () => {
+  const s = stateProductoConEmpaque();
+  C.applyVenta(s, [{ productoId: 'p1', qty: 1, toppings: [] }], [], {});
+  // ingresos 20000, costoTotal 1600 -> foodCostPct = 950/20000, paperCostPct = 650/20000
+  const food = C.getFoodCostPct(s, 'mes');
+  const paper = C.getPaperCostPct(s, 'mes');
+  assert.ok(Math.abs(food - 950 / 20000) < 0.0001);
+  assert.ok(Math.abs(paper - 650 / 20000) < 0.0001);
+  assert.ok(Math.abs((food + paper) - 1600 / 20000) < 0.0001); // suman el food cost % tradicional (todo mezclado)
+});
+
+test('un topping suelto o una adición van 100% a alimento (no tienen empaque propio)', () => {
+  const s = stateProductoConEmpaque();
+  C.applyVenta(s, [], [{ toppingId: 'choco', qty: 5 }], {});
+  const food = C.getFoodCostPct(s, 'mes');
+  const paper = C.getPaperCostPct(s, 'mes');
+  assert.strictEqual(paper, 0);
+  assert.ok(food > 0);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);
