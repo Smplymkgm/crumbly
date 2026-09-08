@@ -1386,14 +1386,19 @@ function renderInventario() {
     .filter(i => insInventarioCategoria === 'todos' || i.categoria === insInventarioCategoria);
   const el = document.getElementById('inv-list');
   if (!items.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">No hay insumos en esta categoría</p>'; return; }
-  // ponytail: $50.000/unidad como umbral de "esto probablemente está mal
-  // cargado" — ningún insumo de esta carta cuesta eso por gramo/ml/unidad
-  // individual. No bloquea nada, solo ayuda a encontrar el insumo que
-  // dispara un margen absurdo sin tener que revisar producto por producto.
-  const COSTO_SOSPECHOSO = 50000;
+  // Umbral de "esto probablemente está mal cargado" — distinto por unidad
+  // de medida: nada medido por gramo/mililitro (harina, mantequilla,
+  // salsas...) debería costar más de unos pocos cientos de pesos por
+  // gramo, aunque un empaque o un insumo por unidad sí puede costar miles.
+  // Bug real: con un solo umbral de $50.000 para todo, "Harina fuerza" a
+  // $10.500/g no se marcaba — carísima para harina, pero por debajo del
+  // umbral pensado para empaques. No bloquea nada, solo ayuda a
+  // encontrar el insumo que dispara un margen absurdo sin revisar
+  // producto por producto.
+  const COSTO_SOSPECHOSO_POR_UNIDAD = { g: 200, ml: 200, kg: 50000, unidad: 50000 };
   el.innerHTML = items.map(it => {
     const bajo = it.cantidad <= it.minimo;
-    const sospechoso = it.costo > COSTO_SOSPECHOSO;
+    const sospechoso = it.costo > (COSTO_SOSPECHOSO_POR_UNIDAD[it.unidad] || 50000);
     return `<div class="list-row" style="padding:12px 16px;cursor:pointer" onclick="openInsumoModal('${it.id}')">
       <div style="flex:1;min-width:0">
         <div class="item-name">${esc(it.nombre)}</div>
