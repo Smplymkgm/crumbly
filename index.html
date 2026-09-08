@@ -139,9 +139,13 @@ textarea.field{height:auto}
 .modal-field label:not(.field-label){display:block;font-size:11px;color:var(--muted);font-weight:600;margin-bottom:6px}
 .modal-field input:not(.field),.modal-field select:not(.field){width:100%;height:38px;padding:8px 12px;border:1px solid var(--line);border-radius:999px;font-size:12px;font-family:inherit;background:var(--white);color:var(--text);outline:none}
 .btn-save{width:100%;background:var(--ink);border:1px solid var(--ink);color:var(--white);font-weight:600;font-size:13px;padding:10px;border-radius:999px;cursor:pointer;font-family:inherit}
-.ing-row{display:flex;gap:6px;margin-bottom:8px;align-items:center}
-.ing-row select{flex:2;height:38px;padding:8px 12px;font-size:12px;border:1px solid var(--line);border-radius:10px;background:var(--white);font-family:inherit;outline:none}
-.ing-row input{flex:1;height:38px;padding:8px 12px;font-size:12px;border:1px solid var(--line);border-radius:10px;background:var(--white);font-family:inherit;outline:none;min-width:0}
+/* flex-wrap: bug real reportado — con dos <select> de texto largo (tipo +
+   insumo) más cantidad y borrar, la fila no cabía en una pantalla angosta
+   y forzaba scroll horizontal dentro del modal. Ahora pasa a una segunda
+   línea en vez de desbordar. */
+.ing-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;align-items:center}
+.ing-row select{flex:1 1 120px;height:38px;padding:8px 12px;font-size:12px;border:1px solid var(--line);border-radius:10px;background:var(--white);font-family:inherit;outline:none;min-width:110px}
+.ing-row input{flex:1 1 70px;height:38px;padding:8px 12px;font-size:12px;border:1px solid var(--line);border-radius:10px;background:var(--white);font-family:inherit;outline:none;min-width:60px}
 .ing-row button{background:var(--bg);color:var(--danger);border:1px solid var(--line);border-radius:10px;padding:8px 10px;cursor:pointer;font-size:14px;flex-shrink:0}
 .add-ing-btn{background:var(--white);color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:9px 14px;font-size:12px;cursor:pointer;font-family:inherit;width:100%;margin-bottom:12px}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--white);padding:10px 22px;border-radius:999px;font-size:13px;z-index:300;opacity:0;transition:opacity 0.3s;pointer-events:none;white-space:nowrap}
@@ -371,7 +375,8 @@ textarea.field{height:auto}
           <div class="page-title">Inventario</div>
           <button class="btn" onclick="openInsumoModal()"><i class="ph ph-plus"></i> Agregar insumo</button>
         </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap" id="inv-chips"></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap" id="inv-chips-tipo"></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px" id="inv-chips"></div>
         <div class="card" style="padding:0;overflow:hidden">
           <div id="inv-list"><p class="empty" style="padding:1.5rem">No hay insumos registrados</p></div>
         </div>
@@ -1207,11 +1212,28 @@ function updateHeaderDate() {
    ponytail: sin conversión real g↔kg↔ml, solo la etiqueta cambia. */
 const TIPO_MEDICION_UNIDAD = { gramos: 'g', mililitros: 'ml', kilogramos: 'kg', unidad: 'unidad' };
 const UNIDAD_TIPO_MEDICION = { g: 'gramos', ml: 'mililitros', kg: 'kilogramos' };
+let insInventarioTipo = 'todos';
 let insInventarioCategoria = 'todos';
+const TIPO_INSUMO_LABEL = { materia: 'Materia prima', empaques: 'Empaque', toppings: 'Toppings' };
 
+// Bug real reportado: los chips de Inventario eran solo "categoría"
+// (texto libre que cada quien escribe al crear un insumo) — sin ningún
+// filtro por tipo real (materia/empaque/topping), así que un chip
+// llamado "Empaque" era una categoría más entre muchas, no una garantía
+// de ver solo empaques de verdad. Ahora hay dos filas: Tipo (real,
+// según en qué colección vive cada insumo) y Categoría (como antes,
+// pero acotada al tipo elegido).
 function insumoCategorias() {
-  const cats = new Set(CrumblyCore.getInsumosUnificados(state).map(i => i.categoria).filter(Boolean));
+  const items = CrumblyCore.getInsumosUnificados(state).filter(i => insInventarioTipo === 'todos' || i.tipo === insInventarioTipo);
+  const cats = new Set(items.map(i => i.categoria).filter(Boolean));
   return Array.from(cats).sort();
+}
+function setInventarioTipo(tipo, el) {
+  insInventarioTipo = tipo;
+  insInventarioCategoria = 'todos'; // la categoría anterior puede no existir en el tipo nuevo
+  document.querySelectorAll('#inv-chips-tipo .chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  renderInventario();
 }
 
 function openInsumoModal(id) {
@@ -1351,19 +1373,31 @@ function renderNecesidadesCompra() {
 function renderInventario() {
   renderNecesidadesCompra();
   const todos = CrumblyCore.getInsumosUnificados(state);
+  const tipos = ['todos', 'materia', 'empaques', 'toppings'];
+  document.getElementById('inv-chips-tipo').innerHTML = tipos.map(t =>
+    `<button class="chip ${t === insInventarioTipo ? 'active' : ''}" onclick="setInventarioTipo('${t}',this)">${t === 'todos' ? 'Todos' : esc(TIPO_INSUMO_LABEL[t])}</button>`
+  ).join('');
   const cats = insumoCategorias();
   document.getElementById('inv-chips').innerHTML = ['todos', ...cats].map(c =>
-    `<button class="chip ${c === insInventarioCategoria ? 'active' : ''}" onclick="setInventarioCategoria('${esc(c)}',this)">${c === 'todos' ? 'Todos' : esc(c)}</button>`
+    `<button class="chip ${c === insInventarioCategoria ? 'active' : ''}" onclick="setInventarioCategoria('${esc(c)}',this)">${c === 'todos' ? 'Todas las categorías' : esc(c)}</button>`
   ).join('');
-  const items = todos.filter(i => insInventarioCategoria === 'todos' || i.categoria === insInventarioCategoria);
+  const items = todos
+    .filter(i => insInventarioTipo === 'todos' || i.tipo === insInventarioTipo)
+    .filter(i => insInventarioCategoria === 'todos' || i.categoria === insInventarioCategoria);
   const el = document.getElementById('inv-list');
   if (!items.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">No hay insumos en esta categoría</p>'; return; }
+  // ponytail: $50.000/unidad como umbral de "esto probablemente está mal
+  // cargado" — ningún insumo de esta carta cuesta eso por gramo/ml/unidad
+  // individual. No bloquea nada, solo ayuda a encontrar el insumo que
+  // dispara un margen absurdo sin tener que revisar producto por producto.
+  const COSTO_SOSPECHOSO = 50000;
   el.innerHTML = items.map(it => {
     const bajo = it.cantidad <= it.minimo;
+    const sospechoso = it.costo > COSTO_SOSPECHOSO;
     return `<div class="list-row" style="padding:12px 16px;cursor:pointer" onclick="openInsumoModal('${it.id}')">
       <div style="flex:1;min-width:0">
         <div class="item-name">${esc(it.nombre)}</div>
-        <div class="item-sub">${esc(it.categoria || '—')} · ${it.cantidad.toLocaleString('es-CO')} ${esc(it.unidad)} · ${fmt(it.costo)}/${esc(it.unidad)}</div>
+        <div class="item-sub" style="${sospechoso ? 'color:var(--danger)' : ''}">${esc(it.categoria || '—')} · ${it.cantidad.toLocaleString('es-CO')} ${esc(it.unidad)} · ${fmt(it.costo)}/${esc(it.unidad)}${sospechoso ? ' · revisá este costo' : ''}</div>
       </div>
       ${bajo ? '<span class="badge">Bajo stock</span>' : ''}
       <i class="ph ph-caret-right" style="color:var(--soft);font-size:12px;margin-left:10px"></i>
