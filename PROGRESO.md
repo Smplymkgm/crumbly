@@ -13,8 +13,8 @@ Rama: `auditoria/costeo`. Protocolo: test primero, suite completa verde, un comm
 | A1 · Quitar recargo +8% | ✅ HECHA |
 | A2 · Registrar déficit de stock (`faltante`) | ✅ HECHA |
 | B1 · Snapshots de inventario | ✅ HECHA |
-| B2 · Flujo de conteo físico | PENDIENTE |
-| B3 · Rendimiento de preparaciones | PENDIENTE |
+| B2 · Flujo de conteo físico | ✅ HECHA |
+| B3 · Rendimiento de preparaciones | ✅ HECHA |
 | B4 · Inventario de preparaciones (WIP) | PENDIENTE |
 | C1 · Separar costo alimento/empaque | PENDIENTE |
 | C2 · Merma dentro del COGS | PENDIENTE |
@@ -50,4 +50,20 @@ Rama: `auditoria/costeo`. Protocolo: test primero, suite completa verde, un comm
 - Archivos: `js/core.js` (`state.snapshots[]`, `getValorInventario`, `crearSnapshot`, `getSnapshotMasReciente`), `tests/core.test.js` (sección "B1: snapshots de inventario", 5 tests).
 - Decisión no especificada: cada línea del snapshot guarda también `insumoTipo` además de `insumoId` (el ejemplo del encargo solo mostraba `insumoId`) — sin el tipo no se puede resolver a qué colección pertenece el insumo (mismo patrón que `insumoTipo`+`insumoId` en `registrarGasto`/mermas). Necesario para que D1 pueda comparar snapshots contra el estado real.
 - No se implementó todavía ningún flujo de UI ni de conteo (eso es B2) — B1 es solo el motor de datos.
+
+### B3 · Rendimiento de preparaciones — HECHA (commit acf8910)
+
+- Archivos: `js/core.js` (`getPreparacionComposicionPorGramo`, `getPreparacionCosto`, `savePreparacion`, default en `migrateState`), `tests/core.test.js` (sección "B3: rendimiento...", 5 tests).
+- Decisión no especificada: `getPreparacionCosto` ahora también expone `gramosObtenidos` (nuevo campo) además del `gramosTotal` original (insumos crudos) — la UI existente (`index.html`) sigue mostrando `gramosTotal` sin cambios, así que no hay regresión visual; `gramosObtenidos` queda disponible para B4 (que lo necesita: "se piden los gramos realmente obtenidos").
+- `costoTotal` se corrigió para multiplicar por `gramosObtenidos`, no por `gramosTotal` — si no, `costoTotal` quedaría inflado por `1/rendimiento` (costoPorGramo ya está en base "por gramo obtenido"; multiplicarlo por gramos de insumos, que son más, infla el total). Verificado con test: el costo total de los insumos es invariante al rendimiento, solo cambia el costo por gramo.
+
+### B2 · Flujo de conteo físico — HECHA (commits 0e1d487 core, c0d491a UI)
+
+- Archivos: `js/core.js` (`AJUSTE_MOTIVOS`, `previsualizarConteo`, `cerrarConteo`, `state.conteoEnProgreso{}`), `index.html` (modal "Conteo físico" en Inventario, bloqueo de edición directa de `cantidad`), `tests/core.test.js` (sección "B2: cierre de conteo físico", 4 tests + 2 de migración).
+- **Verificado a mano en el navegador** (servidor estático local, `preview_start` + Browser pane), no solo con tests de Node: creé un insumo, abrí Conteo físico, escribí una cantidad contada distinta a la teórica, confirmé que el motivo es obligatorio (cerrar sin motivo no aplicó nada), lo seleccioné, cerré el conteo y confirmé en consola que `cantidad`, `ajustes[]` y `snapshots[]` quedaron exactamente como se esperaba (2900→2100, ajuste −800/−$8.000, snapshot tipo conteo).
+- Decisiones no especificadas en el encargo:
+  - El conteo en curso (antes de cerrarlo) se guarda en `state.conteoEnProgreso{}`, un campo nuevo en el estado (sincronizado como todo lo demás) — es lo que permite "contar materia prima hoy, toppings mañana" sin perder lo tecleado ni depender de que el mismo dispositivo siga abierto.
+  - El motivo de un AJUSTE de conteo es una lista nueva (`AJUSTE_MOTIVOS`), deliberadamente distinta de `MERMA_MOTIVOS` — una merma es la causa de una pérdida ya conocida al momento de perderla; un ajuste de conteo es la explicación de una diferencia encontrada después (incluye "Merma no registrada" como una de sus opciones).
+  - Bug encontrado y corregido durante la verificación en navegador (no en los tests de Node, que no ejercitan el DOM): la primera versión de `renderConteoList()` reconstruía el `innerHTML` completo de la lista en cada tecla presionada en el campo "Contada", lo que le quita el foco al input a mitad de un número de varias cifras. Se corrigió para que cada tecla actualice solo esa fila (`actualizarFilaConteo`), nunca la lista completa.
+  - `saveInsumo()` ya no envía `cantidad` en el camino de edición (antes lo hacía incondicionalmente); el campo del modal se deshabilita al editar un insumo existente y sigue habilitado solo al crear uno nuevo (el stock inicial no es un "ajuste").
 
