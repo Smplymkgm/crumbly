@@ -16,7 +16,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var SCHEMA_VERSION = 9;
+  var SCHEMA_VERSION = 10;
 
   // decisión del 11 ago 2026: insumos de precio volátil llevan un +8% de
   // colchón al registrar su compra, para no subcostear cuando el proveedor
@@ -315,6 +315,13 @@
       var out = Object.assign({ metodoPago: 'efectivo', comprobante: '', adicionesConsumo: {} }, v);
       if (!Array.isArray(out.items)) out.items = [];
       if (out.stockInsuficiente === undefined) out.stockInsuficiente = false;
+      // v9 -> v10 (P0.3): NO se rellenan `items[].costoAlimento`/
+      // `costoEmpaque` en ventas viejas con la proporción de HOY —
+      // a propósito. Rellenarlas sería inventar un dato medido que nunca
+      // se tomó; se quedan sin los campos y getCostoDesglosadoVentaItem
+      // cae a su fallback (proporción vigente, aproximado y documentado
+      // como deuda histórica). Así se distingue lo medido de lo estimado
+      // en vez de borrar la diferencia.
       return out;
     });
 
@@ -683,7 +690,21 @@
   // auditoría en su hallazgo raíz (Sección 0). Un topping suelto o una
   // adición no tienen empaque propio: van 100% a alimento.
   function getCostoDesglosadoVentaItem(item, state) {
-    var costoTotalItem = (Number(item.costo) || 0) * (Number(item.qty) || 0);
+    var qty = Number(item.qty) || 0;
+    // P0.3: el camino normal es el desglose que la venta ya congeló en
+    // el momento de venderse (costoAlimento/costoEmpaque por unidad,
+    // igual convención que `costo`). Antes esto recalculaba con la
+    // receta VIGENTE — cambiar hoy el empaque de una receta reescribía
+    // en silencio el desglose de cada venta pasada de ese producto (el
+    // total seguía congelado, pero el split entre alimento/empaque no).
+    if (item.costoAlimento !== undefined && item.costoEmpaque !== undefined) {
+      return { costoAlimento: item.costoAlimento * qty, costoEmpaque: item.costoEmpaque * qty };
+    }
+    // Deuda histórica, NO el camino normal: ventas de antes de esta
+    // versión no tienen el desglose propio — se estima prorrateando el
+    // costo YA CONGELADO con la proporción alimento/empaque VIGENTE de
+    // la receta actual (aproximación, documentada, nunca se backfillea).
+    var costoTotalItem = (Number(item.costo) || 0) * qty;
     if (item.productoId) {
       var p = (state.productos || []).find(function (x) { return x.id === item.productoId; });
       if (p) {
@@ -996,7 +1017,11 @@
         var p = (state.productos || []).find(function (x) { return x.id === line.productoId; });
         if (p) {
           var costo = getCostoProducto(p, state);
-          items.push({ productoId: p.id, nombre: p.nombre, qty: qty, precio: p.precio, costo: costo });
+          // P0.3: congela el desglose alimento/empaque AQUÍ, con la
+          // receta vigente EN ESTE MOMENTO — no se recalcula después con
+          // la receta de otro día (ver getCostoDesglosadoVentaItem).
+          var desglose = getCostoProductoDesglosado(p, state);
+          items.push({ productoId: p.id, nombre: p.nombre, qty: qty, precio: p.precio, costo: costo, costoAlimento: desglose.costoAlimento, costoEmpaque: desglose.costoEmpaque });
           total += p.precio * qty;
           ganancia += (p.precio - costo) * qty;
           aplicarComponentes(state, p.componentes, qty, function (bucket, id, cant) { deduct(bucket, state[bucket], id, cant); });
@@ -1010,7 +1035,8 @@
         if (totQty <= 0) return;
         var top = (state.toppings || []).find(function (x) { return x.id === t.toppingId; });
         if (top) {
-          items.push({ toppingId: top.id, nombre: top.nombre + ' (topping)', qty: totQty, precio: top.precio, costo: top.costo });
+          // Un topping es 100% alimento — no tiene empaque propio (mismo criterio que C1).
+          items.push({ toppingId: top.id, nombre: top.nombre + ' (topping)', qty: totQty, precio: top.precio, costo: top.costo, costoAlimento: top.costo, costoEmpaque: 0 });
           total += top.precio * totQty;
           ganancia += (top.precio - top.costo) * totQty;
           deduct('toppings', state.toppings, top.id, totQty);
@@ -1024,7 +1050,8 @@
         var precio = Number(found.item.precioAdicion) || 0;
         var porcion = Number(found.item.porcion) || 0;
         var costoUnit = (Number(found.item.costo) || 0) * porcion;
-        items.push({ adicionId: adId, nombre: (found.item.nombreAdicion || found.item.nombre) + ' (adición)', qty: qty, precio: precio, costo: costoUnit });
+        // Una adición tampoco tiene empaque propio.
+        items.push({ adicionId: adId, nombre: (found.item.nombreAdicion || found.item.nombre) + ' (adición)', qty: qty, precio: precio, costo: costoUnit, costoAlimento: costoUnit, costoEmpaque: 0 });
         total += precio * qty;
         ganancia += (precio - costoUnit) * qty;
         deduct(found.tipo, found.list, adId, porcion * qty);
@@ -1036,7 +1063,7 @@
       if (q <= 0) return;
       var top = (state.toppings || []).find(function (x) { return x.id === t.toppingId; });
       if (top) {
-        items.push({ toppingId: top.id, nombre: top.nombre + ' (topping suelto)', qty: q, precio: top.precio, costo: top.costo });
+        items.push({ toppingId: top.id, nombre: top.nombre + ' (topping suelto)', qty: q, precio: top.precio, costo: top.costo, costoAlimento: top.costo, costoEmpaque: 0 });
         total += top.precio * q;
         ganancia += (top.precio - top.costo) * q;
         deduct('toppings', state.toppings, top.id, q);

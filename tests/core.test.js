@@ -1852,6 +1852,56 @@ test('un topping suelto o una adición van 100% a alimento (no tienen empaque pr
   assert.ok(food > 0);
 });
 
+console.log('\n== P0.3 (Ronda 2): el desglose alimento/empaque se congela en la venta ==');
+
+test('P0.3: cada ítem nuevo trae costoAlimento + costoEmpaque === costo', () => {
+  const s = stateProductoConEmpaque();
+  const venta = C.applyVenta(s, [{ productoId: 'p1', qty: 1, toppings: [] }], [], {});
+  const item = venta.items[0];
+  assert.ok(item.costoAlimento !== undefined && item.costoEmpaque !== undefined);
+  assert.ok(Math.abs(item.costoAlimento + item.costoEmpaque - item.costo) < 0.0001);
+});
+
+test('P0.3 — el bug que esto corrige: cambiar el empaque de la receta DESPUÉS de vender no reescribe el food/paper cost % de esa venta', () => {
+  const s = stateProductoConEmpaque();
+  C.applyVenta(s, [{ productoId: 'p1', qty: 1, toppings: [] }], [], { fecha: '2026-08-05T00:00:00' });
+  const foodAntes = C.getFoodCostPct(s, 'mes', '2026-08-15T00:00:00');
+  const paperAntes = C.getPaperCostPct(s, 'mes', '2026-08-15T00:00:00');
+
+  // se cambia la caja de $300 a $900 — el "hallazgo raíz en chico" del encargo
+  s.empaques[0].costo = 900;
+
+  const foodDespues = C.getFoodCostPct(s, 'mes', '2026-08-15T00:00:00');
+  const paperDespues = C.getPaperCostPct(s, 'mes', '2026-08-15T00:00:00');
+  assert.strictEqual(foodDespues, foodAntes);
+  assert.strictEqual(paperDespues, paperAntes);
+});
+
+test('P0.3: toppings/adiciones se congelan 100% como alimento, sin empaque propio', () => {
+  const s = stateProductoConEmpaque();
+  const venta = C.applyVenta(s, [], [{ toppingId: 'choco', qty: 5 }], {});
+  assert.strictEqual(venta.items[0].costoEmpaque, 0);
+  assert.strictEqual(venta.items[0].costoAlimento, venta.items[0].costo);
+});
+
+test('P0.3: una venta VIEJA sin costoAlimento/costoEmpaque sigue reportando por el fallback, sin romper', () => {
+  const s = stateProductoConEmpaque();
+  // simula una venta de antes de esta versión: mismo costo total, sin el desglose propio
+  s.ventas.push({ id: 'vOld', fecha: '2026-01-15T00:00:00', total: 1600, ganancia: 18400, stockInsuficiente: false, consumoReal: { materia: {}, empaques: {}, toppings: {} }, items: [{ productoId: 'p1', nombre: 'Waffle', qty: 1, precio: 20000, costo: 1600 }] });
+  const food = C.getFoodCostPct(s, 'mes', '2026-01-20T00:00:00');
+  const paper = C.getPaperCostPct(s, 'mes', '2026-01-20T00:00:00');
+  assert.ok(food > 0 && paper > 0); // no revienta, sigue calculando por el fallback proporcional
+});
+
+test('migrateState v10: NO rellena costoAlimento/costoEmpaque en ventas viejas (deuda histórica a propósito, nunca se inventa)', () => {
+  const s = C.migrateState({
+    schemaVersion: 9,
+    ventas: [{ id: 'vOld', fecha: '2026-01-01T00:00:00', total: 1600, ganancia: 1000, items: [{ productoId: 'p1', qty: 1, precio: 1600, costo: 600 }] }]
+  });
+  assert.strictEqual(s.ventas[0].items[0].costoAlimento, undefined);
+  assert.strictEqual(s.ventas[0].items[0].costoEmpaque, undefined);
+});
+
 console.log('\n== C2: la merma vive DENTRO del costo de ventas, no debajo de la utilidad bruta ==');
 
 test('C2: la merma ahora resta de la utilidad BRUTA (costo de ventas), no solo de la neta', () => {
