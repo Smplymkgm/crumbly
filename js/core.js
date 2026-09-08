@@ -132,6 +132,7 @@
       gastos: [],
       mermas: [],
       ajustes: [],
+      snapshots: [],
       clientes: [],
       config: { email: '', backendUrl: '', backendToken: '', lastSync: null }
     };
@@ -220,6 +221,7 @@
       clientes: Array.isArray(raw.clientes) ? raw.clientes : [], // v5 -> v6
       mermas: Array.isArray(raw.mermas) ? raw.mermas : [], // v7 -> v8
       ajustes: Array.isArray(raw.ajustes) ? raw.ajustes : [], // v8 -> v9
+      snapshots: Array.isArray(raw.snapshots) ? raw.snapshots : [], // v8 -> v9 (B1)
       config: (raw.config && typeof raw.config === 'object') ? raw.config : {}
     };
     if (s.config.email === undefined) s.config.email = '';
@@ -1177,6 +1179,89 @@
     return out;
   }
 
+  // ─── Snapshots de inventario (B1 — conteo físico) ──────────────────
+  //
+  // Un snapshot agregado (solo el valor total) hace imposible calcular la
+  // varianza POR INSUMO después — por eso cada snapshot guarda el detalle
+  // línea por línea (insumoTipo/insumoId/cantidad/costoUnitario/valor),
+  // nunca solo un número. tipo 'sistema' congela las cantidades que el
+  // estado tiene en ese momento (teórico); tipo 'conteo' congela lo que
+  // alguien contó físicamente — y puede ser parcial: lo que no se contó se
+  // lista aparte en `noContados`, nunca se asume en cero.
+
+  function getValorInventario(state) {
+    function valorBucket(list) {
+      return (list || []).reduce(function (acc, i) { return acc + (Number(i.cantidad) || 0) * (Number(i.costo) || 0); }, 0);
+    }
+    var materia = valorBucket(state.materia);
+    var empaques = valorBucket(state.empaques);
+    var toppings = valorBucket(state.toppings);
+    return { total: materia + empaques + toppings, materia: materia, empaques: empaques, toppings: toppings };
+  }
+
+  var SNAPSHOT_BUCKETS = [['materia'], ['empaques'], ['toppings']];
+
+  // input: { tipo: 'sistema'|'conteo', fecha, usuarioEmail, nota,
+  //          conteo: [{ insumoTipo, insumoId, cantidad }] }  // solo 'conteo'
+  function crearSnapshot(state, input) {
+    input = input || {};
+    var tipo = input.tipo === 'conteo' ? 'conteo' : 'sistema';
+    var lineas = [];
+    var noContados = [];
+
+    if (tipo === 'sistema') {
+      SNAPSHOT_BUCKETS.forEach(function (b) {
+        (state[b[0]] || []).forEach(function (item) {
+          var cantidad = Number(item.cantidad) || 0;
+          var costoUnitario = Number(item.costo) || 0;
+          lineas.push({ insumoTipo: b[0], insumoId: item.id, cantidad: cantidad, costoUnitario: costoUnitario, valor: cantidad * costoUnitario });
+        });
+      });
+    } else {
+      var contadosSet = {};
+      (input.conteo || []).forEach(function (c) {
+        var list = getInsumoList(state, c.insumoTipo);
+        var item = list && list.find(function (x) { return x.id === c.insumoId; });
+        if (!item) return;
+        var cantidad = Number(c.cantidad) || 0;
+        var costoUnitario = Number(item.costo) || 0;
+        lineas.push({ insumoTipo: c.insumoTipo, insumoId: c.insumoId, cantidad: cantidad, costoUnitario: costoUnitario, valor: cantidad * costoUnitario });
+        contadosSet[c.insumoTipo + ':' + c.insumoId] = true;
+      });
+      SNAPSHOT_BUCKETS.forEach(function (b) {
+        (state[b[0]] || []).forEach(function (item) {
+          if (!contadosSet[b[0] + ':' + item.id]) noContados.push({ insumoTipo: b[0], insumoId: item.id });
+        });
+      });
+    }
+
+    var valorTotal = lineas.reduce(function (a, l) { return a + l.valor; }, 0);
+    var snap = {
+      id: genId(),
+      fecha: input.fecha || new Date().toISOString(),
+      tipo: tipo,
+      usuarioEmail: input.usuarioEmail || '',
+      nota: input.nota || '',
+      lineas: lineas,
+      noContados: noContados,
+      valorTotal: valorTotal
+    };
+    state.snapshots.push(snap);
+    return snap;
+  }
+
+  // Snapshot más reciente de `tipo` (si se da) en o antes de `fecha` (si no
+  // se da, "ahora"). Usado por D1 para ubicar el snapshot inicial/final de
+  // un período de varianza.
+  function getSnapshotMasReciente(state, fecha, tipo) {
+    var ref = fecha ? new Date(fecha) : new Date();
+    var candidatos = (state.snapshots || []).filter(function (sn) {
+      return (!tipo || sn.tipo === tipo) && new Date(sn.fecha) <= ref;
+    });
+    candidatos.sort(function (a, b) { return new Date(b.fecha) - new Date(a.fecha); });
+    return candidatos[0] || null;
+  }
+
   // ─── Rango de fechas personalizable (Reportes) ─────────────
   // `new Date('YYYY-MM-DD')` se interpreta como medianoche UTC — en
   // cualquier huso horario detrás de UTC (Colombia, UTC-5) eso corre la
@@ -1368,6 +1453,9 @@
     agruparMermasPorMotivo: agruparMermasPorMotivo,
     getMermaOrigenNombre: getMermaOrigenNombre,
     agruparMermasPorOrigen: agruparMermasPorOrigen,
+    getValorInventario: getValorInventario,
+    crearSnapshot: crearSnapshot,
+    getSnapshotMasReciente: getSnapshotMasReciente,
     getDepreciacionMensualTotal: getDepreciacionMensualTotal,
     getDepreciacionPeriodo: getDepreciacionPeriodo,
     agruparGastosPorCategoria: agruparGastosPorCategoria,

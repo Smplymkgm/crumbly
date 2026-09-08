@@ -1364,6 +1364,62 @@ test('getMermasByPeriod / getMermasByRange filtran por fecha igual que ventas/ga
   assert.strictEqual(rango.length, 1);
 });
 
+console.log('\n== B1: snapshots de inventario ==');
+
+test('getValorInventario suma cantidad×costo por bucket y en total', () => {
+  const s = stateConMermas(); // m1: 1000@10=10000 ; vaso: 50@250=12500 ; t1: 30@20=600
+  const v = C.getValorInventario(s);
+  assert.strictEqual(v.materia, 10000);
+  assert.strictEqual(v.empaques, 12500);
+  assert.strictEqual(v.toppings, 600);
+  assert.strictEqual(v.total, 23100);
+});
+
+test('crearSnapshot tipo sistema incluye los 3 buckets y su valorTotal coincide con getValorInventario', () => {
+  const s = stateConMermas();
+  const snap = C.crearSnapshot(s, { tipo: 'sistema', usuarioEmail: 'mike@crumbly.co' });
+  assert.strictEqual(snap.lineas.length, 3);
+  assert.strictEqual(snap.noContados.length, 0);
+  assert.strictEqual(snap.valorTotal, C.getValorInventario(s).total);
+  assert.strictEqual(s.snapshots.length, 1);
+});
+
+test('crearSnapshot tipo conteo parcial NO asume cero en lo no contado: lo lista aparte', () => {
+  const s = stateConMermas();
+  const snap = C.crearSnapshot(s, {
+    tipo: 'conteo', usuarioEmail: 'mike@crumbly.co', nota: 'solo materia prima hoy',
+    conteo: [{ insumoTipo: 'materia', insumoId: 'm1', cantidad: 900 }]
+  });
+  assert.strictEqual(snap.lineas.length, 1);
+  assert.strictEqual(snap.lineas[0].valor, 900 * 10);
+  assert.strictEqual(snap.noContados.length, 2);
+  const noContadosIds = snap.noContados.map(function (n) { return n.insumoId; }).sort();
+  assert.deepStrictEqual(noContadosIds, ['t1', 'vaso']);
+  // el valor del snapshot es solo de lo contado, no del inventario completo
+  assert.strictEqual(snap.valorTotal, 9000);
+});
+
+test('crearSnapshot tipo conteo usa el costo VIGENTE del insumo, no uno inventado', () => {
+  const s = stateConMermas();
+  s.materia[0].costo = 12.5; // el costo cambió desde el último snapshot
+  const snap = C.crearSnapshot(s, { tipo: 'conteo', conteo: [{ insumoTipo: 'materia', insumoId: 'm1', cantidad: 800 }] });
+  assert.strictEqual(snap.lineas[0].costoUnitario, 12.5);
+  assert.strictEqual(snap.lineas[0].valor, 800 * 12.5);
+});
+
+test('getSnapshotMasReciente filtra por tipo y por fecha de corte', () => {
+  const s = stateConMermas();
+  C.crearSnapshot(s, { tipo: 'sistema', fecha: '2026-08-01T08:00:00' });
+  C.crearSnapshot(s, { tipo: 'conteo', fecha: '2026-08-15T08:00:00', conteo: [] });
+  C.crearSnapshot(s, { tipo: 'sistema', fecha: '2026-08-20T08:00:00' });
+  const masRecienteSistema = C.getSnapshotMasReciente(s, '2026-08-31T00:00:00', 'sistema');
+  assert.strictEqual(masRecienteSistema.fecha, '2026-08-20T08:00:00');
+  const antesDelConteo = C.getSnapshotMasReciente(s, '2026-08-10T00:00:00', 'sistema');
+  assert.strictEqual(antesDelConteo.fecha, '2026-08-01T08:00:00');
+  const masRecienteConteo = C.getSnapshotMasReciente(s, '2026-08-31T00:00:00', 'conteo');
+  assert.strictEqual(masRecienteConteo.tipo, 'conteo');
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);
