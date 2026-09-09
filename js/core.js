@@ -465,27 +465,43 @@
   //   applyVenta, computeSaleConsumption, checkStockShortage,
   //   registrarMerma de un producto.
   //
-  // LIMITACIÓN CONOCIDA, documentada a propósito (Ronda 2, opción
-  // conservadora): en `computeSaleConsumption` (simulación de PRE-venta,
-  // de solo lectura), si el mismo carrito tiene dos líneas DISTINTAS que
-  // usan la MISMA preparación, cada línea lee `prep.cantidad` por
-  // separado (nunca se muta en la simulación) y ambas pueden creer que
-  // el stock completo está disponible — el aviso de faltante podría
-  // subestimarse en ese caso puntual. La deducción REAL (applyVenta) no
-  // tiene este problema: `apply` sí muta el estado entre líneas, así que
-  // la segunda línea ve correctamente lo que ya consumió la primera.
+  // LIMITACIÓN DE RONDA 2, CORREGIDA EN T5 (auditoría Ronda 3): en
+  // `computeSaleConsumption` (simulación de PRE-venta, de solo lectura),
+  // si el mismo carrito tenía dos líneas DISTINTAS que usan la MISMA
+  // preparación, cada línea leía `prep.cantidad` por separado (nunca se
+  // muta en la simulación) y ambas podían creer que el stock completo
+  // estaba disponible — el aviso de faltante podía subestimarse (o, con
+  // materia también escasa, directamente no mencionarla) en ese caso
+  // puntual. `opts.reservas` (abajo) resuelve esto: la segunda línea ve
+  // lo que la primera ya reservó, sin mutar `state` de verdad — la
+  // deducción REAL (applyVenta) nunca tuvo este problema, ya que `apply`
+  // sí muta el estado entre líneas.
+  // `opts.reservas`: acumulador OPCIONAL, dueño de
+  // quien llama, de cuánto de cada preparación ya se dio por reservado en
+  // ESTA misma pasada — sin él, dos llamadas separadas (dos líneas del
+  // carrito que comparten una preparación) leen `prep.cantidad` cada una
+  // por separado, como si la otra no existiera (limitación documentada en
+  // P1.1/P1.2). `computeSaleConsumption` lo pasa y lo comparte entre todas
+  // las líneas de un mismo carrito; `applyVenta`/`registrarMerma`/
+  // `producirPreparacion` NO lo pasan — mutan `state` de verdad entre
+  // líneas, así que ya ven el stock real actualizado y no lo necesitan.
   function aplicarComponentes(state, componentes, qty, apply, opts) {
     var modo = (opts && opts.modo) || 'crudo';
+    var reservas = opts && opts.reservas;
     (componentes || []).forEach(function (c) {
       var cantidad = (Number(c.gramos) || 0) * qty;
       if (c.tipo === 'empaques' || c.tipo === 'toppings') {
         apply(c.tipo, c.refId, cantidad);
       } else if (c.tipo === 'preparacion' && modo === 'stock') {
         var prep = getPreparacion(state, c.refId);
-        var disponible = prep ? Math.max(0, Number(prep.cantidad) || 0) : 0;
+        var yaReservado = reservas ? (reservas[c.refId] || 0) : 0;
+        var disponible = prep ? Math.max(0, (Number(prep.cantidad) || 0) - yaReservado) : 0;
         var deStock = Math.min(disponible, cantidad);
         var resto = cantidad - deStock;
-        if (deStock > 0) apply('preparaciones', c.refId, deStock);
+        if (deStock > 0) {
+          apply('preparaciones', c.refId, deStock);
+          if (reservas) reservas[c.refId] = yaReservado + deStock;
+        }
         if (resto > 0) {
           var expandidoResto = expandGramosAMateria(state, c.tipo, c.refId, resto);
           Object.keys(expandidoResto).forEach(function (mid) { apply('materia', mid, expandidoResto[mid]); });
@@ -1055,6 +1071,13 @@
     function add(bucket, id, cant) {
       consumo[bucket][id] = (consumo[bucket][id] || 0) + cant;
     }
+    // T5 (auditoría Ronda 3): reservas compartidas entre TODAS las líneas
+    // de este carrito — antes cada línea leía `prep.cantidad` por
+    // separado (la simulación nunca muta `state`), así que dos líneas
+    // distintas que usan la misma preparación podían creer, cada una,
+    // que tenían el stock completo disponible. Con esto, la segunda línea
+    // ve lo que la primera ya reservó (ver aplicarComponentes).
+    var reservasPreparaciones = {};
     (lineas || []).forEach(function (line) {
       var qty = Number(line.qty) || 0;
       var p = (state.productos || []).find(function (x) { return x.id === line.productoId; });
@@ -1063,9 +1086,8 @@
         // se expande hasta insumo hoja antes de sumarlo — así una receta con
         // preparaciones anidadas valida contra el stock real, no un intermedio.
         // P1.2: modo 'stock' — es lo que realmente va a salir del
-        // inventario si se confirma la venta (ver limitación conocida de
-        // P1.1 sobre dos líneas que compartan la misma preparación).
-        aplicarComponentes(state, p.componentes, qty, add, { modo: 'stock' });
+        // inventario si se confirma la venta.
+        aplicarComponentes(state, p.componentes, qty, add, { modo: 'stock', reservas: reservasPreparaciones });
         (p.empaquesUsados || []).forEach(function (e) {
           add('empaques', e.empaqueId, (Number(e.cantidad) || 0) * qty);
         });
@@ -1111,7 +1133,14 @@
     check('materia', state.materia);
     check('empaques', state.empaques);
     check('toppings', state.toppings);
-    check('preparaciones', state.preparaciones); // P1.2 — por construcción nunca marca faltante (aplicarComponentes en modo 'stock' nunca pide más de lo disponible), pero se deja por completitud y consistencia con los demás buckets.
+    // P1.2/T5: con una sola línea usando una preparación, nunca marca
+    // faltante acá (el sobrante ya se expandió a materia dentro de
+    // aplicarComponentes) — eso SÍ se detecta en el bucket 'materia'. Con
+    // DOS O MÁS líneas compartiendo la misma preparación, `reservas`
+    // (T5, ver aplicarComponentes/computeSaleConsumption) hace que este
+    // bucket SÍ pueda marcar faltante — antes esto último no pasaba de
+    // forma confiable.
+    check('preparaciones', state.preparaciones);
     return faltantes;
   }
 

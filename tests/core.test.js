@@ -2612,6 +2612,50 @@ test('NO-REGRESIÓN: getConsumptionRolling da exactamente lo mismo con o sin sto
   assert.strictEqual(consumoConStock.materia.harina, 100); // siempre expande a materia, tenga o no stock la preparación
 });
 
+console.log('\n== T5 (Ronda 3): computeSaleConsumption reserva preparaciones entre líneas del mismo carrito ==');
+
+function stateDosProductosMismaPrep(cantidadPrep) {
+  const s = statePrepStock(cantidadPrep);
+  s.productos = [
+    { id: 'p1', nombre: 'Waffle A', precio: 20000, componentes: [{ tipo: 'preparacion', refId: 'masa', gramos: 100 }], empaquesUsados: [] },
+    { id: 'p2', nombre: 'Waffle B', precio: 20000, componentes: [{ tipo: 'preparacion', refId: 'masa', gramos: 100 }], empaquesUsados: [] }
+  ];
+  return s;
+}
+
+test('CRITERIO: dos líneas distintas que usan la misma preparación, con stock que alcanza solo para la primera, dispara el aviso de faltante', () => {
+  const s = stateDosProductosMismaPrep(100); // alcanza justo para UNA línea (100g), no para las dos (200g)
+  const consumo = C.computeSaleConsumption([{ productoId: 'p1', qty: 1 }, { productoId: 'p2', qty: 1 }], [], s);
+  // Antes de T5: cada línea leía prep.cantidad=100 por separado y creía
+  // tener 100g completos disponibles -> consumo.materia quedaba vacío,
+  // aunque en una venta real la segunda línea sí habría tenido que tirar
+  // de materia prima. Con la reserva compartida, la segunda línea ve que
+  // ya no queda nada de la preparación y expande su necesidad a materia.
+  assert.strictEqual(consumo.preparaciones.masa, 100, 'la primera línea sí alcanza a reservar el stock real');
+  assert.strictEqual(consumo.materia.harina, 100, 'la segunda línea, sin preparación disponible, expande sus 100g a materia (100g harina = 1x la receta base)');
+  const faltantes = C.checkStockShortage(consumo, s);
+  assert.strictEqual(faltantes.length, 0, 'la materia prima tiene de sobra (1.000.000g) — no debería faltar nada, ni preparación ni materia');
+});
+
+test('CRITERIO: la misma situación, pero con materia prima TAMBIÉN escasa, sí dispara faltante de materia (antes de T5 esto podía pasar desapercibido)', () => {
+  const s = stateDosProductosMismaPrep(100);
+  s.materia[0].cantidad = 50; // no alcanza para los 100g que la segunda línea necesita de materia
+  const consumo = C.computeSaleConsumption([{ productoId: 'p1', qty: 1 }, { productoId: 'p2', qty: 1 }], [], s);
+  assert.strictEqual(consumo.materia.harina, 100);
+  const faltantes = C.checkStockShortage(consumo, s);
+  const faltanteMateria = faltantes.find(f => f.tipo === 'materia' && f.id === 'harina');
+  assert.ok(faltanteMateria, 'debe marcar faltante de harina — antes, con la reserva sin compartir, esta línea creía no necesitar materia y el chequeo no la veía');
+  assert.strictEqual(faltanteMateria.faltante, 50);
+});
+
+test('computeSaleConsumption con UNA sola línea (sin nada que compartir) sigue funcionando exactamente igual que antes de T5', () => {
+  const s = statePrepStock(200);
+  s.productos = [{ id: 'p1', nombre: 'Waffle', precio: 20000, componentes: [{ tipo: 'preparacion', refId: 'masa', gramos: 500 }], empaquesUsados: [] }];
+  const consumo = C.computeSaleConsumption([{ productoId: 'p1', qty: 1 }], [], s);
+  assert.strictEqual(consumo.preparaciones.masa, 200);
+  assert.strictEqual(consumo.materia.harina, 300);
+});
+
 console.log('\n== P1.2 (Ronda 2): consumo parcial y faltante de preparación ==');
 
 function statePrepVenta(cantidadPrep) {
