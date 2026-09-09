@@ -106,3 +106,43 @@ Rama: `auditoria/costeo`. Ronda 1 en `PROGRESO_R1.md`, Ronda 2 en `PROGRESO_R2.m
 - Se actualizaron dos comentarios que quedaban desactualizados con el arreglo: la "LIMITACIÓN CONOCIDA" en `aplicarComponentes` y el "por construcción nunca marca faltante" en `checkStockShortage` — ambos documentaban el bug viejo como aceptado, ahora documentan la corrección.
 - **Tests**: 3 tests nuevos — (1) dos líneas que agotan la preparación pero con materia de sobra: el consumo se reparte correctamente entre preparación y materia, sin faltante (comportamiento correcto, no un falso positivo); (2) la misma situación con materia TAMBIÉN escasa: ahora sí marca faltante de materia — el caso que antes podía pasar desapercibido; (3) no-regresión explícita de que una sola línea (sin nada que compartir) sigue funcionando exactamente igual que antes. Suite completa: 289 tests, todos verdes.
 - **Verificado en el navegador** con dos productos sintéticos que comparten una preparación con stock para una sola línea: con materia de sobra, la venta se registra sin aviso (correcto — no hay problema real); con materia TAMBIÉN escasa, el aviso de faltante aparece y, al cancelarlo, la venta NO se registra (conteo de ventas y carrito sin cambios); forzando la confirmación, si se acepta, la venta se registra con el consumo real correctamente repartido. Cero errores de consola, cero contacto con `script.google.com`.
+
+---
+
+## Cierre del run — Ronda 3
+
+**Suite completa**: 288 tests, todos verdes (`auth.test.js` 10, `core.test.js` 246, `rowsync.test.js` 10, `sync.test.js` 22) — medido corriendo los cuatro archivos justo antes de escribir esta sección, no una cifra recordada de un commit anterior.
+
+**Las ocho tareas del encargo (T0 a T5, incluyendo T0.1 y T2.1) quedaron HECHAS**, cada una en su propio commit atómico, con tests dedicados y verificación en el navegador para todo lo que tocó `index.html`. Cero preguntas bloqueantes — las dos ambigüedades reales que aparecieron (T2: lista de unidades de 3 vs. 4 valores; T2.1/T0: dónde vive el panel de tamaño) se resolvieron con la opción más conservadora y quedaron documentadas en su sección correspondiente arriba, no como una pausa a mitad de la ronda.
+
+### Estado final de T1 (sección obligatoria del cierre)
+
+**T1 no se revirtió — se mantiene, verificada.** La verificación de punta a punta (registrar venta/gasto/merma por la UI real, reload completo del navegador, reconstrucción vía `pullOnLoad`, idempotencia real contra un segundo push) pasó limpia en las tres corridas que se hicieron contra el backend local de prueba (`scratchpad/mock-backend.js`, nunca commiteado, nunca contactó `script.google.com`). El detalle completo está en la sección "T1 · Migración a filas append-only" arriba.
+
+Lo que **falta** para que T1 sea real en producción — explícitamente fuera de esta ronda, como pide el encargo:
+- Desplegar `backend/Code.gs` al Apps Script real (paso coordinado aparte, con respaldo previo del Sheet).
+- Correr `migrarAAppendOnly()` una sola vez desde el editor de Apps Script contra el Sheet real — nunca se corrió esta ronda, ni se correrá sin ese respaldo.
+- Confirmar, ya en producción, que `verifyMigrationCounts` da `ok:true` para las 6 colecciones antes de que la función reduzca la celda vieja (si algo no cuadra, la función está escrita para abortar sin tocar nada — pero eso solo se prueba de verdad contra el Sheet real).
+
+**Lección para la Ronda 4** (no es un fracaso, es lo que corresponde documentar): el diseño de T1 resultó más simple de lo previsto porque el cliente no necesitó ningún cambio — toda la complejidad quedó del lado del backend, que es justamente la parte que NO se puede probar en Node ni correr localmente de verdad. Eso significa que la confianza en T1 depende de una migración manual, de un solo uso, corrida por una persona mirando los logs del editor de Apps Script — el mismo patrón fue exactamente lo que T0 identificó como riesgoso para `writeState_()` (fallas silenciosas). La Ronda 4 debería considerar si vale la pena instrumentar `migrarAAppendOnly()` para que devuelva (o registre en algún lado visible desde la UI) su reporte de verificación, en vez de que solo viva en `Logger.log()` del editor.
+
+### Tamaño del blob — antes y después (medido, con una limitación honesta)
+
+- **Antes**: 38.332 caracteres — la cifra que trae el propio encargo, medida por la auditoría contra el estado real de producción (`JSON.stringify(state).length`). Esta ronda no la volvió a medir contra el Sheet real — no hacía falta ni estaba permitido tocarlo.
+- **Después**: **no se pudo medir contra el Sheet real** — la regla de esta ronda prohíbe correr la migración contra producción, así que no existe todavía un "después" real que reportar. Lo que sí se midió, con datos sintéticos:
+  - El test de escala obligatorio (`tests/rowsync.test.js`) construye un estado con 500 ventas + 100 gastos + 10 snapshots de 78 líneas cada uno — más operación de la que probablemente tiene Crumbly hoy — y mide el catálogo resultante: **bajo 35.000 caracteres**, con `catalogo.ventas/gastos/snapshots === undefined` (desacoplado por completo del volumen de operación).
+  - Una medición adicional, hecha ahora para este cierre con ese mismo fixture pero calculando el estado COMPLETO de origen (no solo el criterio de la prueba): el blob único equivalente daría **282.263 caracteres** (con 500 ventas sintéticas) contra un catálogo de **7.761 caracteres** — una reducción de ~97%, ilustrativa de la forma de la mejora, no una predicción exacta del Sheet real (los nombres/campos reales son distintos a los del fixture).
+  - El estimado del propio encargo (~32.000 caracteres para el catálogo real después de migrar) sigue sin confirmar — solo se confirma el día que `migrarAAppendOnly()` corra contra el Sheet real, dentro del despliegue coordinado.
+
+### Qué queda listo para el conteo físico de mañana, y qué no
+
+**Listo:**
+- **T0.1** ya protege el conteo en curso: vive en `localStorage` del dispositivo, nunca en el estado sincronizado — un pull de otro dispositivo (o de otra persona ayudando con el conteo) no lo puede pisar a medias. Esto es lo más importante para mañana y está verificado.
+- **T0** avisa si el estado se acerca o pasa el tope de la celda ANTES de que un guardado falle en silencio — si el conteo de mañana genera ~7.000 caracteres nuevos como estima el encargo, el sistema avisa en vez de fallar sin decir nada.
+- **T2/T2.1** dan visibilidad inmediata sobre insumos con unidad pendiente o costo sospechoso — útil si durante el conteo físico aparece algo raro con las unidades.
+- **T3** permite registrar producción de lotes desde la UI si mañana hay que producir masa/salsas antes o durante el conteo.
+
+**No listo / fuera de esta ronda:**
+- **El respaldo real de T1 sigue pendiente** — hasta que no se despliegue coordinadamente, el sistema en producción sigue operando con el blob único de siempre (T0 ya lo protege del desborde, pero el margen de ~11.668 caracteres que motivó toda esta ronda sigue siendo el mismo hasta que T1 se despliegue). **Si el conteo físico de mañana por sí solo agrega ~7.000 caracteres como estima el encargo, T0 avisará a tiempo — pero no hay margen para mucho más que eso en el mismo día sin desplegar T1.**
+- **C2** (pull pisando cambios locales de catálogo) sigue sin resolver — no se tocó, como pidieron T1 y esta sección. Si alguien edita un insumo en un dispositivo justo cuando otro hace pull, ese cambio se puede perder. Vale la pena tenerlo presente si mañana hay más de una persona operando la app a la vez.
+- La anulación de ventas/gastos/mermas (usar `supersedesId`) no tiene UI todavía — si hay que corregir algo registrado por error mañana, sigue siendo edición manual del registro viejo o su reverso ya existente (`eliminarVenta`/`eliminarGasto`/etc.), no una anulación con rastro.
