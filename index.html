@@ -1058,6 +1058,22 @@ textarea.field{height:auto}
         <button class="btn-cancel" onclick="cerrarSesion()">Cerrar sesión en este dispositivo</button>
       </div>
       <div>
+        <!-- T0 (auditoría, Ronda 3): antes de esto, saber que el estado
+             se acercaba al tope de la celda de Sheets exigía abrir la
+             consola y correr JSON.stringify(state).length a mano. -->
+        <div class="card-title" style="margin-bottom:10px">Tamaño del estado sincronizado</div>
+        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px">
+          <strong id="payload-tamano" style="font-size:18px">0</strong>
+          <span class="item-sub">de <span id="payload-tope">50.000</span> caracteres (<span id="payload-pct">0%</span>)</span>
+        </div>
+        <div style="background:var(--bg);border-radius:999px;height:8px;overflow:hidden;margin-bottom:10px">
+          <div id="payload-barra" style="height:100%;width:0%;background:var(--ink);border-radius:999px"></div>
+        </div>
+        <p class="item-sub" id="payload-nivel-msg" style="margin-bottom:10px"></p>
+        <div class="card-title" style="font-size:12px;margin-bottom:8px">Desglose por colección</div>
+        <div id="payload-desglose" style="display:flex;flex-direction:column;gap:4px"></div>
+      </div>
+      <div>
         <div class="card-title" style="margin-bottom:10px">Correo de la marca</div>
         <div class="modal-field">
           <input type="email" id="cfg-email" class="field" placeholder="tumarca@correo.com" oninput="saveConfigEmail()">
@@ -1161,10 +1177,33 @@ function schedulePush() {
 function pushInBackground() {
   CrumblySync.push(auth.getBackendUrl(), auth.getToken(), state)
     .then(r => {
+      // T0: sobre el tope de bloqueo, push() ni siquiera intenta la
+      // petición — esto es lo que evita la falla silenciosa. El aviso
+      // tiene que ser imposible de pasar por alto por accidente (banner
+      // persistente, no un toast), porque la alternativa es que el
+      // usuario siga operando creyendo que se está guardando.
+      if (r.code === 'PAYLOAD_TOO_LARGE') {
+        showPersistentError(
+          'No se pudo sincronizar: el estado (' + r.sizeInfo.tam.toLocaleString('es-CO') + ' de ' + r.sizeInfo.tope.toLocaleString('es-CO') + ' caracteres) supera el tope de una celda de Sheets. Los cambios quedan SOLO en este dispositivo hasta que se libere espacio.',
+          'Ver detalle en Ajustes',
+          () => openModal('modal-ajustes')
+        );
+        updateSyncStatus('Bloqueado por tamaño — ver Ajustes', true);
+        return;
+      }
       if (!r.ok) { updateSyncStatus('Error al sincronizar: ' + (r.error || 'desconocido'), true); return; }
       state.config.lastSync = r.ts || new Date().toISOString();
       try { localStorage.setItem('crumbly-state', JSON.stringify(state)); } catch (e) {}
       updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
+      // T0: por debajo del tope de bloqueo, pero ya en zona de
+      // advertencia — persistente también (nunca un toast que se va solo).
+      if (r.sizeInfo && r.sizeInfo.nivel === 'advertencia') {
+        showPersistentError(
+          'El estado sincronizado va en ' + r.sizeInfo.tam.toLocaleString('es-CO') + ' de ' + r.sizeInfo.tope.toLocaleString('es-CO') + ' caracteres (' + Math.round(r.sizeInfo.pct * 100) + '%) — se acerca al tope de una celda de Sheets.',
+          'Ver desglose en Ajustes',
+          () => openModal('modal-ajustes')
+        );
+      }
     })
     .catch(() => updateSyncStatus('Sin conexión con el backend — los cambios quedan solo en este navegador por ahora', true));
 }
@@ -1260,6 +1299,35 @@ function pullOnLoad() {
       refreshAll();
     })
     .catch(() => updateSyncStatus('Trabajando sin conexión con el backend — se sincronizará cuando vuelva la red', true));
+}
+// T0: panel de Ajustes — mismo cálculo que motivó la tarea (medido en la
+// consola a mano antes de esto), ahora siempre a un clic.
+const COLECCION_LABEL = {
+  productos: 'Productos', materia: 'Materia prima', empaques: 'Empaques', toppings: 'Toppings',
+  preparaciones: 'Preparaciones', clientes: 'Clientes', ventas: 'Ventas', gastos: 'Gastos',
+  mermas: 'Mermas', snapshots: 'Snapshots de conteo', ajustes: 'Ajustes de inventario',
+  lotes: 'Lotes de producción', conteoEnProgreso: 'Conteo en curso', config: 'Configuración',
+  schemaVersion: 'Versión de esquema'
+};
+function renderPayloadPanel() {
+  const info = CrumblySync.getPayloadSizeInfo(state);
+  document.getElementById('payload-tamano').textContent = info.tam.toLocaleString('es-CO');
+  document.getElementById('payload-tope').textContent = info.tope.toLocaleString('es-CO');
+  document.getElementById('payload-pct').textContent = Math.round(info.pct * 100) + '%';
+  const barra = document.getElementById('payload-barra');
+  barra.style.width = Math.min(100, info.pct * 100) + '%';
+  barra.style.background = info.nivel === 'bloqueado' ? 'var(--danger)' : (info.nivel === 'advertencia' ? '#c98a1f' : 'var(--ink)');
+  const msg = document.getElementById('payload-nivel-msg');
+  if (info.nivel === 'bloqueado') { msg.textContent = 'Bloqueado: por encima de este tamaño, la sincronización se rechaza para no perder datos en silencio.'; msg.style.color = 'var(--danger)'; }
+  else if (info.nivel === 'advertencia') { msg.textContent = 'En zona de advertencia — se acerca al tope de una celda de Sheets.'; msg.style.color = '#c98a1f'; }
+  else { msg.textContent = 'Dentro de rango normal.'; msg.style.color = 'var(--muted)'; }
+
+  const desglose = CrumblySync.getPayloadBreakdown(state);
+  document.getElementById('payload-desglose').innerHTML = desglose.map(d => `
+    <div style="display:flex;justify-content:space-between;font-size:12px">
+      <span style="color:var(--text)">${esc(COLECCION_LABEL[d.coleccion] || d.coleccion)}</span>
+      <span style="color:var(--muted)">${d.tam.toLocaleString('es-CO')}</span>
+    </div>`).join('');
 }
 function updateSyncStatus(msg, isError) {
   const el = document.getElementById('sync-status');
@@ -3540,7 +3608,10 @@ function deleteCliente() {
   showToast('Cliente eliminado');
 }
 
-function openModal(id) { document.getElementById(id).classList.add('open'); }
+function openModal(id) {
+  document.getElementById(id).classList.add('open');
+  if (id === 'modal-ajustes') renderPayloadPanel(); // T0: se calcula al abrir, no en cada guardado
+}
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
 // P2-6: doble confirmación porque es destructivo y no hay deshacer.

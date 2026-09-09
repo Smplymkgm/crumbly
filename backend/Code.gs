@@ -95,7 +95,8 @@ function doPost(e) {
       return json_({ ok: false, error: 'ocupado, otro dispositivo está sincronizando — reintenta en unos segundos' });
     }
     try {
-      writeState_(body.state);
+      var resultado = writeState_(body.state);
+      if (!resultado.ok) return json_(resultado); // T0: error tipado (ej. PAYLOAD_TOO_LARGE), nunca ok:true en silencio
       return json_({ ok: true, ts: new Date().toISOString() });
     } finally {
       lock.releaseLock();
@@ -321,11 +322,27 @@ function readState_() {
   }
 }
 
+// T0 (auditoría, Ronda 3): el modo de falla real era que esto fallara EN
+// SILENCIO al superar el tope de una celda de Sheets (~50.000
+// caracteres) — la escritura no cabía, `setValue` la truncaba o la
+// rechazaba según el caso, y el cliente recibía `{ok:true}` igual porque
+// nada acá lo comprobaba antes. El cliente (js/sync.js) ya bloquea antes
+// de mandar la petición, pero esto es la segunda línea de defensa: nunca
+// debe existir un camino en el que escribir falle y la respuesta parezca
+// exitosa, sin importar qué versión del cliente esté llamando.
+var PAYLOAD_TOPE_CHARS = 50000;
+var PAYLOAD_BLOQUEO_CHARS = 48000;
+
 function writeState_(state) {
+  var json = JSON.stringify(state);
+  if (json.length >= PAYLOAD_BLOQUEO_CHARS) {
+    return { ok: false, error: 'PAYLOAD_TOO_LARGE', code: 'PAYLOAD_TOO_LARGE', tam: json.length, tope: PAYLOAD_TOPE_CHARS };
+  }
   var sh = getOrCreateSheet_(STATE_SHEET);
-  sh.getRange(1, 1).setValue(JSON.stringify(state));
+  sh.getRange(1, 1).setValue(json);
   sh.getRange(1, 2).setValue(new Date().toISOString());
   mirrorCollections_(state);
+  return { ok: true };
 }
 
 // ─── Espejo legible (solo para mirar/analizar a mano) ──────────

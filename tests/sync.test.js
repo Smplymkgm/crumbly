@@ -138,6 +138,58 @@ test('propaga ok:false del backend (ej. falta filename) sin lanzar', async () =>
   assert.strictEqual(r.error, 'falta filename o data');
 });
 
+group('T0: alarma de tamaño de payload');
+
+function estadoDeTamano(chars) {
+  // Un string de relleno de tamaño controlado, dentro de un campo — así
+  // JSON.stringify(state).length se puede calcular a mano y verificar.
+  return { relleno: 'x'.repeat(Math.max(0, chars - 14)) }; // '{"relleno":""}' = 14 chars de estructura
+}
+
+test('getPayloadSizeInfo: nivel "ok" por debajo de 40.000', () => {
+  const info = Sync.getPayloadSizeInfo(estadoDeTamano(1000));
+  assert.strictEqual(info.nivel, 'ok');
+});
+
+test('getPayloadSizeInfo: nivel "advertencia" entre 40.000 y 48.000', () => {
+  const info = Sync.getPayloadSizeInfo(estadoDeTamano(42000));
+  assert.strictEqual(info.nivel, 'advertencia');
+});
+
+test('getPayloadSizeInfo: nivel "bloqueado" sobre 48.000', () => {
+  const info = Sync.getPayloadSizeInfo(estadoDeTamano(49000));
+  assert.strictEqual(info.nivel, 'bloqueado');
+  assert.strictEqual(info.tam, 49000);
+});
+
+test('CRITERIO: push() sobre el tope de bloqueo se rechaza con error TIPADO, nunca en silencio y sin llegar a mandar la petición', async () => {
+  const f = mockFetch([{ body: { ok: true } }]); // si push() la llamara, esto respondería ok — la prueba es que NO la llama
+  const r = await Sync.push('https://x.com/exec', 'tok', estadoDeTamano(49000), f);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.code, 'PAYLOAD_TOO_LARGE');
+  assert.strictEqual(r.sizeInfo.nivel, 'bloqueado');
+  assert.strictEqual(f.calls.length, 0, 'no debe haber intentado la petición HTTP');
+});
+
+test('push() por debajo del tope sigue funcionando normal y trae sizeInfo en la respuesta', async () => {
+  const f = mockFetch([{ body: { ok: true, ts: '2026-09-08T00:00:00Z' } }]);
+  const r = await Sync.push('https://x.com/exec', 'tok', estadoDeTamano(1000), f);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(f.calls.length, 1);
+  assert.strictEqual(r.sizeInfo.nivel, 'ok');
+});
+
+test('getPayloadBreakdown: desglosa por colección de nivel superior, descendente', () => {
+  const desglose = Sync.getPayloadBreakdown({ materia: 'x'.repeat(100), ventas: 'x'.repeat(500), config: 'x' });
+  assert.strictEqual(desglose[0].coleccion, 'ventas');
+  assert.strictEqual(desglose[1].coleccion, 'materia');
+  assert.strictEqual(desglose[2].coleccion, 'config');
+});
+
+test('getSyncSizeHistory: sin localStorage (Node) devuelve un array vacío, nunca revienta', () => {
+  assert.deepStrictEqual(Sync.getSyncSizeHistory(), []);
+});
+
 // El login (Google y correo+contraseña) se movió por completo a
 // js/auth.js — ver tests/auth.test.js. sync.js ya no sabe nada de cómo
 // se consigue un token, solo lo transporta (ping/pull/push/uploadFile).
