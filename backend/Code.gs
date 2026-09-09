@@ -1,19 +1,42 @@
 /**
  * Crumbly — backend en Google Sheets (Fase E, HANDOFF.md §12).
  *
- * Arquitectura: la app manda el ESTADO COMPLETO (el mismo objeto que hoy
- * vive en localStorage) en cada sincronización. Este script lo guarda tal
- * cual en la hoja "state_json" (una celda, JSON) — esa es la fuente de
- * verdad real y lo único que se necesita para leer/escribir sin perder
- * nada. Además espeja cada colección en su propia hoja plana (materia,
- * productos, ventas, etc.) solo para que puedas mirarlas y armar tus
- * propias tablas dinámicas a mano — esas hojas se reescriben enteras en
- * cada sincronización, no son la fuente de verdad.
+ * ARQUITECTURA (T1, auditoría Ronda 3 — reemplaza el diseño original de
+ * "todo en una celda"): el estado se separa en dos partes.
  *
- * No hay CRUD fila por fila: cada "push" reemplaza todo. Para el volumen
- * de un negocio de este tamaño es más simple y más difícil de romper que
- * llevar IDs y diffs — si algún día el volumen lo justifica, se cambia
- * aquí sin tocar el resto de la app.
+ *   CATÁLOGO (productos, materia, empaques, toppings, preparaciones,
+ *   clientes, config, schemaVersion) — crece con el MENÚ, no con la
+ *   operación. Sigue viviendo en una sola celda JSON (hoja "state_json"),
+ *   como siempre.
+ *
+ *   COLECCIONES QUE CRECEN CON LA OPERACIÓN (ventas, gastos, mermas,
+ *   snapshots, ajustes, lotes) — una FILA por registro, en su propia
+ *   hoja, agregada por `id` de forma idempotente (nunca se duplica, nunca
+ *   se reescribe la hoja completa). Es lo que soluciona el problema real:
+ *   antes, 761 caracteres por venta contra un tope de celda de ~50.000
+ *   dejaban margen para unas 15 ventas — un día de operación — y la
+ *   escritura fallaba EN SILENCIO al pasarse (ver T0). Después de esta
+ *   migración el catálogo queda chico y estable; la operación puede
+ *   crecer sin límite práctico porque cada registro es su propia fila,
+ *   no un carácter más en la misma celda.
+ *
+ * La lógica de qué va a cada lado, y de qué registro es "nuevo" (para no
+ * duplicar), está PROBADA en Node — ver `js/rowsync.js` y
+ * `tests/rowsync.test.js`. Apps Script no tiene runtime compartido con
+ * Node/el navegador, así que lo de acá es un PORT A MANO de esas mismas
+ * funciones sobre `getRange`/`setValues` reales — si la lógica cambia en
+ * `js/rowsync.js`, hay que reflejarlo acá también (costo de
+ * mantenimiento reconocido, ver PROGRESO.md § T1).
+ *
+ * Modificaciones y anulaciones: por ahora se appendan como una fila
+ * NUEVA que referencia el id original en la columna `supersedesId`
+ * (columna presente, sin usar todavía — el flujo de anulación en la UI
+ * es otra ronda). Ninguna fila existente se muta ni se borra.
+ *
+ * Los catálogos (materia, productos, etc.) siguen espejándose en hojas
+ * planas de solo lectura, igual que antes — `mirrorCollections_` ya NO
+ * incluye ventas/gastos/mermas (esos nombres de hoja ahora SON la fuente
+ * de verdad append-only, reescribirlos los destruiría).
  *
  * También sube archivos (comprobantes de pago, fotos de producto) a una
  * carpeta de Drive del dueño del script (acción "uploadComprobante",
@@ -309,17 +332,72 @@ function getOrCreateSheet_(name) {
 }
 
 // ─── Fuente de verdad ───────────────────────────────────────────
+//
+// T1 (auditoría, Ronda 3): "ventas", "gastos", "mermas", "snapshots",
+// "ajustes" y "lotes" son ahora hojas APPEND-ONLY — una fila por
+// registro, columnas [id, fecha, supersedesId, json]. El resto del
+// estado ("catálogo") sigue en la celda `state_json!A1`. Esta constante
+// es el ÚNICO lugar que decide qué va a cada lado — mismo valor que
+// `COLECCIONES_APPEND` en js/rowsync.js (ver tests/rowsync.test.js).
+var APPEND_COLLECTIONS = ['ventas', 'gastos', 'mermas', 'snapshots', 'ajustes', 'lotes'];
+
+function getAppendSheet_(name) {
+  var sh = getOrCreateSheet_(name);
+  if (sh.getLastRow() === 0) sh.appendRow(['id', 'fecha', 'supersedesId', 'json']);
+  return sh;
+}
+
+// Lee todas las filas de una hoja append-only y devuelve los objetos ya
+// parseados (una fila corrupta se ignora en vez de romper la carga
+// completa — más seguro que dejar toda la sincronización caída por un
+// registro raro).
+function readAppendCollection_(name) {
+  var sh = getAppendSheet_(name);
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return [];
+  var data = sh.getRange(2, 1, lastRow - 1, 4).getValues();
+  var out = [];
+  for (var i = 0; i < data.length; i++) {
+    try { out.push(JSON.parse(data[i][3])); } catch (err) { /* fila corrupta — se ignora, no tumba el pull */ }
+  }
+  return out;
+}
+
+// ESCRITURA POR APPEND — el punto entero de T1. Nunca reescribe la hoja:
+// lee los ids ya existentes, decide cuáles de los `records` entrantes son
+// nuevos (mismo criterio que `pickNewRecords` en js/rowsync.js, probado
+// ahí), y agrega SOLO esos como filas nuevas de una sola vez
+// (`setValues` en un rango, no llamada por llamada). Idempotente: un
+// reintento, un doble envío, o dos pushes concurrentes con el mismo id
+// nunca duplican una fila.
+function appendNewRecords_(name, records) {
+  var sh = getAppendSheet_(name);
+  var lastRow = sh.getLastRow();
+  var existingIds = {};
+  if (lastRow >= 2) {
+    var ids = sh.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (var i = 0; i < ids.length; i++) existingIds[ids[i][0]] = true;
+  }
+  var nuevas = [];
+  (records || []).forEach(function (r) {
+    if (!r || r.id === undefined || r.id === null || existingIds[r.id]) return;
+    nuevas.push([r.id, r.fecha || '', '', JSON.stringify(r)]);
+    existingIds[r.id] = true; // por si el mismo id se repite dentro del mismo payload entrante
+  });
+  if (nuevas.length) sh.getRange(lastRow + 1, 1, nuevas.length, 4).setValues(nuevas);
+  return nuevas.length;
+}
 
 function readState_() {
   var sh = ss_().getSheetByName(STATE_SHEET);
-  if (!sh) return null;
-  var raw = sh.getRange(1, 1).getValue();
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch (err) {
-    return null;
+  var raw = sh ? sh.getRange(1, 1).getValue() : null;
+  var catalogo = {};
+  if (raw) {
+    try { catalogo = JSON.parse(raw) || {}; } catch (err) { catalogo = {}; }
   }
+  var state = catalogo;
+  APPEND_COLLECTIONS.forEach(function (nombre) { state[nombre] = readAppendCollection_(nombre); });
+  return state;
 }
 
 // T0 (auditoría, Ronda 3): el modo de falla real era que esto fallara EN
@@ -329,20 +407,79 @@ function readState_() {
 // nada acá lo comprobaba antes. El cliente (js/sync.js) ya bloquea antes
 // de mandar la petición, pero esto es la segunda línea de defensa: nunca
 // debe existir un camino en el que escribir falle y la respuesta parezca
-// exitosa, sin importar qué versión del cliente esté llamando.
+// exitosa, sin importar qué versión del cliente esté llamando. Después
+// de T1 esto valida el CATÁLOGO solamente (lo único que sigue yendo a
+// una celda) — se espera que quede muy por debajo del tope siempre.
 var PAYLOAD_TOPE_CHARS = 50000;
 var PAYLOAD_BLOQUEO_CHARS = 48000;
 
 function writeState_(state) {
-  var json = JSON.stringify(state);
+  var catalogo = {};
+  Object.keys(state || {}).forEach(function (k) {
+    if (APPEND_COLLECTIONS.indexOf(k) === -1) catalogo[k] = state[k];
+  });
+  var json = JSON.stringify(catalogo);
   if (json.length >= PAYLOAD_BLOQUEO_CHARS) {
     return { ok: false, error: 'PAYLOAD_TOO_LARGE', code: 'PAYLOAD_TOO_LARGE', tam: json.length, tope: PAYLOAD_TOPE_CHARS };
   }
   var sh = getOrCreateSheet_(STATE_SHEET);
   sh.getRange(1, 1).setValue(json);
   sh.getRange(1, 2).setValue(new Date().toISOString());
-  mirrorCollections_(state);
-  return { ok: true };
+
+  var agregados = {};
+  APPEND_COLLECTIONS.forEach(function (nombre) {
+    agregados[nombre] = appendNewRecords_(nombre, state[nombre]);
+  });
+  mirrorCollections_(state); // catálogo únicamente ahora — ver nota en mirrorCollections_
+  return { ok: true, agregados: agregados };
+}
+
+// ─── Migración (T1) — correr UNA VEZ a mano desde el editor de Apps ────
+// Script (Extensiones → Apps Script → elegir "migrarAAppendOnly" en el
+// desplegable → Ejecutar). A propósito NO está expuesta por HTTP: una
+// migración de datos no es algo que deba poder dispararse por accidente
+// desde un cliente.
+//
+// Idempotente: `appendNewRecords_` ya dedupe por id, así que correrla dos
+// veces dejando el Sheet en el mismo estado no duplica nada. NUNCA reduce
+// la celda vieja (con todo embebido) si los conteos de cualquier
+// colección no coinciden ANTES (blob) y DESPUÉS (filas ya escritas) —
+// mismo criterio que `verifyMigrationCounts` en js/rowsync.js, probado
+// ahí con un caso que falla a propósito.
+function migrarAAppendOnly() {
+  var sh = ss_().getSheetByName(STATE_SHEET);
+  if (!sh) { Logger.log('No existe la hoja ' + STATE_SHEET + ' — nada que migrar.'); return { ok: false, error: 'sin hoja de estado' }; }
+  var raw = sh.getRange(1, 1).getValue();
+  if (!raw) { Logger.log('La celda de estado está vacía — nada que migrar.'); return { ok: false, error: 'celda vacía' }; }
+  var estadoViejo = JSON.parse(raw);
+
+  var agregados = {};
+  APPEND_COLLECTIONS.forEach(function (nombre) {
+    agregados[nombre] = appendNewRecords_(nombre, estadoViejo[nombre]);
+  });
+
+  var reporte = {};
+  var okTotal = true;
+  APPEND_COLLECTIONS.forEach(function (nombre) {
+    var antes = (estadoViejo[nombre] || []).length;
+    var despues = readAppendCollection_(nombre).length;
+    var coincide = antes === despues;
+    if (!coincide) okTotal = false;
+    reporte[nombre] = { antes: antes, despues: despues, coincide: coincide };
+  });
+
+  if (!okTotal) {
+    Logger.log('MIGRACIÓN ABORTADA — los conteos no coinciden, la celda vieja NO se tocó: ' + JSON.stringify(reporte));
+    return { ok: false, reporte: reporte, agregados: agregados };
+  }
+
+  var catalogo = {};
+  Object.keys(estadoViejo).forEach(function (k) {
+    if (APPEND_COLLECTIONS.indexOf(k) === -1) catalogo[k] = estadoViejo[k];
+  });
+  sh.getRange(1, 1).setValue(JSON.stringify(catalogo));
+  Logger.log('MIGRACIÓN OK — celda reducida al catálogo: ' + JSON.stringify(reporte));
+  return { ok: true, reporte: reporte, agregados: agregados };
 }
 
 // ─── Espejo legible (solo para mirar/analizar a mano) ──────────
@@ -379,23 +516,17 @@ function mirrorCollections_(state) {
   writeSheet_('clientes', ['id', 'nombre', 'telefono'],
     (state.clientes || []).map(function (c) { return [c.id, c.nombre, c.telefono]; }));
 
-  writeSheet_('ventas', ['id', 'fecha', 'total', 'ganancia', 'stockInsuficiente', 'clienteId'],
-    (state.ventas || []).map(function (v) { return [v.id, v.fecha, v.total, v.ganancia, !!v.stockInsuficiente, v.clienteId || '']; }));
-  writeSheet_('venta_items', ['ventaId', 'productoId', 'nombre', 'qty', 'precio', 'costo'],
-    flatten_(state.ventas, 'items', function (v, i) { return [v.id, i.productoId, i.nombre, i.qty, i.precio, i.costo]; }));
-
-  writeSheet_('gastos', ['id', 'fecha', 'tipo', 'categoria', 'monto', 'proveedor', 'descripcion', 'insumoTipo', 'insumoId', 'cantidad', 'vidaUtilMeses'],
-    (state.gastos || []).map(function (g) {
-      return [g.id, g.fecha, g.tipo, g.categoria, g.monto, g.proveedor || '', g.descripcion || '', g.insumoTipo || '', g.insumoId || '', g.cantidad || '', g.vidaUtilMeses || ''];
-    }));
-
-  // Mermas: movimiento de INVENTARIO, nunca de Caja — no aparece en la hoja
-  // "gastos" ni afecta ninguna columna de dinero. Espejo de solo lectura,
-  // igual que el resto: la fuente de verdad sigue siendo state_json.
-  writeSheet_('mermas', ['id', 'fecha', 'origenTipo', 'origenId', 'cantidad', 'costoUnitario', 'valorTotal', 'motivo', 'observaciones', 'usuario', 'stockInsuficiente'],
-    (state.mermas || []).map(function (m) {
-      return [m.id, m.fecha, m.origenTipo, m.origenId, m.cantidad, m.costoUnitario, m.valorTotal, m.motivo, m.observaciones || '', m.usuario || '', !!m.stockInsuficiente];
-    }));
+  // T1: "ventas", "gastos" y "mermas" YA NO se espejan acá — esos nombres
+  // de hoja ahora SON la fuente de verdad append-only (ver
+  // appendNewRecords_ más arriba). `writeSheet_` hace `clearContents()` +
+  // reescribe todo; llamarla sobre esas hojas destruiría el historial
+  // append-only en cada sincronización, exactamente lo que T1 vino a
+  // evitar. Se pierde la vista "plana" (columna por campo) que tenían
+  // antes — lo que queda es la fila cruda `[id, fecha, supersedesId,
+  // json]`, inspeccionable pero no tan cómoda para una tabla dinámica.
+  // Si hace falta esa comodidad de vuelta, se puede armar una hoja de
+  // solo lectura derivada del `json` de cada fila en una ronda futura —
+  // no se hizo acá por alcance (ver PROGRESO.md § T1).
 }
 
 // Aplana coleccion[].campoAnidado[] en filas [padre, ...hijo] usando `mapRow`.

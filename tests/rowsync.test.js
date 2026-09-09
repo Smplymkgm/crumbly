@@ -1,0 +1,163 @@
+/**
+ * Tests de la lógica pura de la migración append-only (T1, Ronda 3).
+ * Correr con: node tests/rowsync.test.js
+ *
+ * Code.gs (el backend real) no se puede correr ni testear en Node — es
+ * Apps Script, y esta ronda prohíbe correr nada contra el Sheet real.
+ * Estos tests prueban la lógica que Code.gs porta a mano sobre
+ * getRange/setValues reales (ver la nota al principio de js/rowsync.js
+ * y la sección de T1 en PROGRESO.md).
+ */
+const assert = require('assert');
+const path = require('path');
+const RowSync = require(path.join(__dirname, '..', 'js', 'rowsync.js'));
+
+let passed = 0, failed = 0;
+function test(name, fn) {
+  try {
+    fn();
+    passed++;
+    console.log('  ok  ' + name);
+  } catch (e) {
+    failed++;
+    console.log('FAIL  ' + name);
+    console.log('      ' + e.message);
+  }
+}
+
+console.log('\n== splitCatalogAndAppend / mergeState (round-trip) ==');
+
+function estadoDeEjemplo() {
+  return {
+    schemaVersion: 10,
+    productos: [{ id: 'p1', nombre: 'Waffle' }],
+    materia: [{ id: 'm1', nombre: 'Harina' }],
+    config: { email: 'a@b.co' },
+    ventas: [{ id: 'v1', total: 20000 }, { id: 'v2', total: 15000 }],
+    gastos: [{ id: 'g1', monto: 5000 }],
+    mermas: [],
+    snapshots: [{ id: 's1', tipo: 'conteo' }],
+    ajustes: [],
+    lotes: [{ id: 'l1', gramosObtenidos: 900 }]
+  };
+}
+
+test('splitCatalogAndAppend separa catálogo (menú) de colecciones que crecen con la operación', () => {
+  const { catalogo, colecciones } = RowSync.splitCatalogAndAppend(estadoDeEjemplo());
+  assert.deepStrictEqual(Object.keys(catalogo).sort(), ['config', 'materia', 'productos', 'schemaVersion']);
+  assert.deepStrictEqual(Object.keys(colecciones).sort(), ['ajustes', 'gastos', 'lotes', 'mermas', 'snapshots', 'ventas']);
+  assert.strictEqual(colecciones.ventas.length, 2);
+});
+
+test('splitCatalogAndAppend siempre trae las 6 colecciones, aunque el estado de origen no las tenga (estado viejo)', () => {
+  const { colecciones } = RowSync.splitCatalogAndAppend({ productos: [] });
+  RowSync.COLECCIONES_APPEND.forEach(nombre => {
+    assert.ok(Array.isArray(colecciones[nombre]), nombre + ' debe ser un array, no undefined');
+    assert.strictEqual(colecciones[nombre].length, 0);
+  });
+});
+
+test('CRITERIO: round-trip split -> merge reconstruye el estado ORIGINAL exacto (conteos y totales idénticos)', () => {
+  const original = estadoDeEjemplo();
+  const { catalogo, colecciones } = RowSync.splitCatalogAndAppend(original);
+  const reconstruido = RowSync.mergeState(catalogo, colecciones);
+  assert.deepStrictEqual(reconstruido.ventas, original.ventas);
+  assert.deepStrictEqual(reconstruido.gastos, original.gastos);
+  assert.strictEqual(reconstruido.ventas.reduce((a, v) => a + v.total, 0), 35000);
+  assert.strictEqual(reconstruido.productos.length, original.productos.length);
+  assert.strictEqual(reconstruido.config.email, original.config.email);
+});
+
+console.log('\n== pickNewRecords (idempotencia por id) ==');
+
+test('CRITERIO: agregar una venta produce SOLO esa fila, no reescribe el conjunto', () => {
+  const existentes = ['v1', 'v2', 'v3'];
+  const entrantes = [{ id: 'v1' }, { id: 'v2' }, { id: 'v3' }, { id: 'v4' }];
+  const nuevos = RowSync.pickNewRecords(existentes, entrantes);
+  assert.strictEqual(nuevos.length, 1);
+  assert.strictEqual(nuevos[0].id, 'v4');
+});
+
+test('CRITERIO: la MISMA venta enviada dos veces deja una sola fila (reintento/doble envío)', () => {
+  let existentes = [];
+  const venta = { id: 'v1', total: 1000 };
+  const primeraVez = RowSync.pickNewRecords(existentes, [venta]);
+  assert.strictEqual(primeraVez.length, 1);
+  existentes = existentes.concat(primeraVez.map(r => r.id)); // simula que ya se escribió la fila
+  const segundaVez = RowSync.pickNewRecords(existentes, [venta]); // el mismo push, reenviado
+  assert.strictEqual(segundaVez.length, 0, 'no debe volver a aparecer como "nuevo"');
+});
+
+test('pickNewRecords: dos registros con el mismo id en el MISMO lote entrante no duplican (push concurrente/lote raro)', () => {
+  const nuevos = RowSync.pickNewRecords([], [{ id: 'v1', total: 100 }, { id: 'v1', total: 100 }]);
+  assert.strictEqual(nuevos.length, 1);
+});
+
+test('pickNewRecords ignora registros sin id (nunca revienta, nunca los agrega)', () => {
+  const nuevos = RowSync.pickNewRecords([], [{ total: 100 }, { id: 'v1', total: 200 }]);
+  assert.strictEqual(nuevos.length, 1);
+  assert.strictEqual(nuevos[0].id, 'v1');
+});
+
+console.log('\n== verifyMigrationCounts (no se toca la celda vieja si algo no cuadra) ==');
+
+test('verifyMigrationCounts: ok:true cuando los conteos coinciden en las 6 colecciones', () => {
+  const original = estadoDeEjemplo();
+  const r = RowSync.verifyMigrationCounts(original, original);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.reporte.ventas.antes, 2);
+  assert.strictEqual(r.reporte.ventas.despues, 2);
+});
+
+test('CRITERIO: verifyMigrationCounts detecta una colección con menos filas de las que debería y marca ok:false', () => {
+  const original = estadoDeEjemplo();
+  const migrado = Object.assign({}, original, { ventas: [original.ventas[0]] }); // se "perdió" v2
+  const r = RowSync.verifyMigrationCounts(original, migrado);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.reporte.ventas.coincide, false);
+  assert.strictEqual(r.reporte.gastos.coincide, true); // el resto sigue bien — el reporte es por colección
+});
+
+console.log('\n== Escala: el catálogo se mantiene chico aunque la operación crezca ==');
+
+test('CRITERIO DE ESCALA: 500 ventas + 100 gastos + 10 snapshots de conteo — el catálogo queda por debajo de 35.000 caracteres', () => {
+  const estado = {
+    schemaVersion: 10,
+    productos: Array.from({ length: 15 }, (_, i) => ({ id: 'p' + i, nombre: 'Producto ' + i, precio: 20000, categoria: 'Waffles', componentes: [], empaquesUsados: [], empaqueManual: 0 })),
+    materia: Array.from({ length: 50 }, (_, i) => ({ id: 'm' + i, nombre: 'Insumo ' + i, cantidad: 1000, costo: 5, minimo: 0 })),
+    empaques: Array.from({ length: 18 }, (_, i) => ({ id: 'e' + i, nombre: 'Empaque ' + i, cantidad: 100, costo: 300, minimo: 0 })),
+    preparaciones: Array.from({ length: 10 }, (_, i) => ({ id: 'prep' + i, nombre: 'Prep ' + i, modo: 'directo', cantidad: 0, componentes: [] })),
+    clientes: [],
+    config: { email: 'negocio@crumbly.co', backendUrl: '', backendToken: '', lastSync: null, factorPrestacional: 1.38, comportamientoCategorias: {} },
+    // Lo que SÍ crece con la operación — esto es lo que antes vivía en el
+    // blob y ahora se migra a filas:
+    ventas: Array.from({ length: 500 }, (_, i) => ({
+      id: 'v' + i, fecha: '2026-01-01T00:00:00', total: 20000, ganancia: 15000,
+      items: [{ productoId: 'p0', nombre: 'Waffle', qty: 1, precio: 20000, costo: 5000, costoAlimento: 4500, costoEmpaque: 500 }],
+      consumoReal: { materia: { m0: 100 }, empaques: {}, toppings: {}, preparaciones: {} },
+      metodoPago: 'efectivo', comprobante: '', clienteId: null, stockInsuficiente: false
+    })),
+    gastos: Array.from({ length: 100 }, (_, i) => ({ id: 'g' + i, fecha: '2026-01-01T00:00:00', tipo: 'operativo', categoria: 'Otros', monto: 10000, proveedor: '', descripcion: '', comprobante: '', metodoPago: 'efectivo', montoEfectivo: 0, montoTransferencia: 0 })),
+    mermas: [],
+    snapshots: Array.from({ length: 10 }, (_, i) => ({
+      id: 'snap' + i, fecha: '2026-01-01T00:00:00', tipo: 'conteo', usuarioEmail: 'a@b.co', nota: '',
+      lineas: Array.from({ length: 78 }, (_, j) => ({ insumoTipo: 'materia', insumoId: 'm' + j, cantidad: 100, costoUnitario: 5, valor: 500 })),
+      noContados: [], bucketsContados: { materia: true, empaques: true, toppings: true, preparaciones: true }, valorTotal: 39000
+    })),
+    ajustes: [],
+    lotes: []
+  };
+
+  const { catalogo } = RowSync.splitCatalogAndAppend(estado);
+  const tam = JSON.stringify(catalogo).length;
+  assert.ok(tam < 35000, 'catálogo debería quedar bajo 35.000 caracteres, dio ' + tam);
+  // y la prueba de que el crecimiento se desacopló: las 500 ventas + 100
+  // gastos + 10 snapshots NO están en el catálogo en absoluto.
+  assert.strictEqual(catalogo.ventas, undefined);
+  assert.strictEqual(catalogo.gastos, undefined);
+  assert.strictEqual(catalogo.snapshots, undefined);
+});
+
+console.log('\n== Resumen ==');
+console.log(`${passed} pasaron, ${failed} fallaron\n`);
+process.exit(failed > 0 ? 1 : 0);
