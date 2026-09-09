@@ -1075,6 +1075,13 @@ textarea.field{height:auto}
         <div id="payload-desglose" style="display:flex;flex-direction:column;gap:4px"></div>
       </div>
       <div>
+        <!-- T2.1 (auditoría, Ronda 3): solo diagnóstico — ningún botón acá
+             corrige nada. Cada fila señala algo para revisar a mano
+             (mismo criterio que T2 para unidad/costo). -->
+        <div class="card-title" style="margin-bottom:10px">Reporte de integridad</div>
+        <div id="reporte-integridad" style="display:flex;flex-direction:column;gap:10px"></div>
+      </div>
+      <div>
         <div class="card-title" style="margin-bottom:10px">Correo de la marca</div>
         <div class="modal-field">
           <input type="email" id="cfg-email" class="field" placeholder="tumarca@correo.com" oninput="saveConfigEmail()">
@@ -1368,6 +1375,29 @@ function renderPayloadPanel() {
     <div style="display:flex;justify-content:space-between;font-size:12px">
       <span style="color:var(--text)">${esc(COLECCION_LABEL[d.coleccion] || d.coleccion)}</span>
       <span style="color:var(--muted)">${d.tam.toLocaleString('es-CO')}</span>
+    </div>`).join('');
+}
+// T2.1: cada entrada es {check, lista, aItem} — `aItem` arma la línea de
+// texto de un elemento marcado por ese check. Sin botones de corrección:
+// esto es un diagnóstico, cada hallazgo se corrige a mano donde ya existe
+// la pantalla para hacerlo (Inventario, Productos, Caja).
+function renderReporteIntegridad() {
+  const r = CrumblyCore.getReporteIntegridad(state);
+  const checks = [
+    { titulo: 'Insumos sin unidad definida', lista: r.sinUnidad, aItem: i => i.nombre },
+    { titulo: 'Insumos con costo fuera de rango', lista: r.costoFueraDeRango, aItem: i => i.nombre + ' — ' + fmt(i.costo) + '/' + i.unidad },
+    { titulo: 'Insumos con stock pero sin costo cargado', lista: r.stockConCostoCero, aItem: i => i.nombre },
+    { titulo: 'Insumos con stock negativo o faltante pendiente', lista: r.stockNegativoOFaltante, aItem: i => i.nombre + ' (cant. ' + i.cantidad + (i.faltante ? ', faltante ' + i.faltante : '') + ')' },
+    { titulo: 'Ventas cuyo costo superó lo vendido', lista: r.ventasCostoMayorATotal, aItem: v => (v.fecha ? new Date(v.fecha).toLocaleDateString('es-CO') : v.id) + ' — total ' + fmt(v.total) },
+    { titulo: 'Productos cuyo costo actual supera su precio', lista: r.productosCostoMayorAPrecio, aItem: p => p.nombre + ' — costo ' + fmt(p.costo) + ' > precio ' + fmt(p.precio) }
+  ];
+  document.getElementById('reporte-integridad').innerHTML = checks.map(c => `
+    <div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span class="item-sub" style="color:${c.lista.length ? 'var(--danger)' : 'var(--muted)'}">${esc(c.titulo)}</span>
+        <span class="badge" style="background:${c.lista.length ? 'var(--danger)' : 'var(--soft)'}">${c.lista.length}</span>
+      </div>
+      ${c.lista.length ? '<ul style="margin:4px 0 0 18px;padding:0;font-size:12px;color:var(--muted)">' + c.lista.map(x => '<li>' + esc(c.aItem(x)) + '</li>').join('') + '</ul>' : ''}
     </div>`).join('');
 }
 function updateSyncStatus(msg, isError) {
@@ -3695,7 +3725,7 @@ function deleteCliente() {
 
 function openModal(id) {
   document.getElementById(id).classList.add('open');
-  if (id === 'modal-ajustes') renderPayloadPanel(); // T0: se calcula al abrir, no en cada guardado
+  if (id === 'modal-ajustes') { renderPayloadPanel(); renderReporteIntegridad(); } // T0/T2.1: se calculan al abrir, no en cada guardado
 }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 

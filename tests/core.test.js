@@ -1273,6 +1273,74 @@ test('checkVentaAPerdida no advierte cuando el precio cubre el costo, y también
   assert.strictEqual(conToppingAPerdida[0].tipo, 'topping');
 });
 
+console.log('\n== T2.1 (Ronda 3): reporte de integridad (solo diagnóstico, no corrige nada) ==');
+
+function stateIntegridadOk() {
+  return C.migrateState({
+    productos: [{ id: 'p1', nombre: 'Waffle', precio: 20000, componentes: [{ tipo: 'materia', refId: 'm1', gramos: 100 }], empaquesUsados: [] }],
+    materia: [
+      { id: 'm1', nombre: 'Harina', unidad: 'g', costo: 5, cantidad: 1000, minimo: 0 },
+      { id: 'm2', nombre: 'Azúcar', unidad: 'g', costo: 4, cantidad: 1000, minimo: 0 },
+      { id: 'm3', nombre: 'Mantequilla', unidad: 'g', costo: 6, cantidad: 1000, minimo: 0 }
+    ],
+    ventas: [{ id: 'v1', total: 20000, items: [{ productoId: 'p1', qty: 1, costo: 500 }] }]
+  });
+}
+
+test('CRITERIO: getReporteIntegridad marca insumos sin unidad', () => {
+  const s = stateIntegridadOk();
+  s.materia.push({ id: 'm4', nombre: 'Sin unidad', costo: 5, cantidad: 100, minimo: 0 });
+  const r = C.getReporteIntegridad(s);
+  assert.strictEqual(r.sinUnidad.length, 1);
+  assert.strictEqual(r.sinUnidad[0].id, 'm4');
+});
+
+test('CRITERIO: getReporteIntegridad marca insumos con costo fuera de rango (misma regla que T2)', () => {
+  const s = stateIntegridadOk();
+  s.materia.push({ id: 'm5', nombre: 'Harina de fuerza', unidad: 'g', costo: 10500, cantidad: 100, minimo: 0 });
+  const r = C.getReporteIntegridad(s);
+  assert.strictEqual(r.costoFueraDeRango.length, 1);
+  assert.strictEqual(r.costoFueraDeRango[0].id, 'm5');
+});
+
+test('CRITERIO: getReporteIntegridad marca insumos con stock>0 y costo cero/faltante', () => {
+  const s = stateIntegridadOk();
+  s.materia.push({ id: 'm6', nombre: 'Sin costo cargado', unidad: 'g', costo: 0, cantidad: 500, minimo: 0 });
+  const r = C.getReporteIntegridad(s);
+  assert.strictEqual(r.stockConCostoCero.length, 1);
+  assert.strictEqual(r.stockConCostoCero[0].id, 'm6');
+});
+
+test('CRITERIO: getReporteIntegridad marca insumos con stock negativo o faltante>0', () => {
+  const s = stateIntegridadOk();
+  s.materia.push({ id: 'm7', nombre: 'Con faltante', unidad: 'g', costo: 5, cantidad: 100, faltante: 20, minimo: 0 });
+  s.materia.push({ id: 'm8', nombre: 'Stock negativo', unidad: 'g', costo: 5, cantidad: -10, minimo: 0 });
+  const r = C.getReporteIntegridad(s);
+  assert.strictEqual(r.stockNegativoOFaltante.length, 2);
+  assert.deepStrictEqual(r.stockNegativoOFaltante.map(i => i.id).sort(), ['m7', 'm8']);
+});
+
+test('CRITERIO: getReporteIntegridad marca ventas cuyo costo total supera el total vendido', () => {
+  const s = stateIntegridadOk();
+  s.ventas.push({ id: 'v2', total: 5000, items: [{ productoId: 'p1', qty: 1, costo: 10500 }] });
+  const r = C.getReporteIntegridad(s);
+  assert.strictEqual(r.ventasCostoMayorATotal.length, 1);
+  assert.strictEqual(r.ventasCostoMayorATotal[0].id, 'v2');
+});
+
+test('CRITERIO: getReporteIntegridad marca productos cuyo costo actual supera el precio de venta', () => {
+  const s = stateIntegridadOk();
+  s.productos.push({ id: 'p2', nombre: 'Waffle a pérdida', precio: 5000, componentes: [{ tipo: 'materia', refId: 'm1', gramos: 2000 }], empaquesUsados: [] });
+  const r = C.getReporteIntegridad(s);
+  assert.strictEqual(r.productosCostoMayorAPrecio.length, 1);
+  assert.strictEqual(r.productosCostoMayorAPrecio[0].id, 'p2');
+});
+
+test('getReporteIntegridad no marca nada en un estado sano', () => {
+  const r = C.getReporteIntegridad(stateIntegridadOk());
+  Object.keys(r).forEach(k => assert.strictEqual(r[k].length, 0, k + ' debería estar vacío'));
+});
+
 test('getAdiciones filtra solo los insumos marcados esAdicion, de cualquier tipo', () => {
   const s = C.migrateState({
     materia: [

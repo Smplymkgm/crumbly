@@ -951,6 +951,36 @@
     return perdidas;
   }
 
+  // T2.1: reporte de integridad — SOLO diagnóstico, no corrige nada. Junta
+  // en un solo lugar las mismas señales de T2 (unidad, costo sospechoso)
+  // más el resto de inconsistencias que la auditoría de Ronda 3 pidió
+  // vigilar, para que Ajustes tenga una sola pantalla de salud del
+  // inventario/operación en vez de tener que ir insumo por insumo.
+  function getReporteIntegridad(state) {
+    var insumos = getInsumosUnificados(state);
+    var sinUnidad = insumos.filter(function (i) { return i.unidadPendiente; });
+    var costoFueraDeRango = insumos.filter(function (i) {
+      return !i.unidadPendiente && checkCostoSospechoso(state, i.unidad, i.costo, i.id) !== null;
+    });
+    var stockConCostoCero = insumos.filter(function (i) { return Number(i.cantidad) > 0 && !(Number(i.costo) > 0); });
+    var stockNegativoOFaltante = insumos.filter(function (i) { return Number(i.cantidad) < 0 || Number(i.faltante) > 0; });
+    var ventasCostoMayorATotal = (state.ventas || []).filter(function (v) {
+      var costoTotal = (v.items || []).reduce(function (a, it) { return a + (Number(it.costo) || 0) * (Number(it.qty) || 0); }, 0);
+      return costoTotal > (Number(v.total) || 0);
+    }).map(function (v) { return { id: v.id, fecha: v.fecha, total: v.total }; });
+    var productosCostoMayorAPrecio = (state.productos || []).filter(function (p) {
+      return getCostoProducto(p, state) > (Number(p.precio) || 0);
+    }).map(function (p) { return { id: p.id, nombre: p.nombre, costo: getCostoProducto(p, state), precio: Number(p.precio) || 0 }; });
+    return {
+      sinUnidad: sinUnidad,
+      costoFueraDeRango: costoFueraDeRango,
+      stockConCostoCero: stockConCostoCero,
+      stockNegativoOFaltante: stockNegativoOFaltante,
+      ventasCostoMayorATotal: ventasCostoMayorATotal,
+      productosCostoMayorAPrecio: productosCostoMayorAPrecio
+    };
+  }
+
   function getAdiciones(state) {
     return getInsumosUnificados(state).filter(function (i) { return i.esAdicion; });
   }
@@ -2628,6 +2658,7 @@
     esUnidadValida: esUnidadValida,
     checkCostoSospechoso: checkCostoSospechoso,
     checkVentaAPerdida: checkVentaAPerdida,
+    getReporteIntegridad: getReporteIntegridad,
     getAdiciones: getAdiciones,
     getMovimientos: getMovimientos,
     findInsumoConTipo: findInsumoConTipo,
