@@ -22,7 +22,7 @@ Rama: `auditoria/costeo`. Ronda 1 en `PROGRESO_R1.md`, Ronda 2 en `PROGRESO_R2.m
 | T2 · Integridad de insumos | ✅ HECHA |
 | T2.1 · Reporte de integridad | ✅ HECHA |
 | T3 · Pantalla de producción de lotes | ✅ HECHA |
-| T4 · Etiqueta del break-even | PENDIENTE |
+| T4 · Etiqueta del break-even | ✅ HECHA |
 | T5 · Aviso previo de faltante en preparaciones | PENDIENTE |
 
 ## Detalle por tarea
@@ -92,3 +92,9 @@ Rama: `auditoria/costeo`. Ronda 1 en `PROGRESO_R1.md`, Ronda 2 en `PROGRESO_R2.m
 - "Adoptar rendimiento" llama a `savePreparacion` con el mismo `rendimientoPct` que ya se muestra en pantalla (nunca un número recalculado aparte) — ver la nota ya existente en `producirPreparacion` sobre por qué el rendimiento de la receta no se sobreescribe solo.
 - **Tests**: 1 test nuevo para `getConsumoTeoricoLote` (confirma que no muta `state` y que coincide con lo que `producirPreparacion` termina consumiendo). Suite completa: 286 tests, todos verdes — los tests de P1.3 de Ronda 2 (producir/eliminar/promedio) siguen intactos, no se tocaron.
 - **Verificado en el navegador de punta a punta** con una preparación sintética (Masa de waffles, 100g de harina por lote): producir un lote descontó la harina y acreditó el stock de la preparación (visible en la fila de Preparaciones sin cerrar el modal); "Adoptar 92,0%" actualizó el rendimiento configurado y el costo/g recalculado de la preparación; eliminar el lote devolvió la harina a su cantidad original Y dejó `cantidad` de la preparación en 0, sin tocar el `rendimientoPct` ya adoptado (es una configuración, no un dato del lote); un lote sobrevivió una recarga completa de página. Cero errores de consola, cero contacto con `script.google.com`.
+
+### T4 · Etiqueta del break-even — HECHA
+
+- Solo texto, cero cambios de cálculo (tal como pedía el encargo) — `bepDiarioContable`/`bepDiarioCaja` en `js/core.js` no se tocaron. La tarjeta de Costeo decía "Punto de equilibrio de hoy" y "hay que vender hoy para no perder plata", pero el número es `bepContable`/`bepCaja` del PERÍODO seleccionado dividido entre sus días — un promedio diario del período, no una meta calculada para el día de hoy. Con "Mes" elegido a mitad de mes, esto leía como una meta del día que no era.
+- Cambiado en `index.html`: el eyebrow pasa a "Punto de equilibrio del período" y la etiqueta del número a "meta diaria promedio del período". Se dejó intacta "Llevas vendido hoy" (esa sí es siempre la venta real de HOY, `getVentasByPeriod('dia')`, sin importar el período elegido arriba — no tenía el mismo problema).
+- **Verificado en el navegador**: pestaña Costeo, ambas etiquetas nuevas visibles y correctas, sin errores de consola.

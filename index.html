@@ -355,11 +355,18 @@ textarea.field{height:auto}
         <div id="dash-tab-costeo" style="display:none">
 
           <div class="card" style="background:var(--ink);color:var(--white)">
-            <div class="item-sub" style="color:rgba(255,255,255,.6);margin-bottom:6px">Punto de equilibrio de hoy — lo más accionable del sistema</div>
+            <!-- T4 (auditoría, Ronda 3): bepDiarioContable/bepDiarioCaja
+                 (js/core.js) son bepContable/bepCaja del PERÍODO
+                 seleccionado dividido entre sus días — un promedio, no un
+                 número calculado para el día de hoy. Con "Mes" elegido a
+                 mitad de mes, "hay que vender HOY" leía como una meta del
+                 día que no era. Solo cambia el texto — el cálculo sigue
+                 siendo el mismo bepDiarioContable/bepDiarioCaja de siempre. -->
+            <div class="item-sub" style="color:rgba(255,255,255,.6);margin-bottom:6px">Punto de equilibrio del período — lo más accionable del sistema</div>
             <div id="costeo-bep-suficiente">
               <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
                 <div style="font-size:28px;font-weight:700" id="costeo-bep-diario">$0</div>
-                <div class="item-sub" style="color:rgba(255,255,255,.6)">hay que vender hoy para no perder plata</div>
+                <div class="item-sub" style="color:rgba(255,255,255,.6)">meta diaria promedio del período</div>
               </div>
               <div style="display:flex;gap:18px;margin-top:10px;flex-wrap:wrap">
                 <div><span class="item-sub" style="color:rgba(255,255,255,.6)">Llevas vendido hoy: </span><strong id="costeo-bep-llevado">$0</strong></div>
