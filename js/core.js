@@ -881,15 +881,74 @@
   // tests existentes asumen esta forma). Esta función solo aplana las tres
   // para pantallas que necesitan verlas juntas (Inventario, selector de
   // fórmula, lista de adiciones).
-  var UNIDAD_LABEL = { materia: 'g', empaques: 'unidad', toppings: 'unidad' };
+  // T2 (auditoría Ronda 3): lista cerrada de unidades. Se encontraron en
+  // producción 12 insumos con `unidad: undefined` — el fallback que había
+  // acá antes (adivinar 'g' o 'unidad' según el tipo) es exactamente lo
+  // que permitió que eso pasara desapercibido. Ya NO se adivina: un
+  // insumo sin unidad válida queda con `unidad` tal cual vino (posible
+  // undefined) y marcado `unidadPendiente:true` para que la UI lo señale.
+  var UNIDADES_VALIDAS = ['g', 'ml', 'kg', 'unidad'];
+  function esUnidadValida(unidad) {
+    return UNIDADES_VALIDAS.indexOf(unidad) !== -1;
+  }
   function getInsumosUnificados(state) {
     var out = [];
     ['materia', 'empaques', 'toppings'].forEach(function (tipo) {
       (state[tipo] || []).forEach(function (item) {
-        out.push(Object.assign({ tipo: tipo, unidad: item.unidad || UNIDAD_LABEL[tipo] }, item));
+        out.push(Object.assign({ tipo: tipo }, item, { unidadPendiente: !esUnidadValida(item.unidad) }));
       });
     });
     return out;
+  }
+
+  // T2: guard de sensatez de costo. Un insumo con costo unitario más de
+  // dos órdenes de magnitud (100x) por encima de la mediana de insumos
+  // con la MISMA unidad es casi siempre el precio del paquete cargado
+  // como si fuera el costo unitario (caso real: harina a $10.500/g,
+  // debía ser $10.500 el bulto). Advertencia, no bloqueo — el guard solo
+  // calcula y devuelve; la UI decide cómo mostrarlo. Con menos de 3
+  // insumos de referencia en esa unidad no hay mediana confiable, así
+  // que no se advierte nada (evita falsos positivos al armar el inventario
+  // desde cero).
+  function median_(nums) {
+    var sorted = nums.slice().sort(function (a, b) { return a - b; });
+    var mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+  function checkCostoSospechoso(state, unidad, costoUnitario, excludeId) {
+    var costos = getInsumosUnificados(state)
+      .filter(function (i) { return i.unidad === unidad && i.id !== excludeId && Number(i.costo) > 0; })
+      .map(function (i) { return Number(i.costo); });
+    if (costos.length < 3) return null;
+    var mediana = median_(costos);
+    if (mediana > 0 && Number(costoUnitario) > mediana * 100) {
+      return { sospechoso: true, mediana: mediana, costoUnitario: Number(costoUnitario), unidad: unidad };
+    }
+    return null;
+  }
+
+  // T2: aviso de venta a pérdida — si el costo de un producto o topping
+  // suelto supera su precio de venta, se devuelve para que la UI lo
+  // muestre antes de confirmar (caso real: una venta con ganancia de
+  // -$1.473.291 se registró sin ninguna advertencia). No bloquea, igual
+  // que checkStockShortage.
+  function checkVentaAPerdida(lineas, toppingsSueltos, state) {
+    var perdidas = [];
+    (lineas || []).forEach(function (line) {
+      var p = (state.productos || []).find(function (x) { return x.id === line.productoId; });
+      if (!p) return;
+      var costo = getCostoProducto(p, state);
+      var precio = Number(p.precio) || 0;
+      if (costo > precio) perdidas.push({ tipo: 'producto', id: p.id, nombre: p.nombre, costo: costo, precio: precio });
+    });
+    (toppingsSueltos || []).forEach(function (t) {
+      var top = (state.toppings || []).find(function (x) { return x.id === t.toppingId; });
+      if (!top) return;
+      var costo = Number(top.costo) || 0;
+      var precio = Number(top.precio) || 0;
+      if (costo > precio) perdidas.push({ tipo: 'topping', id: top.id, nombre: top.nombre, costo: costo, precio: precio });
+    });
+    return perdidas;
   }
 
   function getAdiciones(state) {
@@ -2565,6 +2624,10 @@
     getMargenProducto: getMargenProducto,
     getIngresosPorDia: getIngresosPorDia,
     getInsumosUnificados: getInsumosUnificados,
+    UNIDADES_VALIDAS: UNIDADES_VALIDAS,
+    esUnidadValida: esUnidadValida,
+    checkCostoSospechoso: checkCostoSospechoso,
+    checkVentaAPerdida: checkVentaAPerdida,
     getAdiciones: getAdiciones,
     getMovimientos: getMovimientos,
     findInsumoConTipo: findInsumoConTipo,

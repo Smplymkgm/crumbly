@@ -1182,14 +1182,95 @@ console.log('\n== Rediseño: insumos unificados y adiciones ==');
 
 test('getInsumosUnificados aplana materia+empaques+toppings con su tipo', () => {
   const s = C.migrateState({
-    materia: [{ id: 'm1', nombre: 'Harina', cantidad: 100, costo: 1, minimo: 10 }],
-    empaques: [{ id: 'e1', nombre: 'Caja', cantidad: 5, costo: 200, minimo: 1 }],
-    toppings: [{ id: 't1', nombre: 'Chispas', cantidad: 50, costo: 5, precio: 10, minimo: 5 }]
+    materia: [{ id: 'm1', nombre: 'Harina', cantidad: 100, costo: 1, minimo: 10, unidad: 'g' }],
+    empaques: [{ id: 'e1', nombre: 'Caja', cantidad: 5, costo: 200, minimo: 1, unidad: 'unidad' }],
+    toppings: [{ id: 't1', nombre: 'Chispas', cantidad: 50, costo: 5, precio: 10, minimo: 5, unidad: 'unidad' }]
   });
   const unificados = C.getInsumosUnificados(s);
   assert.strictEqual(unificados.length, 3);
   assert.deepStrictEqual(unificados.map(i => i.tipo).sort(), ['empaques', 'materia', 'toppings']);
   assert.strictEqual(unificados.find(i => i.id === 'm1').unidad, 'g');
+});
+
+console.log('\n== T2 (Ronda 3): integridad de insumos ==');
+
+test('CRITERIO: getInsumosUnificados NO adivina una unidad — un insumo con unidad undefined queda undefined y marcado unidadPendiente', () => {
+  const s = C.migrateState({
+    materia: [{ id: 'm1', nombre: 'Harina de fuerza', cantidad: 100, costo: 1, minimo: 10 }] // sin unidad, como los 12 reales encontrados
+  });
+  const item = C.getInsumosUnificados(s).find(i => i.id === 'm1');
+  assert.strictEqual(item.unidad, undefined);
+  assert.strictEqual(item.unidadPendiente, true);
+});
+
+test('esUnidadValida acepta la lista cerrada existente (g, ml, kg, unidad) y rechaza el resto', () => {
+  assert.ok(C.esUnidadValida('g'));
+  assert.ok(C.esUnidadValida('ml'));
+  assert.ok(C.esUnidadValida('kg'));
+  assert.ok(C.esUnidadValida('unidad'));
+  assert.ok(!C.esUnidadValida(undefined));
+  assert.ok(!C.esUnidadValida('libra'));
+});
+
+test('checkCostoSospechoso: sin al menos 3 insumos de referencia en esa unidad, no advierte (evita falsos positivos con poco inventario)', () => {
+  const s = C.migrateState({
+    materia: [
+      { id: 'm1', nombre: 'Harina', unidad: 'g', costo: 5 },
+      { id: 'm2', nombre: 'Azúcar', unidad: 'g', costo: 4 }
+    ]
+  });
+  assert.strictEqual(C.checkCostoSospechoso(s, 'g', 10500), null);
+});
+
+test('CRITERIO: un costo unitario >100x la mediana de la misma unidad dispara la advertencia (caso real: harina a $10.500/g)', () => {
+  const s = C.migrateState({
+    materia: [
+      { id: 'm1', nombre: 'Harina', unidad: 'g', costo: 5 },
+      { id: 'm2', nombre: 'Azúcar', unidad: 'g', costo: 4 },
+      { id: 'm3', nombre: 'Mantequilla', unidad: 'g', costo: 6 }
+    ]
+  });
+  const r = C.checkCostoSospechoso(s, 'g', 10500);
+  assert.ok(r && r.sospechoso);
+  assert.strictEqual(r.mediana, 5);
+});
+
+test('checkCostoSospechoso no advierte con un costo razonable, y excluye el propio insumo (excludeId) de su mediana al editarlo', () => {
+  const s = C.migrateState({
+    materia: [
+      { id: 'm1', nombre: 'Harina', unidad: 'g', costo: 5 },
+      { id: 'm2', nombre: 'Azúcar', unidad: 'g', costo: 4 },
+      { id: 'm3', nombre: 'Mantequilla', unidad: 'g', costo: 6 }
+    ]
+  });
+  assert.strictEqual(C.checkCostoSospechoso(s, 'g', 5.5), null);
+  // editar m1 (costo actual 5) no debe compararse consigo mismo
+  const r = C.checkCostoSospechoso(s, 'g', 5, 'm1');
+  assert.strictEqual(r, null);
+});
+
+test('CRITERIO: una venta cuyo costo supera el precio dispara checkVentaAPerdida (caso real: ganancia de -$1.473.291 sin advertencia)', () => {
+  const s = C.migrateState({
+    productos: [{ id: 'p1', nombre: 'Waffle premium', precio: 5000, componentes: [{ tipo: 'materia', refId: 'm1', gramos: 2000 }], empaquesUsados: [] }],
+    materia: [{ id: 'm1', nombre: 'Harina de fuerza', unidad: 'g', costo: 10500, cantidad: 100000, minimo: 0 }]
+  });
+  const perdidas = C.checkVentaAPerdida([{ productoId: 'p1', qty: 1 }], [], s);
+  assert.strictEqual(perdidas.length, 1);
+  assert.strictEqual(perdidas[0].nombre, 'Waffle premium');
+  assert.ok(perdidas[0].costo > perdidas[0].precio);
+});
+
+test('checkVentaAPerdida no advierte cuando el precio cubre el costo, y también revisa toppings sueltos', () => {
+  const s = C.migrateState({
+    productos: [{ id: 'p1', nombre: 'Waffle', precio: 20000, componentes: [{ tipo: 'materia', refId: 'm1', gramos: 100 }], empaquesUsados: [] }],
+    materia: [{ id: 'm1', nombre: 'Harina', unidad: 'g', costo: 5, cantidad: 100000, minimo: 0 }],
+    toppings: [{ id: 't1', nombre: 'Caviar de topping', unidad: 'unidad', costo: 9000, precio: 3000, cantidad: 10, minimo: 0 }]
+  });
+  const sinPerdida = C.checkVentaAPerdida([{ productoId: 'p1', qty: 1 }], [], s);
+  assert.strictEqual(sinPerdida.length, 0);
+  const conToppingAPerdida = C.checkVentaAPerdida([], [{ toppingId: 't1', qty: 1 }], s);
+  assert.strictEqual(conToppingAPerdida.length, 1);
+  assert.strictEqual(conToppingAPerdida[0].tipo, 'topping');
 });
 
 test('getAdiciones filtra solo los insumos marcados esAdicion, de cualquier tipo', () => {

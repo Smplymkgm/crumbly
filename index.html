@@ -571,6 +571,7 @@ textarea.field{height:auto}
       <div class="modal-field" style="flex:1">
         <label class="field-label">Tipo de medición</label>
         <select id="ins-tipo-medicion" class="field">
+          <option value="" id="ins-tipo-medicion-pendiente" style="display:none">— Sin definir (corregir) —</option>
           <option value="gramos">Gramos</option>
           <option value="mililitros">Mililitros</option>
           <option value="kilogramos">Kilogramos</option>
@@ -1501,7 +1502,17 @@ function openInsumoModal(id) {
     document.getElementById('ins-modal-title').textContent = 'Editar insumo';
     document.getElementById('ins-nombre').value = item.nombre;
     document.getElementById('ins-categoria').value = item.categoria || '';
-    document.getElementById('ins-tipo-medicion').value = UNIDAD_TIPO_MEDICION[item.unidad] || 'unidad';
+    // T2 (auditoría Ronda 3): NUNCA se adivina la unidad de un insumo
+    // existente. Antes, `|| 'unidad'` preseleccionaba una opción real en
+    // el dropdown — guardar sin tocar este campo escribía en silencio una
+    // unidad inventada sobre un insumo cuya unidad real se desconocía
+    // (12 insumos así encontrados en producción). Si la unidad guardada
+    // no es válida, se muestra la opción "Sin definir" y saveInsumo()
+    // se niega a guardar hasta que se elija una real.
+    const pendienteOpt = document.getElementById('ins-tipo-medicion-pendiente');
+    const unidadValida = CrumblyCore.esUnidadValida(item.unidad);
+    pendienteOpt.style.display = unidadValida ? 'none' : 'block';
+    document.getElementById('ins-tipo-medicion').value = unidadValida ? UNIDAD_TIPO_MEDICION[item.unidad] : '';
     document.getElementById('ins-cantidad').value = item.cantidad;
     document.getElementById('ins-cantidad').disabled = true;
     document.getElementById('ins-cantidad-nota').style.display = 'block';
@@ -1522,6 +1533,7 @@ function openInsumoModal(id) {
     ['ins-nombre','ins-categoria','ins-cantidad','ins-costo','ins-nombre-adicion','ins-precio-adicion','ins-porcion'].forEach(x => document.getElementById(x).value = '');
     document.getElementById('ins-cantidad').disabled = false;
     document.getElementById('ins-cantidad-nota').style.display = 'none';
+    document.getElementById('ins-tipo-medicion-pendiente').style.display = 'none';
     document.getElementById('ins-tipo-medicion').value = 'gramos';
     document.getElementById('ins-minimo').value = 0;
     document.getElementById('ins-precio-variable').checked = false;
@@ -1569,6 +1581,9 @@ function saveInsumo() {
   const nombre = document.getElementById('ins-nombre').value.trim();
   if (!nombre) { showToast('Ingresa el nombre del insumo'); return; }
   const tipoMedicion = document.getElementById('ins-tipo-medicion').value;
+  // T2: unidad obligatoria — no se puede guardar (ni crear ni editar) sin
+  // elegir una unidad real de la lista cerrada. Ver nota en openInsumoModal.
+  if (!tipoMedicion) { showToast('Elegí la unidad de medición del insumo'); return; }
   const esAdicion = document.getElementById('ins-es-adicion').checked;
   // C11 (auditoría): sin esto, una adición con porción 0 se vendía gratis
   // — el precio de venta quedaba puesto pero el consumo de stock era cero,
@@ -1591,6 +1606,21 @@ function saveInsumo() {
   };
   const editId = document.getElementById('ins-edit-id').value;
   const editTipo = document.getElementById('ins-edit-tipo').value;
+  // T2: guard de sensatez de costo — advertencia, no bloqueo (igual que el
+  // aviso de stock insuficiente: se puede confirmar y seguir). Caso real
+  // que esto habría atajado: harina de fuerza cargada a $10.500 por GRAMO
+  // (era el precio del paquete completo).
+  const unidadElegida = TIPO_MEDICION_UNIDAD[tipoMedicion];
+  const sospecha = CrumblyCore.checkCostoSospechoso(state, unidadElegida, datos.costo, editId || undefined);
+  if (sospecha) {
+    const seguir = confirm(
+      fmt(sospecha.costoUnitario) + ' por ' + unidadElegida + ' — muy por encima de lo normal ' +
+      '(mediana de insumos en ' + unidadElegida + ': ' + fmt(sospecha.mediana) + ' por ' + unidadElegida + ').\n\n' +
+      '¿Estás ingresando el precio del paquete completo en vez del costo por ' + unidadElegida + '?\n\n' +
+      '¿Guardar de todas formas?'
+    );
+    if (!seguir) return;
+  }
   if (editId) {
     // Edición: nunca cambia de colección — solo actualiza sus campos +
     // reetiqueta la unidad (no convierte cantidades entre medidas).
@@ -1695,11 +1725,17 @@ function renderInventario() {
   el.innerHTML = items.map(it => {
     const bajo = it.cantidad <= it.minimo;
     const sospechoso = it.costo > (COSTO_SOSPECHOSO_POR_UNIDAD[it.unidad] || 50000);
+    // T2: insumo con unidad undefined/inválida (nunca se adivina — ver
+    // getInsumosUnificados) — se marca en vez de mostrarse como si nada.
+    const sub = it.unidadPendiente
+      ? esc(it.categoria || '—') + ' · ' + Math.round(it.cantidad).toLocaleString('es-CO') + ' (unidad sin definir) · ' + fmt(it.costo)
+      : esc(it.categoria || '—') + ' · ' + Math.round(it.cantidad).toLocaleString('es-CO') + ' ' + esc(it.unidad) + ' · ' + fmt(it.costo) + '/' + esc(it.unidad) + (sospechoso ? ' · revisá este costo' : '');
     return `<div class="list-row" style="padding:12px 16px;cursor:pointer" onclick="openInsumoModal('${it.id}')">
       <div style="flex:1;min-width:0">
         <div class="item-name">${esc(it.nombre)}</div>
-        <div class="item-sub" style="${sospechoso ? 'color:var(--danger)' : ''}">${esc(it.categoria || '—')} · ${Math.round(it.cantidad).toLocaleString('es-CO')} ${esc(it.unidad)} · ${fmt(it.costo)}/${esc(it.unidad)}${sospechoso ? ' · revisá este costo' : ''}</div>
+        <div class="item-sub" style="${(sospechoso || it.unidadPendiente) ? 'color:var(--danger)' : ''}">${sub}</div>
       </div>
+      ${it.unidadPendiente ? '<span class="badge" style="background:var(--danger)">Unidad pendiente</span>' : ''}
       ${bajo ? '<span class="badge">Bajo stock</span>' : ''}
       <i class="ph ph-caret-right" style="color:var(--soft);font-size:12px;margin-left:10px"></i>
     </div>`;
@@ -2343,6 +2379,15 @@ function registrarVenta() {
     const seguir = confirm('No hay suficiente stock para registrar la venta:\n\n' + detalle + '\n\n¿Registrar de todas formas? La venta quedará marcada con stock insuficiente.');
     if (!seguir) return;
     stockInsuficiente = true;
+  }
+
+  // T2: aviso de venta a pérdida — advertencia, no bloqueo (caso real: una
+  // venta con ganancia de -$1.473.291 se registró sin que nada avisara).
+  const perdidas = CrumblyCore.checkVentaAPerdida(lineas, toppingsSueltos, state);
+  if (perdidas.length) {
+    const detallePerdida = perdidas.map(p => '- ' + p.nombre + ': costo ' + fmt(p.costo) + ' > precio ' + fmt(p.precio)).join('\n');
+    const seguirPerdida = confirm('Esta venta deja pérdida en al menos un ítem:\n\n' + detallePerdida + '\n\n¿Registrar de todas formas?');
+    if (!seguirPerdida) return;
   }
 
   const clienteId = CrumblyCore.findOrCreateCliente(
