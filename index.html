@@ -689,6 +689,53 @@ textarea.field{height:auto}
   </div>
 </div>
 
+<!-- MODAL LOTE (T3, Ronda 3): producir un lote de una preparación,
+     ver su rendimiento observado y el historial. producirPreparacion,
+     eliminarLote y getPromedioRendimientoObservado existen desde la
+     Ronda 2 pero no tenían pantalla — sin esto era código muerto. -->
+<div class="modal-overlay" id="modal-lote">
+  <div class="modal">
+    <button class="close-modal" onclick="closeModal('modal-lote')">✕</button>
+    <div class="modal-title" id="modal-lote-title">Producir lote</div>
+    <input type="hidden" id="lote-prep-id">
+
+    <div class="modal-field">
+      <label>Tamaño del lote (múltiplo de la receta base)</label>
+      <input type="number" id="lote-multiplicador" value="1" min="0.01" step="0.01" oninput="renderLoteConsumoTeorico()">
+    </div>
+    <div class="total-row">
+      <span>Gramos teóricos de la receta</span>
+      <strong id="lote-gramos-teoricos">0 g</strong>
+    </div>
+    <div style="margin:10px 0 8px">
+      <label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;font-weight:500;display:block;margin-bottom:4px">Consumo teórico de materia prima</label>
+      <div id="lote-consumo-teorico" style="display:flex;flex-direction:column;gap:4px"></div>
+    </div>
+    <div class="modal-field">
+      <label>Gramos realmente obtenidos (pesado real, post-cocción/merma)</label>
+      <input type="number" id="lote-gramos-obtenidos" placeholder="0" min="0" step="0.01">
+    </div>
+    <button class="btn-save" onclick="producirLoteUI()">Producir lote</button>
+
+    <div style="border-top:1px solid var(--line);margin:16px 0 14px;padding-top:14px">
+      <div class="total-row" style="margin-top:0">
+        <span>Rendimiento configurado (receta)</span>
+        <strong id="lote-rendimiento-config">100%</strong>
+      </div>
+      <div class="total-row">
+        <span>Promedio observado (últimos 5 lotes)</span>
+        <strong id="lote-rendimiento-promedio">—</strong>
+      </div>
+      <button class="btn-cancel" id="lote-adoptar-btn" style="display:none" onclick="adoptarRendimientoObservado()">Adoptar el promedio observado como rendimiento de la receta</button>
+    </div>
+
+    <div>
+      <label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;font-weight:500;display:block;margin-bottom:6px">Historial de lotes</label>
+      <div id="lote-historial" style="display:flex;flex-direction:column;gap:8px;max-height:220px;overflow-y:auto"><p class="empty">Sin lotes producidos todavía</p></div>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL PRODUCTO -->
 <div class="modal-overlay" id="modal-producto">
   <div class="modal">
@@ -1935,18 +1982,135 @@ function renderPreparaciones() {
     try { costo = CrumblyCore.getPreparacionCosto(state, prep.id); }
     catch (e) { error = e.message; costo = { gramosTotal: 0, costoPorGramo: 0 }; }
     const modoLabel = prep.modo === 'directo' ? 'Directo' : 'Porcentaje panadero';
-    return `<div class="list-item">
+    return `<div class="list-row">
       <div style="flex:1;min-width:0">
         <div class="item-name">${esc(prep.nombre)}</div>
         <div class="item-sub">${modoLabel} · ${costo.gramosTotal.toFixed(0)}g totales</div>
         <div class="item-sub" style="${error ? 'color:var(--danger)' : ''}">${error ? error : fmtGramoCosto(costo.costoPorGramo) + '/g'}</div>
+        <!-- T3: stock de la preparación (WIP), antes solo visible dentro
+             del modal de Conteo físico. -->
+        <div class="item-sub">Stock: ${Math.round(Number(prep.cantidad) || 0).toLocaleString('es-CO')}g${prep.faltante ? ' · faltante ' + Math.round(prep.faltante).toLocaleString('es-CO') + 'g' : ''}</div>
       </div>
       <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
+        <button class="btn-icon" onclick="openModalLote('${prep.id}')" title="Producir lote"><i class="ph ph-cooking-pot"></i></button>
         <button class="btn-icon" onclick="openModalPreparacion('${prep.id}')" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
         <button class="btn-icon danger" onclick="deletePreparacion('${prep.id}')" title="Eliminar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
       </div>
     </div>`;
   }).join('');
+}
+
+/* ─── LOTES DE PRODUCCIÓN (T3, Ronda 3) ───
+   producirPreparacion/eliminarLote/getPromedioRendimientoObservado ya
+   existían (Ronda 2, con tests) pero sin pantalla — código muerto hasta
+   ahora. Todo el cálculo sigue viviendo en js/core.js; acá solo se arma
+   el formulario y se muestra el resultado. */
+function openModalLote(prepId) {
+  const prep = state.preparaciones.find(p => p.id === prepId);
+  if (!prep) return;
+  document.getElementById('lote-prep-id').value = prepId;
+  document.getElementById('modal-lote-title').textContent = 'Producir lote — ' + prep.nombre;
+  document.getElementById('lote-multiplicador').value = 1;
+  document.getElementById('lote-gramos-obtenidos').value = '';
+  renderLoteConsumoTeorico();
+  renderLoteRendimiento();
+  renderLoteHistorial();
+  document.getElementById('modal-lote').classList.add('open');
+}
+function renderLoteConsumoTeorico() {
+  const prepId = document.getElementById('lote-prep-id').value;
+  const multiplicador = parseFloat(document.getElementById('lote-multiplicador').value) || 0;
+  const preview = CrumblyCore.getConsumoTeoricoLote(state, prepId, multiplicador);
+  const el = document.getElementById('lote-consumo-teorico');
+  if (!preview) { el.innerHTML = ''; return; }
+  document.getElementById('lote-gramos-teoricos').textContent = preview.gramosTeoricos.toFixed(2) + ' g';
+  const filas = [];
+  ['materia', 'empaques', 'toppings'].forEach(bucket => {
+    Object.keys(preview.consumo[bucket]).forEach(id => {
+      const item = (state[bucket] || []).find(x => x.id === id);
+      filas.push({ nombre: item ? item.nombre : id, cantidad: preview.consumo[bucket][id], unidad: item ? item.unidad : '' });
+    });
+  });
+  el.innerHTML = filas.length
+    ? filas.map(f => `<div style="display:flex;justify-content:space-between;font-size:12px">
+        <span style="color:var(--text)">${esc(f.nombre)}</span>
+        <span style="color:var(--muted)">${f.cantidad.toFixed(2)} ${esc(f.unidad || '')}</span>
+      </div>`).join('')
+    : '<p class="item-sub">Esta preparación no tiene componentes</p>';
+}
+function renderLoteRendimiento() {
+  const prepId = document.getElementById('lote-prep-id').value;
+  const prep = state.preparaciones.find(p => p.id === prepId);
+  if (!prep) return;
+  document.getElementById('lote-rendimiento-config').textContent = (prep.rendimientoPct === undefined ? 100 : prep.rendimientoPct).toFixed(1) + '%';
+  const promedio = CrumblyCore.getPromedioRendimientoObservado(state, prepId, 5);
+  const promedioEl = document.getElementById('lote-rendimiento-promedio');
+  const adoptarBtn = document.getElementById('lote-adoptar-btn');
+  if (promedio === null) {
+    promedioEl.textContent = '— (sin lotes todavía)';
+    adoptarBtn.style.display = 'none';
+  } else {
+    promedioEl.textContent = promedio.toFixed(1) + '%';
+    // T3: nunca se adopta solo — el encargo de Ronda 2 fue explícito en
+    // esto. El botón deja el mismo promedio que ya se ve arriba, nunca
+    // un número distinto calculado aparte.
+    adoptarBtn.style.display = 'block';
+    adoptarBtn.textContent = 'Adoptar ' + promedio.toFixed(1) + '% como rendimiento de la receta';
+    adoptarBtn.dataset.promedio = promedio;
+  }
+}
+function adoptarRendimientoObservado() {
+  const prepId = document.getElementById('lote-prep-id').value;
+  const prep = state.preparaciones.find(p => p.id === prepId);
+  const promedio = parseFloat(document.getElementById('lote-adoptar-btn').dataset.promedio);
+  if (!prep || !isFinite(promedio)) return;
+  CrumblyCore.savePreparacion(state, {
+    id: prep.id, nombre: prep.nombre, modo: prep.modo, baseGramos: prep.baseGramos,
+    componentes: prep.componentes, rendimientoPct: promedio
+  });
+  saveState();
+  renderLoteRendimiento();
+  renderPreparaciones();
+  showToast('Rendimiento actualizado a ' + promedio.toFixed(1) + '%');
+}
+function renderLoteHistorial() {
+  const prepId = document.getElementById('lote-prep-id').value;
+  const lotes = state.lotes.filter(l => l.preparacionId === prepId).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+  const el = document.getElementById('lote-historial');
+  if (!lotes.length) { el.innerHTML = '<p class="empty">Sin lotes producidos todavía</p>'; return; }
+  el.innerHTML = lotes.map(l => `<div class="list-row" style="padding:8px 0">
+    <div style="flex:1;min-width:0">
+      <div class="item-sub">${new Date(l.fecha).toLocaleDateString('es-CO')} · ${l.multiplicador}x · ${fmt(l.costoTotal)}</div>
+      <div class="item-sub">Teórico ${l.gramosTeoricos.toFixed(0)}g → obtenido ${l.gramosObtenidos.toFixed(0)}g${l.rendimientoObservado !== null ? ' (' + l.rendimientoObservado.toFixed(1) + '%)' : ''}</div>
+    </div>
+    <button class="btn-icon danger" onclick="eliminarLoteUI('${l.id}')" title="Eliminar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+  </div>`).join('');
+}
+function producirLoteUI() {
+  const preparacionId = document.getElementById('lote-prep-id').value;
+  const multiplicador = parseFloat(document.getElementById('lote-multiplicador').value) || 0;
+  const gramosObtenidos = parseFloat(document.getElementById('lote-gramos-obtenidos').value) || 0;
+  try {
+    CrumblyCore.producirPreparacion(state, { preparacionId, multiplicador, gramosObtenidos, usuarioEmail: state.config.email || '' });
+  } catch (e) {
+    showToast(e.message);
+    return;
+  }
+  saveState();
+  document.getElementById('lote-gramos-obtenidos').value = '';
+  renderLoteRendimiento();
+  renderLoteHistorial();
+  renderPreparaciones();
+  showToast('Lote producido ✓');
+}
+function eliminarLoteUI(id) {
+  if (!confirm('¿Eliminar este lote? Se revierte el consumo de materia prima y el stock que le acreditó a la preparación.')) return;
+  CrumblyCore.eliminarLote(state, id);
+  saveState();
+  renderLoteRendimiento();
+  renderLoteHistorial();
+  renderPreparaciones();
+  showToast('Lote eliminado y consumo revertido');
 }
 
 /* ─── PRODUCTOS ─── */

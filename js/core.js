@@ -549,6 +549,26 @@
     return prep;
   }
 
+  // T3 (auditoría Ronda 3): vista previa de SOLO LECTURA de lo que
+  // producirPreparacion consumiría para este tamaño de lote — no muta
+  // `state`. Para la pantalla "Producir lote": mostrar el consumo teórico
+  // de materia prima ANTES de confirmar, sin duplicar la fórmula (mismo
+  // `gramosDeComponentePreparacion` + `aplicarComponentes` que usa la
+  // producción real).
+  function getConsumoTeoricoLote(state, preparacionId, multiplicador) {
+    var prep = getPreparacion(state, preparacionId);
+    if (!prep) return null;
+    multiplicador = Number(multiplicador) || 0;
+    var resueltos = (prep.componentes || []).map(function (c) {
+      return { tipo: c.tipo, refId: c.refId, gramos: gramosDeComponentePreparacion(prep, c) * multiplicador };
+    });
+    var gramosTeoricos = resueltos.reduce(function (a, c) { return a + c.gramos; }, 0);
+    var consumo = { materia: {}, empaques: {}, toppings: {} };
+    function add(bucket, id, cant) { consumo[bucket][id] = (consumo[bucket][id] || 0) + cant; }
+    aplicarComponentes(state, resueltos, 1, add);
+    return { gramosTeoricos: gramosTeoricos, consumo: consumo };
+  }
+
   // Produce un lote de una preparación (B4, WIP): descuenta las materias
   // primas expandidas (reusa aplicarComponentes — mismo motor que
   // applyVenta/registrarMerma, incluida la recursión si un componente es
@@ -2645,6 +2665,7 @@
     expandGramosAMateria: expandGramosAMateria,
     wouldCreateCiclo: wouldCreateCiclo,
     savePreparacion: savePreparacion,
+    getConsumoTeoricoLote: getConsumoTeoricoLote,
     producirPreparacion: producirPreparacion,
     eliminarLote: eliminarLote,
     getPromedioRendimientoObservado: getPromedioRendimientoObservado,

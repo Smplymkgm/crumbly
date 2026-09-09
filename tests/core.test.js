@@ -2698,6 +2698,17 @@ function statePrepLotes() {
   });
 }
 
+test('T3: getConsumoTeoricoLote es de solo lectura y coincide con lo que producirPreparacion consumiría', () => {
+  const s = statePrepLotes();
+  const preview = C.getConsumoTeoricoLote(s, 'masa', 3);
+  assert.strictEqual(preview.gramosTeoricos, 300);
+  assert.strictEqual(preview.consumo.materia.harina, 300);
+  assert.strictEqual(s.materia[0].cantidad, 100000, 'no debe mutar el estado');
+  const lote = C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 3, gramosObtenidos: 280 });
+  assert.strictEqual(lote.gramosTeoricos, preview.gramosTeoricos);
+  assert.strictEqual(s.materia[0].cantidad, 100000 - preview.consumo.materia.harina);
+});
+
 test('CRITERIO: producir tres lotes deja tres registros con su consumo real', () => {
   const s = statePrepLotes();
   C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 1, gramosObtenidos: 100 });
