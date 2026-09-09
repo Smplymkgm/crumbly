@@ -1122,6 +1122,42 @@ function fmtGramoCosto(n) {
   return '$' + n.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
 }
 
+// T0.1 (auditoría, Ronda 3): `conteoEnProgreso` es a propósito
+// DEVICE-LOCAL — nunca viaja en `crumbly-state` ni en el push/pull al
+// backend. Con C2 sin arreglar (pullOnLoad reemplaza el estado local
+// completo con lo que llega del servidor), un conteo físico a medias en
+// el blob podía ser borrado por el pull de OTRO dispositivo. El conteo
+// real es mañana — perder uno a medias no tiene recuperación, hay que
+// volver a pesar todo. El conteo YA CERRADO (snapshot + ajustes) sigue
+// siendo estado compartido normal, eso no cambia acá.
+const CONTEO_EN_PROGRESO_KEY = 'crumbly-conteo-en-progreso';
+function loadConteoEnProgresoLocal() {
+  try {
+    const raw = localStorage.getItem(CONTEO_EN_PROGRESO_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) { return {}; }
+}
+function saveConteoEnProgresoLocal() {
+  try { localStorage.setItem(CONTEO_EN_PROGRESO_KEY, JSON.stringify(state.conteoEnProgreso || {})); }
+  catch (e) { /* no crítico — el conteo cerrado (lo que sí importa conservar) no pasa por acá */ }
+}
+// Se llama SIEMPRE justo después de reemplazar `state` con datos que
+// vinieron de otro lado (disco o el servidor) — `migrateState()` por
+// diseño devuelve `conteoEnProgreso:{}` porque esa clave ya no viene ni
+// en `crumbly-state` ni en la respuesta del backend.
+function restaurarConteoEnProgresoLocal() {
+  state.conteoEnProgreso = loadConteoEnProgresoLocal();
+}
+// Lo que realmente se guarda en `crumbly-state` y se manda al backend —
+// una copia superficial sin `conteoEnProgreso` (que vive aparte, ver
+// arriba). `state` en memoria SÍ conserva el campo — todo el código de
+// la pantalla de conteo (más abajo) lo sigue leyendo/escribiendo en
+// `state.conteoEnProgreso` sin enterarse de este cambio.
+function stateSinConteoEnProgreso() {
+  const { conteoEnProgreso, ...resto } = state;
+  return resto;
+}
+
 function loadState() {
   let raw = null;
   try {
@@ -1135,6 +1171,7 @@ function loadState() {
     catch (e) { showToast('Los datos guardados estaban corruptos — se abrió un estado nuevo'); }
   }
   state = CrumblyCore.migrateState(parsed);
+  restaurarConteoEnProgresoLocal();
   const emailInput = document.getElementById('cfg-email');
   if (emailInput) emailInput.value = state.config.email;
   const factorInput = document.getElementById('cfg-factor-prestacional');
@@ -1147,7 +1184,8 @@ function loadState() {
 // respaldo inmediato en vez de perder la venta sin que nadie se entere.
 function saveState() {
   try {
-    localStorage.setItem('crumbly-state', JSON.stringify(state));
+    localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso()));
+    saveConteoEnProgresoLocal();
     schedulePush();
     return true;
   } catch (e) {
@@ -1175,7 +1213,7 @@ function schedulePush() {
   syncPushTimer = setTimeout(pushInBackground, 900);
 }
 function pushInBackground() {
-  CrumblySync.push(auth.getBackendUrl(), auth.getToken(), state)
+  CrumblySync.push(auth.getBackendUrl(), auth.getToken(), stateSinConteoEnProgreso())
     .then(r => {
       // T0: sobre el tope de bloqueo, push() ni siquiera intenta la
       // petición — esto es lo que evita la falla silenciosa. El aviso
@@ -1193,7 +1231,7 @@ function pushInBackground() {
       }
       if (!r.ok) { updateSyncStatus('Error al sincronizar: ' + (r.error || 'desconocido'), true); return; }
       state.config.lastSync = r.ts || new Date().toISOString();
-      try { localStorage.setItem('crumbly-state', JSON.stringify(state)); } catch (e) {}
+      try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
       updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
       // T0: por debajo del tope de bloqueo, pero ya en zona de
       // advertencia — persistente también (nunca un toast que se va solo).
@@ -1248,6 +1286,7 @@ async function afterLogin_(successMsg) {
   const r = await CrumblySync.pull(auth.getBackendUrl(), auth.getToken());
   if (!r.ok || !r.state) { showToast('No se pudo traer los datos: ' + (r.error || 'revisá tu conexión')); return; }
   state = CrumblyCore.migrateState(r.state);
+  restaurarConteoEnProgresoLocal(); // T0.1: el pull no trae conteoEnProgreso — se restaura desde este dispositivo, nunca se pierde
   state.config.lastSync = new Date().toISOString();
   saveState();
   refreshAll();
@@ -1293,8 +1332,9 @@ function pullOnLoad() {
     .then(r => {
       if (!r.ok || !r.state) return;
       state = CrumblyCore.migrateState(r.state);
+      restaurarConteoEnProgresoLocal(); // T0.1: un pull de OTRO dispositivo nunca pisa el conteo en curso de este
       state.config.lastSync = new Date().toISOString();
-      try { localStorage.setItem('crumbly-state', JSON.stringify(state)); } catch (e) {}
+      try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
       updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
       refreshAll();
     })
@@ -1310,7 +1350,7 @@ const COLECCION_LABEL = {
   schemaVersion: 'Versión de esquema'
 };
 function renderPayloadPanel() {
-  const info = CrumblySync.getPayloadSizeInfo(state);
+  const info = CrumblySync.getPayloadSizeInfo(stateSinConteoEnProgreso()); // T0.1: el conteo en curso ya no viaja, no debe contar para el tamaño sincronizado
   document.getElementById('payload-tamano').textContent = info.tam.toLocaleString('es-CO');
   document.getElementById('payload-tope').textContent = info.tope.toLocaleString('es-CO');
   document.getElementById('payload-pct').textContent = Math.round(info.pct * 100) + '%';
@@ -1322,7 +1362,7 @@ function renderPayloadPanel() {
   else if (info.nivel === 'advertencia') { msg.textContent = 'En zona de advertencia — se acerca al tope de una celda de Sheets.'; msg.style.color = '#c98a1f'; }
   else { msg.textContent = 'Dentro de rango normal.'; msg.style.color = 'var(--muted)'; }
 
-  const desglose = CrumblySync.getPayloadBreakdown(state);
+  const desglose = CrumblySync.getPayloadBreakdown(stateSinConteoEnProgreso());
   document.getElementById('payload-desglose').innerHTML = desglose.map(d => `
     <div style="display:flex;justify-content:space-between;font-size:12px">
       <span style="color:var(--text)">${esc(COLECCION_LABEL[d.coleccion] || d.coleccion)}</span>

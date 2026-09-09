@@ -17,7 +17,7 @@ Rama: `auditoria/costeo`. Ronda 1 en `PROGRESO_R1.md`, Ronda 2 en `PROGRESO_R2.m
 | Tarea | Estado |
 |---|---|
 | T0 · Alarma de tamaño de payload | ✅ HECHA |
-| T0.1 · Sacar conteoEnProgreso del estado sincronizado | PENDIENTE |
+| T0.1 · Sacar conteoEnProgreso del estado sincronizado | ✅ HECHA |
 | T1 · Migración a filas append-only | PENDIENTE |
 | T2 · Integridad de insumos | PENDIENTE |
 | T2.1 · Reporte de integridad | PENDIENTE |
@@ -34,3 +34,9 @@ Rama: `auditoria/costeo`. Ronda 1 en `PROGRESO_R1.md`, Ronda 2 en `PROGRESO_R2.m
 - **Limitación reconocida y documentada, no evitable en este entorno**: `backend/Code.gs` no se puede correr ni testear en Node (no hay runtime de Apps Script local), y la regla de esta ronda prohíbe desplegarlo contra el backend real. Se verificó por lectura cuidadosa — la lógica es aritmética simple sobre `.length`, igual que su equivalente ya probado en `js/sync.js` — pero no hay una ejecución real que lo confirme. El cliente ya bloquea antes de llegar ahí, así que el backend es defensa en profundidad, no la única línea.
 - **Bug de entorno encontrado y anotado, no del código de la app**: el servidor estático local (`python3 -m http.server`) no manda cabeceras de caché, y el navegador de este entorno cacheaba agresivamente `js/sync.js` entre reloads de la MISMA pestaña — la primera verificación mostraba `CrumblySync.getPayloadSizeInfo is not a function` con el código ya corregido en disco. Se resolvió cambiando el puerto del servidor local en `.claude/launch.json` (8791→8792) para forzar un origen nuevo sin caché. No afecta producción (Apps Script no sirve archivos estáticos así).
 - Decisión no especificada: el tope de bloqueo se fijó en 48.000 (no 50.000 exactos) — margen de seguridad explícito para no depender de contar el último carácter exacto que Sheets acepta.
+
+### T0.1 · Sacar conteoEnProgreso del estado sincronizado — HECHA
+
+- Archivo: `index.html` (`stateSinConteoEnProgreso()`, `loadConteoEnProgresoLocal`/`saveConteoEnProgresoLocal`/`restaurarConteoEnProgresoLocal`, localStorage key `crumbly-conteo-en-progreso` aparte de `crumbly-state`; los 4 puntos que escriben `crumbly-state` o llaman `CrumblySync.push` usan la versión sin `conteoEnProgreso`; `afterLogin_`/`pullOnLoad` restauran el conteo local después de reemplazar `state` con datos del servidor). No tocó `js/core.js` — `state.conteoEnProgreso` sigue existiendo tal cual en el objeto en memoria, solo cambió DÓNDE se persiste.
+- **Verificado en el navegador con los tres escenarios del criterio**, en este orden: (1) conté un insumo parcialmente, guardé parcial, recargué la página completa — el conteo a medias seguía ahí; (2) simulé un pull de "otro dispositivo" (con un cambio real en otra colección) — el conteo a medias no se tocó, mientras el resto del estado sí se actualizó con lo remoto; (3) cerré el conteo — el snapshot y el ajuste resultantes SÍ aparecen en lo que se sincroniza (`stateSinConteoEnProgreso()`), confirmando que el conteo cerrado sigue siendo estado compartido normal.
+- Sin ambigüedad que resolver — el encargo especificaba exactamente qué mover y qué debía seguir igual.
