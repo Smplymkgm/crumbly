@@ -26,7 +26,7 @@ Después: U3 (instrumentar la migración), U4 (C2, el último riesgo grande), U5
 | U2 · Validación de forma de hoja antes de migrar | ✅ HECHA |
 | U3 · Instrumentar la migración | ✅ HECHA |
 | U4 · C2 — pull que pisa cambios locales | ✅ HECHA |
-| U5 · Cuadrar el conteo de tests | PENDIENTE |
+| U5 · Cuadrar el conteo de tests | ✅ HECHA |
 
 ## Detalle por tarea
 
@@ -112,3 +112,19 @@ Antes de correr `migrarAAppendOnly()` contra el Sheet real, **una persona tiene 
   2. **El MISMO insumo**: A edita "Harina" a 7, sincroniza. B (todavía en la versión vieja) edita la MISMA "Harina" a 10.500 y sincroniza — el banner persistente aparece ("1 registro(s) se editaron en dos dispositivos a la vez — nada se perdió"), el modal muestra "Lo mío: costo: 10500" y "Lo remoto: costo: 7" lado a lado. Clic real en "Usar el remoto" → se aplica, el backend queda en 7, conflicto resuelto.
   3. **`pullOnLoad` con cambio local pendiente**: A modifica la cantidad de "Azúcar" en memoria SIN sincronizar (simula una edición que no ha llegado a hacer push todavía); mientras tanto B sí sincroniza un cambio a la cantidad de "Harina". Al llamar `pullOnLoad()` en A, la edición pendiente de Azúcar sobrevive intacta y el cambio remoto de Harina se incorpora — ninguno se pisa, y como no chocan (insumos distintos) se fusiona y sincroniza solo. Confirmado en el backend: los dos cambios conviven.
   - Cero errores de consola en las dos pestañas durante toda la secuencia.
+
+### U5 · Cuadrar el conteo de tests — HECHA
+
+Las secciones de `PROGRESO_R3.md` reportaban 277, 284, 286 y 289 tests en tareas sucesivas y el cierre midió 288 — un deslizamiento de conteo, no de tests reales perdidos (se recontó al final y dio la cifra correcta de ese momento). El propio cierre de la Ronda 3 ya lo señaló.
+
+- **Número real, medido ahora mismo, con el desglose por archivo** (`node tests/<archivo>.test.js` corrido uno por uno, no recordado de un commit anterior):
+
+| Archivo | Tests |
+|---|---|
+| `tests/auth.test.js` | 10 |
+| `tests/core.test.js` | 246 |
+| `tests/rowsync.test.js` | 34 |
+| `tests/sync.test.js` | 30 |
+| **Total** | **320** |
+
+- **Regla adoptada de aquí en adelante** (tal como pide el encargo): cualquier cifra de tests que aparezca en `PROGRESO.md` — por tarea o en el cierre — se mide corriendo la suite en ese momento, nunca se copia de una nota anterior de la misma sesión. Cada sección de esta ronda (U0 a U4) ya sigue esta regla — la cifra que reporta cada una es la que dio `node tests/<archivo>.test.js` inmediatamente antes de escribir esa sección.
