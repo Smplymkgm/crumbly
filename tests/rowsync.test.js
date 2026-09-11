@@ -247,6 +247,40 @@ test('validarCabeceraAppend: mismo número de columnas pero un nombre distinto �
   assert.strictEqual(r.ok, false);
 });
 
+console.log('\n== U3 (Ronda 4): instrumentar la migración (reporte + fase) ==');
+
+test('buildMigrationReport: caso feliz — junta antes/después/coincide con filas escritas, veredicto OK', () => {
+  const antes = { ventas: [{ id: 'v1' }, { id: 'v2' }], gastos: [{ id: 'g1' }], mermas: [], snapshots: [], ajustes: [], lotes: [] };
+  const nuevas = { ventas: [{ id: 'v1' }, { id: 'v2' }], gastos: [{ id: 'g1' }], mermas: [], snapshots: [], ajustes: [], lotes: [] };
+  const agregados = { ventas: 2, gastos: 1, mermas: 0, snapshots: 0, ajustes: 0, lotes: 0 };
+  const r = RowSync.buildMigrationReport(antes, nuevas, agregados);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.veredicto, 'OK');
+  assert.strictEqual(r.reporte.ventas.filasEscritas, 2);
+  assert.strictEqual(r.reporte.ventas.coincide, true);
+});
+
+test('CRITERIO: buildMigrationReport — caso abortado (un conteo no coincide) → veredicto ABORTADA', () => {
+  const antes = { ventas: [{ id: 'v1' }, { id: 'v2' }], gastos: [], mermas: [], snapshots: [], ajustes: [], lotes: [] };
+  const nuevas = { ventas: [{ id: 'v1' }], gastos: [], mermas: [], snapshots: [], ajustes: [], lotes: [] }; // se "perdió" v2
+  const r = RowSync.buildMigrationReport(antes, nuevas, { ventas: 1 });
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.veredicto, 'ABORTADA');
+  assert.strictEqual(r.reporte.ventas.coincide, false);
+});
+
+test('faseMigracion: catálogo crudo con transacciones embebidas → "pre"', () => {
+  assert.strictEqual(RowSync.faseMigracion({ productos: [], ventas: [{ id: 'v1' }] }), 'pre');
+});
+
+test('faseMigracion: catálogo crudo sin ninguna colección append-only → "post"', () => {
+  assert.strictEqual(RowSync.faseMigracion({ productos: [{ id: 'p1' }], config: {} }), 'post');
+});
+
+test('faseMigracion: colecciones append-only presentes pero VACÍAS → "post" (ya migrado, sin filas que perder)', () => {
+  assert.strictEqual(RowSync.faseMigracion({ ventas: [], gastos: [], mermas: [], snapshots: [], ajustes: [], lotes: [] }), 'post');
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);

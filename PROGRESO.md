@@ -24,7 +24,7 @@ Después: U3 (instrumentar la migración), U4 (C2, el último riesgo grande), U5
 | U0 · La alarma de T0 mide el catálogo, no el payload | ✅ HECHA |
 | U1 · Los borrados persisten (filas de lápida) | ✅ HECHA |
 | U2 · Validación de forma de hoja antes de migrar | ✅ HECHA |
-| U3 · Instrumentar la migración | PENDIENTE |
+| U3 · Instrumentar la migración | ✅ HECHA |
 | U4 · C2 — pull que pisa cambios locales | PENDIENTE |
 | U5 · Cuadrar el conteo de tests | PENDIENTE |
 
@@ -80,3 +80,17 @@ Antes de correr `migrarAAppendOnly()` contra el Sheet real, **una persona tiene 
 - La opción 1 obligaría a cambiar `APPEND_COLLECTIONS` (en `js/rowsync.js` Y en `backend/Code.gs`, a mano en los dos) para que el nombre lógico (`ventas`) ya no coincida con el nombre real de la hoja — una capa de indirección nueva, con más superficie para que los dos archivos se desincronicen, para un problema que se resuelve con un rename.
 - El dato viejo (lo que sea que haya en el mirror plano pre-T1) queda intacto y perfectamente inspeccionable bajo su nombre archivado — nadie lo borra, nadie lo migra, coherente con el principio de esta migración completa ("nada se pierde").
 - Si las hojas `ventas`/`gastos`/`mermas` están VACÍAS en el Sheet real (la app nunca llegó a sincronizar contra ellas con datos reales), no hace falta ningún renombre — `validarFormaHojaAppend_` las trata como vacías y las crea directamente con la cabecera nueva. El renombre solo hace falta si ya tienen filas del formato viejo.
+
+### U3 · Instrumentar la migración — HECHA
+
+- **Problema que señaló la propia Ronda 3**: la confianza en T1 dependía de una migración manual, de un solo uso, corrida por una persona mirando `Logger.log()` en el editor de Apps Script — el mismo patrón de falla silenciosa que T0 se construyó para eliminar (ese log desaparece; nadie más lo ve).
+- **`js/rowsync.js`**: `buildMigrationReport(oldState, nuevasColecciones, agregados)` — junta `verifyMigrationCounts` (antes/después/coincide) con las filas realmente escritas (`filasEscritas`) en un solo reporte por colección, más un veredicto único (`OK`/`ABORTADA`). `faseMigracion(catalogoCrudo)` — dado el catálogo TAL CUAL está en la celda (antes de que `readState_` inyecte las colecciones hidratadas), decide si todavía tiene transacciones embebidas (`'pre'`) o no (`'post'`). 5 tests nuevos.
+- **`backend/Code.gs`**:
+  - Hoja nueva `migracion_log` (creada por `getMigracionLogSheet_`, cabecera `[timestamp, veredicto, reporteJSON]`) — persistida, no un log de ejecución que se borra.
+  - `registrarMigracionLog_(veredicto, reporteObj)` se llama en **las tres salidas posibles** de `migrarAAppendOnly()`: formato de hoja inválido (U2), conteos que no cuadran, y éxito — cada corrida deja rastro, no solo la exitosa.
+  - `migrarAAppendOnly()` ahora arma el reporte con `buildMigrationReport_` (port a mano) en vez del reporte plano de antes.
+  - Acción GET nueva `migrationStatus` (requiere sesión, como `pull`): devuelve `{ok, ultima:{ts,veredicto,reporte}|null, fase}` — `fase` se calcula leyendo el catálogo crudo de la celda (`leerCatalogoCrudo_`) con `RowSyncFaseMigracion_` (port de `faseMigracion`).
+- **`js/sync.js`**: `getMigrationStatus(backendUrl, token, fetchImpl)` — GET, mismo patrón que `pull`. 1 test nuevo.
+- **`index.html`**: nueva sección "Migración a filas append-only" en Ajustes — fase (🟢 post / 🟡 pre, con una frase que explica qué significa cada una), última corrida con timestamp y veredicto, y el desglose antes→después por colección (o, si la última corrida abortó por formato, qué hoja(s) fallaron). Se consulta al backend al abrir Ajustes (`renderMigrationStatus()`, async — no bloquea el resto del panel si falla o no hay sesión).
+- **Suite completa: 310 tests** (auth 10, core 246, rowsync 27, sync 27) — medido corriendo los cuatro archivos.
+- **Verificado contra el mock backend + en el navegador**: con el mock recién iniciado (nunca migrado), el panel muestra "Todavía no se registró ninguna corrida". Tras una migración simulada exitosa, muestra fase POST, veredicto OK y el desglose 0→0 de las 6 colecciones. Forzando el header de "gastos" al formato viejo y volviendo a migrar, el panel muestra veredicto `ABORTADA_FORMATO` en rojo identificando la hoja `gastos` — sin tocar ningún otro dato. Sin errores de consola, cero contacto con `script.google.com`.

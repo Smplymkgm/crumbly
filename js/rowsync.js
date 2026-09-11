@@ -186,6 +186,41 @@
   // ya tiene el formato correcto, está vacía, o es de otra cosa?" —
   // `migrarAAppendOnly()` (Code.gs) la corre para las 6 colecciones ANTES
   // de escribir una sola fila; si cualquiera falla, aborta sin tocar nada.
+  // ─── U3 (auditoría Ronda 4): instrumentar la migración ─────────────────
+  // La confianza en T1 dependía de una migración manual, de un solo uso,
+  // corrida por una persona mirando Logger.log() en el editor de Apps
+  // Script — el mismo patrón de falla silenciosa que T0 se construyó para
+  // eliminar (el log del editor desaparece; nadie más lo ve). Estas dos
+  // funciones son la parte testeable: un reporte estructurado (no solo
+  // antes/después/coincide, también cuántas filas se escribieron y un
+  // veredicto único) y la detección de en qué fase quedó el catálogo.
+
+  // Junta verifyMigrationCounts (antes/después/coincide) con `agregados`
+  // (filas realmente escritas por appendNewRecords_) en un solo reporte
+  // por colección, más un veredicto (`OK`/`ABORTADA`) a nivel de toda la
+  // migración.
+  function buildMigrationReport(oldState, nuevasColecciones, agregados) {
+    var v = verifyMigrationCounts(oldState, nuevasColecciones);
+    var reporte = {};
+    COLECCIONES_APPEND.forEach(function (nombre) {
+      reporte[nombre] = Object.assign({}, v.reporte[nombre], { filasEscritas: (agregados && agregados[nombre]) || 0 });
+    });
+    return { ok: v.ok, veredicto: v.ok ? 'OK' : 'ABORTADA', reporte: reporte };
+  }
+
+  // ¿El catálogo (tal cual está en la celda, CRUDO — antes de que
+  // readState_ inyecte las colecciones hidratadas) todavía tiene
+  // transacciones embebidas? Si alguna de las 6 colecciones append-only
+  // aparece ahí como array no vacío, la migración no corrió (o corrió a
+  // medias) — 'pre'. Si ninguna aparece, el catálogo ya está reducido —
+  // 'post'.
+  function faseMigracion(catalogoCrudo) {
+    var tieneTx = COLECCIONES_APPEND.some(function (n) {
+      return Array.isArray(catalogoCrudo && catalogoCrudo[n]) && catalogoCrudo[n].length > 0;
+    });
+    return tieneTx ? 'pre' : 'post';
+  }
+
   function esHeaderVacio_(headerRow) {
     return !headerRow || headerRow.length === 0 || headerRow.every(function (c) { return c === '' || c === null || c === undefined; });
   }
@@ -208,6 +243,8 @@
     pickTombstones: pickTombstones,
     esBorradoMasivoSospechoso: esBorradoMasivoSospechoso,
     hydrateRecords: hydrateRecords,
-    validarCabeceraAppend: validarCabeceraAppend
+    validarCabeceraAppend: validarCabeceraAppend,
+    buildMigrationReport: buildMigrationReport,
+    faseMigracion: faseMigracion
   };
 });

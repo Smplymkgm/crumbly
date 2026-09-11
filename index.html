@@ -1141,6 +1141,15 @@ textarea.field{height:auto}
         <div id="reporte-integridad" style="display:flex;flex-direction:column;gap:10px"></div>
       </div>
       <div>
+        <!-- U3 (auditoría, Ronda 4): antes esto solo vivía en Logger.log()
+             del editor de Apps Script — desaparecía apenas alguien lo
+             borrara, y nadie más podía verlo. Se pide al backend al abrir
+             Ajustes (requiere sesión — no se calcula solo). -->
+        <div class="card-title" style="margin-bottom:10px">Migración a filas append-only</div>
+        <p class="item-sub" id="migracion-fase" style="margin-bottom:6px">Consultando…</p>
+        <div id="migracion-detalle" style="display:flex;flex-direction:column;gap:4px"></div>
+      </div>
+      <div>
         <div class="card-title" style="margin-bottom:10px">Correo de la marca</div>
         <div class="modal-field">
           <input type="email" id="cfg-email" class="field" placeholder="tumarca@correo.com" oninput="saveConfigEmail()">
@@ -1464,6 +1473,47 @@ function renderReporteIntegridad() {
       </div>
       ${c.lista.length ? '<ul style="margin:4px 0 0 18px;padding:0;font-size:12px;color:var(--muted)">' + c.lista.map(x => '<li>' + esc(c.aItem(x)) + '</li>').join('') + '</ul>' : ''}
     </div>`).join('');
+}
+// U3: a diferencia de renderPayloadPanel/renderReporteIntegridad (locales,
+// síncronas), esto pide al backend — solo tiene sentido con sesión activa
+// y backend configurado. Se llama al abrir Ajustes, nunca bloquea el resto
+// del panel (si falla, se muestra el motivo y ya).
+async function renderMigrationStatus() {
+  const faseEl = document.getElementById('migracion-fase');
+  const detalleEl = document.getElementById('migracion-detalle');
+  detalleEl.innerHTML = '';
+  if (!auth.isAuthenticated() || !auth.getBackendUrl()) {
+    faseEl.textContent = 'Sin sesión — no se puede consultar.';
+    return;
+  }
+  let r;
+  try {
+    r = await CrumblySync.getMigrationStatus(auth.getBackendUrl(), auth.getToken());
+  } catch (e) {
+    faseEl.textContent = 'No se pudo consultar (sin conexión con el backend).';
+    return;
+  }
+  if (!r || !r.ok) { faseEl.textContent = 'No se pudo consultar: ' + ((r && r.error) || 'error desconocido'); return; }
+
+  const faseLabel = r.fase === 'pre'
+    ? '🟡 PRE-migración — el catálogo todavía tiene transacciones embebidas en la celda.'
+    : '🟢 POST-migración — la celda solo tiene catálogo, las transacciones viven en filas.';
+  faseEl.textContent = faseLabel;
+
+  if (!r.ultima) { detalleEl.innerHTML = '<p class="item-sub">Todavía no se registró ninguna corrida de migrarAAppendOnly().</p>'; return; }
+  const u = r.ultima;
+  const colorVeredicto = u.veredicto === 'OK' ? 'var(--muted)' : 'var(--danger)';
+  let html = `<p class="item-sub">Última corrida: ${esc(new Date(u.ts).toLocaleString('es-CO'))} — <strong style="color:${colorVeredicto}">${esc(u.veredicto)}</strong></p>`;
+  if (u.reporte && !u.reporte.problemas) {
+    html += Object.entries(u.reporte).map(([col, r2]) => `
+      <div style="display:flex;justify-content:space-between;font-size:12px">
+        <span style="color:var(--text)">${esc(COLECCION_LABEL[col] || col)}</span>
+        <span style="color:${r2.coincide ? 'var(--muted)' : 'var(--danger)'}">${r2.antes} → ${r2.despues}${r2.coincide ? '' : ' ⚠'}</span>
+      </div>`).join('');
+  } else if (u.reporte && u.reporte.problemas) {
+    html += '<p class="item-sub" style="color:var(--danger)">Formato de hoja inválido: ' + esc(u.reporte.problemas.map(p => p.hoja).join(', ')) + '</p>';
+  }
+  detalleEl.innerHTML = html;
 }
 function updateSyncStatus(msg, isError) {
   const el = document.getElementById('sync-status');
@@ -3907,7 +3957,7 @@ function deleteCliente() {
 
 function openModal(id) {
   document.getElementById(id).classList.add('open');
-  if (id === 'modal-ajustes') { renderPayloadPanel(); renderReporteIntegridad(); } // T0/T2.1: se calculan al abrir, no en cada guardado
+  if (id === 'modal-ajustes') { renderPayloadPanel(); renderReporteIntegridad(); renderMigrationStatus(); } // T0/T2.1/U3: se calculan al abrir, no en cada guardado
 }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 

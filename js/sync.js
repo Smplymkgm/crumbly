@@ -135,6 +135,15 @@
     return f(withQuery(backendUrl, { action: 'pull', token: token })).then(parseResponse);
   }
 
+  // U3: estado de la migración a filas append-only — cuándo corrió por
+  // última vez, qué reportó, y si el catálogo actual está pre o post
+  // migración. Antes esto solo vivía en Logger.log() del editor de Apps
+  // Script; ahora el panel de Ajustes lo puede mostrar.
+  function getMigrationStatus(backendUrl, token, fetchImpl) {
+    var f = resolveFetch(fetchImpl);
+    return f(withQuery(backendUrl, { action: 'migrationStatus', token: token })).then(parseResponse);
+  }
+
   // U1: el cliente declara, por colección append-only, el conjunto
   // COMPLETO de ids que tiene ahora mismo. El backend usa eso para
   // detectar ausencias (borrados) y escribir lápidas. Solo se manda si el
@@ -200,6 +209,7 @@
     ping: ping,
     pull: pull,
     push: push,
+    getMigrationStatus: getMigrationStatus,
     uploadFile: uploadFile,
     getCatalogSizeInfo: getCatalogSizeInfo,
     getTransferSize: getTransferSize,

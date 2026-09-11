@@ -78,6 +78,18 @@ test('manda action=pull y devuelve el state del backend', async () => {
   assert.ok(f.calls[0].url.indexOf('action=pull') !== -1);
 });
 
+group('U3: getMigrationStatus');
+
+test('manda action=migrationStatus por GET y devuelve ultima+fase', async () => {
+  const f = mockFetch([{ body: { ok: true, ultima: { ts: '2026-09-10T00:00:00Z', veredicto: 'OK', reporte: {} }, fase: 'post' } }]);
+  const r = await Sync.getMigrationStatus('https://x.com/exec', 'tok', f);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.fase, 'post');
+  assert.strictEqual(r.ultima.veredicto, 'OK');
+  assert.ok(f.calls[0].url.indexOf('action=migrationStatus') !== -1);
+  assert.ok(!f.calls[0].opts.method || f.calls[0].opts.method === 'GET');
+});
+
 group('push');
 
 test('usa POST con Content-Type text/plain (evita el preflight de Apps Script)', async () => {

@@ -83,6 +83,9 @@ function doGet(e) {
   if (params.action === 'pull') {
     return json_({ ok: true, state: readState_() });
   }
+  if (params.action === 'migrationStatus') {
+    return json_({ ok: true, ultima: getUltimaMigracion_(), fase: RowSyncFaseMigracion_(leerCatalogoCrudo_()) });
+  }
   return json_({ ok: false, error: 'acción desconocida: ' + params.action });
 }
 
@@ -565,6 +568,72 @@ function validarFormaHojaAppend_(nombre) {
   return v;
 }
 
+// ─── U3 (auditoría Ronda 4): instrumentar la migración ─────────────────
+// La confianza en T1 dependía de una migración manual, de un solo uso,
+// corrida por una persona mirando Logger.log() en el editor de Apps
+// Script — el mismo patrón de falla silenciosa que T0 se construyó para
+// eliminar (ese log desaparece; nadie más lo ve). Cada corrida de
+// `migrarAAppendOnly()` — exitosa, abortada por conteos, o abortada por
+// formato (U2) — deja una fila permanente acá, y el panel de Ajustes la
+// puede mostrar.
+var MIGRACION_LOG_SHEET = 'migracion_log';
+
+function getMigracionLogSheet_() {
+  var sh = getOrCreateSheet_(MIGRACION_LOG_SHEET);
+  if (sh.getLastRow() === 0) sh.appendRow(['timestamp', 'veredicto', 'reporteJSON']);
+  return sh;
+}
+
+function registrarMigracionLog_(veredicto, reporteObj) {
+  var ts = new Date().toISOString();
+  getMigracionLogSheet_().appendRow([ts, veredicto, JSON.stringify(reporteObj || {})]);
+  return ts;
+}
+
+// La corrida más reciente — lo que expone `migrationStatus` al cliente.
+function getUltimaMigracion_() {
+  var sh = ss_().getSheetByName(MIGRACION_LOG_SHEET);
+  if (!sh || sh.getLastRow() < 2) return null;
+  var row = sh.getRange(sh.getLastRow(), 1, 1, 3).getValues()[0];
+  var reporte = null;
+  try { reporte = JSON.parse(row[2]); } catch (err) { /* fila corrupta — se ignora */ }
+  return { ts: row[0], veredicto: row[1], reporte: reporte };
+}
+
+// Port a mano de `buildMigrationReport` (js/rowsync.js): junta
+// antes/después/coincide con las filas realmente escritas, más un
+// veredicto único para toda la corrida.
+function buildMigrationReport_(estadoViejo, agregados) {
+  var reporte = {};
+  var ok = true;
+  APPEND_COLLECTIONS.forEach(function (nombre) {
+    var antes = (estadoViejo[nombre] || []).length;
+    var despues = readAppendCollection_(nombre).length;
+    var coincide = antes === despues;
+    if (!coincide) ok = false;
+    reporte[nombre] = { antes: antes, despues: despues, coincide: coincide, filasEscritas: (agregados && agregados[nombre]) || 0 };
+  });
+  return { ok: ok, veredicto: ok ? 'OK' : 'ABORTADA', reporte: reporte };
+}
+
+// El catálogo tal cual está en la celda, SIN la inyección de colecciones
+// hidratadas que hace `readState_` — es lo único que sirve para saber si
+// la migración ya corrió (ver `RowSyncFaseMigracion_`).
+function leerCatalogoCrudo_() {
+  var sh = ss_().getSheetByName(STATE_SHEET);
+  var raw = sh ? sh.getRange(1, 1).getValue() : null;
+  if (!raw) return {};
+  try { return JSON.parse(raw) || {}; } catch (err) { return {}; }
+}
+
+// Port a mano de `faseMigracion` (js/rowsync.js).
+function RowSyncFaseMigracion_(catalogoCrudo) {
+  var tieneTx = APPEND_COLLECTIONS.some(function (n) {
+    return Array.isArray(catalogoCrudo && catalogoCrudo[n]) && catalogoCrudo[n].length > 0;
+  });
+  return tieneTx ? 'pre' : 'post';
+}
+
 // ─── Migración (T1) — correr UNA VEZ a mano desde el editor de Apps ────
 // Script (Extensiones → Apps Script → elegir "migrarAAppendOnly" en el
 // desplegable → Ejecutar). A propósito NO está expuesta por HTTP: una
@@ -597,6 +666,7 @@ function migrarAAppendOnly() {
   });
   if (problemas.length) {
     Logger.log('MIGRACIÓN ABORTADA — formato de hoja inválido, nada se tocó: ' + JSON.stringify(problemas));
+    registrarMigracionLog_('ABORTADA_FORMATO', { problemas: problemas }); // U3: persistido, no solo en el log del editor
     return { ok: false, error: 'FORMATO_HOJA_INVALIDO', problemas: problemas };
   }
   // Formato validado — ahora sí, crear las que faltan/estén vacías con su
@@ -609,19 +679,14 @@ function migrarAAppendOnly() {
     agregados[nombre] = appendNewRecords_(nombre, estadoViejo[nombre]);
   });
 
-  var reporte = {};
-  var okTotal = true;
-  APPEND_COLLECTIONS.forEach(function (nombre) {
-    var antes = (estadoViejo[nombre] || []).length;
-    var despues = readAppendCollection_(nombre).length;
-    var coincide = antes === despues;
-    if (!coincide) okTotal = false;
-    reporte[nombre] = { antes: antes, despues: despues, coincide: coincide };
-  });
+  // U3: reporte estructurado — por colección, antes/después/coincide Y
+  // cuántas filas se escribieron realmente, más un veredicto único.
+  var resultado = buildMigrationReport_(estadoViejo, agregados);
 
-  if (!okTotal) {
-    Logger.log('MIGRACIÓN ABORTADA — los conteos no coinciden, la celda vieja NO se tocó: ' + JSON.stringify(reporte));
-    return { ok: false, reporte: reporte, agregados: agregados };
+  if (!resultado.ok) {
+    Logger.log('MIGRACIÓN ABORTADA — los conteos no coinciden, la celda vieja NO se tocó: ' + JSON.stringify(resultado.reporte));
+    registrarMigracionLog_(resultado.veredicto, resultado.reporte);
+    return { ok: false, reporte: resultado.reporte, agregados: agregados };
   }
 
   var catalogo = {};
@@ -629,8 +694,9 @@ function migrarAAppendOnly() {
     if (APPEND_COLLECTIONS.indexOf(k) === -1) catalogo[k] = estadoViejo[k];
   });
   sh.getRange(1, 1).setValue(JSON.stringify(catalogo));
-  Logger.log('MIGRACIÓN OK — celda reducida al catálogo: ' + JSON.stringify(reporte));
-  return { ok: true, reporte: reporte, agregados: agregados };
+  Logger.log('MIGRACIÓN OK — celda reducida al catálogo: ' + JSON.stringify(resultado.reporte));
+  registrarMigracionLog_(resultado.veredicto, resultado.reporte);
+  return { ok: true, reporte: resultado.reporte, agregados: agregados };
 }
 
 // ─── Espejo legible (solo para mirar/analizar a mano) ──────────
