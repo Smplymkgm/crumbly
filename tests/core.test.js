@@ -4,6 +4,7 @@
  */
 const assert = require('assert');
 const path = require('path');
+const fs = require('fs');
 const C = require(path.join(__dirname, '..', 'js', 'core.js'));
 
 let passed = 0, failed = 0;
@@ -2911,6 +2912,58 @@ test('un período sin ventas de costo inválido devuelve vacío', () => {
   const hoy = new Date().toISOString();
   s.ventas = [{ id: 'v1', fecha: hoy, total: 20000, items: [{ productoId: 'p1', qty: 1, costo: 500 }] }];
   assert.deepStrictEqual(C.getVentasCostoInvalidoEnPeriodo(s, 'mes', hoy), []);
+});
+
+console.log('\n== X1 (Ronda 6): guarda estructural — un solo lugar borra de una colección append-only ==');
+
+test('GUARDA ESTRUCTURAL: quitarRegistro_ es la ÚNICA reasignación de una colección append-only en todo core.js', () => {
+  // V0 (Ronda 5) exige que TODO camino que quita un registro de ventas/
+  // gastos/mermas/snapshots/ajustes/lotes declare el borrado
+  // (marcarBorradoPendiente, en js/sync.js). Ese lado no puede vivir en
+  // core.js (deliberadamente sin DOM/localStorage) — pero SÍ puede vivir
+  // acá la otra mitad de la guarda: que solo exista UN lugar que haga la
+  // mutación real. Si este test falla, alguien agregó una reasignación
+  // nueva de `state.<coleccion> = ...filter(...)` (inline, con el nombre
+  // de la colección escrito literal) fuera de `quitarRegistro_` — un
+  // camino de borrado que casi seguro no declaró el pendiente en
+  // index.html tampoco (ver X1 en PROGRESO.md).
+  const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'core.js'), 'utf8');
+  const patronInline = /state\.(ventas|gastos|mermas|snapshots|ajustes|lotes)\s*=\s*state\.\1\.filter/g;
+  const inline = [...src.matchAll(patronInline)];
+  assert.strictEqual(inline.length, 0, 'no debe haber NINGUNA reasignación inline de colección append-only fuera de quitarRegistro_; encontradas: ' + inline.map(m => m[0]).join(' | '));
+
+  // Y la única función que SÍ hace la mutación real (con el nombre de
+  // colección como variable, no literal) tiene que seguir existiendo y
+  // ser la que usan los cuatro caminos de borrado conocidos.
+  assert.match(src, /function quitarRegistro_\(state, coleccion, id\) \{\s*state\[coleccion\] = state\[coleccion\]\.filter/, 'quitarRegistro_ debe seguir siendo la única mutación real');
+  ['eliminarLote', 'revertVenta', 'eliminarGasto', 'eliminarMerma'].forEach(fnName => {
+    const cuerpo = src.slice(src.indexOf('function ' + fnName + '('));
+    assert.ok(/quitarRegistro_\(state, '\w+', /.test(cuerpo.slice(0, cuerpo.indexOf('\n  }'))), fnName + ' debe borrar a través de quitarRegistro_, no con su propio filter()');
+  });
+});
+
+test('quitarRegistro_ (a través de eliminarLote/revertVenta/eliminarGasto/eliminarMerma) de verdad quita el registro', () => {
+  // No es un test de quitarRegistro_ en aislado (es privada, no exportada
+  // a propósito — mismo criterio que el resto de los helpers internos de
+  // core.js) sino de que las cuatro funciones públicas que la usan siguen
+  // quitando el registro correcto, cada una de su propia colección.
+  const s = C.emptyState();
+  s.lotes.push({ id: 'l1', preparacionId: 'x', consumoReal: {}, faltanteGenerado: {}, gramosObtenidos: 0 });
+  C.eliminarLote(s, 'l1');
+  assert.strictEqual(s.lotes.length, 0);
+
+  s.gastos.push({ id: 'g1', tipo: 'operativo' });
+  C.eliminarGasto(s, 'g1');
+  assert.strictEqual(s.gastos.length, 0);
+
+  s.mermas.push({ id: 'm1', consumoReal: {}, faltanteGenerado: {} });
+  C.eliminarMerma(s, 'm1');
+  assert.strictEqual(s.mermas.length, 0);
+
+  const venta = { id: 'v1', items: [], consumoReal: { materia: {}, empaques: {}, toppings: {}, preparaciones: {} } };
+  s.ventas.push(venta);
+  C.revertVenta(s, venta);
+  assert.strictEqual(s.ventas.length, 0);
 });
 
 console.log('\n== Resumen ==');

@@ -663,6 +663,28 @@
     return lote;
   }
 
+  // ─── X1 (auditoría Ronda 6): guarda estructural de borrado append-only ──
+  //
+  // V0 (Ronda 5) hizo que el CLIENTE declare explícitamente qué borró
+  // (`CrumblySync.marcarBorradoPendiente`), para que el backend nunca más
+  // tenga que adivinar por ausencia. Eso solo funciona si TODO camino que
+  // quita un registro de una colección append-only (ventas, gastos,
+  // mermas, snapshots, ajustes, lotes) declara el borrado — un camino
+  // nuevo que se olvide de llamarlo deja el registro vivo en la hoja para
+  // siempre (vuelve en cada pull). `marcarBorradoPendiente` vive en
+  // js/sync.js (localStorage) y no puede llamarse desde acá — core.js es
+  // deliberadamente libre de DOM/localStorage, testeable en Node sin
+  // navegador — así que la guarda que SÍ puede vivir acá es esta: una
+  // única función que hace la mutación real, para que ya no existan
+  // cuatro `state.X = state.X.filter(...)` sueltos, sino uno solo. El
+  // lado de `marcarBorradoPendiente` tiene su propia guarda en
+  // index.html (`borrarConSync_`, ver ese archivo) — un test en
+  // tests/core.test.js verifica que esta sigue siendo la única
+  // reasignación de una colección append-only en todo core.js.
+  function quitarRegistro_(state, coleccion, id) {
+    state[coleccion] = state[coleccion].filter(function (r) { return r.id !== id; });
+  }
+
   // Revierte un lote: repone el consumo real (materia/empaques/toppings),
   // su faltante generado, y el stock que se le había acreditado a la
   // preparación — mismo patrón que eliminarGasto/eliminarMerma. Nunca
@@ -689,7 +711,7 @@
     ['materia', 'empaques', 'toppings'].forEach(restoreFaltante);
     var prep = getPreparacion(state, lote.preparacionId);
     if (prep) prep.cantidad = Math.max(0, (Number(prep.cantidad) || 0) - lote.gramosObtenidos);
-    state.lotes = state.lotes.filter(function (l) { return l.id !== id; });
+    quitarRegistro_(state, 'lotes', id);
   }
 
   // Promedio de rendimiento OBSERVADO (medido) de los últimos `n` lotes
@@ -1494,7 +1516,7 @@
         }
       });
     }
-    state.ventas = state.ventas.filter(function (v) { return v.id !== venta.id; });
+    quitarRegistro_(state, 'ventas', venta.id);
   }
 
   // ─── Gastos (HANDOFF §9) ────────────────────────────────────
@@ -1624,7 +1646,7 @@
         if (gasto.faltanteAntes !== undefined) insumo.faltante = gasto.faltanteAntes; // A2
       }
     }
-    state.gastos = state.gastos.filter(function (g) { return g.id !== id; });
+    quitarRegistro_(state, 'gastos', id);
   }
 
   // I3: misma cota superior que getVentasByPeriod, mismo motivo.
@@ -1771,7 +1793,7 @@
     restoreFaltante('empaques');
     restoreFaltante('toppings');
     restoreFaltante('preparaciones');
-    state.mermas = state.mermas.filter(function (m) { return m.id !== id; });
+    quitarRegistro_(state, 'mermas', id);
   }
 
   // I3: misma cota superior que getVentasByPeriod, mismo motivo.

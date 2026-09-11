@@ -2443,11 +2443,27 @@ function producirLoteUI() {
   renderPreparaciones();
   showToast('Lote producido ✓');
 }
+// ─── X1 (auditoría Ronda 6): ÚNICA función por la que puede pasar
+// cualquier borrado de un registro en una colección append-only (ventas,
+// gastos, mermas, snapshots, ajustes, lotes). V0 (Ronda 5) exige que el
+// cliente declare EXPLÍCITAMENTE qué borró (`marcarBorradoPendiente`) —
+// un camino de borrado que se olvide de declararlo deja el registro vivo
+// en la hoja para siempre (vuelve en cada pull). Antes cada flujo de
+// borrado (eliminarVenta/eliminarGasto/eliminarMerma/eliminarLoteUI)
+// llamaba a `marcarBorradoPendiente` por su cuenta, un paso que un
+// camino nuevo podía olvidar — exactamente lo que pasó con el modal de
+// V3.4 hasta que esta ronda lo auditó (ver PROGRESO.md § X1, inventario
+// completo). Ahora es estructuralmente imposible: `saveState()` después
+// de un borrado append-only SOLO pasa por acá, y acá la declaración y el
+// guardado están pegados — no hay forma de tener uno sin el otro.
+function borrarConSync_(coleccion, id, aplicarEnCore) {
+  aplicarEnCore();
+  CrumblySync.marcarBorradoPendiente(coleccion, id);
+  saveState();
+}
 function eliminarLoteUI(id) {
   if (!confirm('¿Eliminar este lote? Se revierte el consumo de materia prima y el stock que le acreditó a la preparación.')) return;
-  CrumblyCore.eliminarLote(state, id);
-  CrumblySync.marcarBorradoPendiente('lotes', id); // V0: se declara EXPLÍCITAMENTE, nunca por ausencia
-  saveState();
+  borrarConSync_('lotes', id, () => CrumblyCore.eliminarLote(state, id));
   renderLoteRendimiento();
   renderLoteHistorial();
   renderPreparaciones();
@@ -3016,9 +3032,7 @@ function eliminarVenta(id) {
     ? '¿Eliminar esta venta? Es una venta antigua sin registro exacto de consumo — se devolverá el inventario usando la receta ACTUAL de cada producto, aproximado si la receta cambió desde entonces.'
     : '¿Eliminar esta venta? Se devolverá exactamente el stock que consumió.';
   if (!confirm(aviso)) return;
-  CrumblyCore.revertVenta(state, venta);
-  CrumblySync.marcarBorradoPendiente('ventas', id); // V0: se declara EXPLÍCITAMENTE, nunca por ausencia
-  saveState();
+  borrarConSync_('ventas', id, () => CrumblyCore.revertVenta(state, venta));
   renderCaja();
   renderInventario();
   renderReportes();
@@ -3900,9 +3914,7 @@ function eliminarGasto(id) {
     ? '¿Eliminar este gasto? El insumo volverá exactamente al costo y cantidad que tenía antes de esta compra.'
     : '¿Eliminar este gasto?';
   if (!confirm(aviso)) return;
-  CrumblyCore.eliminarGasto(state, id);
-  CrumblySync.marcarBorradoPendiente('gastos', id); // V0: se declara EXPLÍCITAMENTE, nunca por ausencia
-  saveState();
+  borrarConSync_('gastos', id, () => CrumblyCore.eliminarGasto(state, id));
   renderCaja();
   renderInventario();
   renderReportes();
@@ -4011,9 +4023,7 @@ function saveMerma() {
 }
 function eliminarMerma(id) {
   if (!confirm('¿Eliminar esta merma? El inventario volverá exactamente a la cantidad que tenía antes de registrarla.')) return;
-  CrumblyCore.eliminarMerma(state, id);
-  CrumblySync.marcarBorradoPendiente('mermas', id); // V0: se declara EXPLÍCITAMENTE, nunca por ausencia
-  saveState();
+  borrarConSync_('mermas', id, () => CrumblyCore.eliminarMerma(state, id));
   renderMermas();
   renderInventario();
   renderReportes();

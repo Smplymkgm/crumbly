@@ -6,6 +6,7 @@
  */
 const assert = require('assert');
 const path = require('path');
+const fs = require('fs');
 const Sync = require(path.join(__dirname, '..', 'js', 'sync.js'));
 
 let passed = 0, failed = 0;
@@ -415,6 +416,42 @@ test('getSyncSizeHistory: sin localStorage (Node) devuelve un array vacío, nunc
 // El login (Google y correo+contraseña) se movió por completo a
 // js/auth.js — ver tests/auth.test.js. sync.js ya no sabe nada de cómo
 // se consigue un token, solo lo transporta (ping/pull/push/uploadFile).
+
+group('X1 (Ronda 6): guarda estructural — un solo lugar declara un borrado pendiente en index.html');
+
+test('GUARDA ESTRUCTURAL: marcarBorradoPendiente se llama UNA sola vez en index.html (dentro de borrarConSync_)', () => {
+  // La otra mitad de la guarda de X1 (ver la mitad de core.js en
+  // tests/core.test.js): si esto encuentra más de un lugar, alguien
+  // volvió a declarar un borrado pendiente "a mano" en vez de pasar por
+  // `borrarConSync_` — exactamente el patrón que dejaba un camino de
+  // borrado nuevo (como el modal de V3.4) sin cablear.
+  const src = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const llamadas = [...src.matchAll(/marcarBorradoPendiente\(/g)];
+  assert.strictEqual(llamadas.length, 1, 'marcarBorradoPendiente debe llamarse EXACTAMENTE una vez, dentro de borrarConSync_; encontradas ' + llamadas.length);
+  assert.match(src, /function borrarConSync_\(coleccion, id, aplicarEnCore\) \{[\s\S]*?CrumblySync\.marcarBorradoPendiente\(coleccion, id\)/, 'esa única llamada debe estar dentro de borrarConSync_');
+});
+
+test('INVENTARIO: los cuatro caminos de borrado append-only conocidos pasan por borrarConSync_', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  // { función UI, colección declarada } — inventario completo de X1
+  // (ver PROGRESO.md § X1 para el detalle narrativo de cada uno).
+  const caminos = [
+    ['eliminarVenta', 'ventas'],
+    ['eliminarGasto', 'gastos'],
+    ['eliminarMerma', 'mermas'],
+    ['eliminarLoteUI', 'lotes']
+    // snapshots y ajustes: sin función de borrado individual en la UI hoy
+    // (los snapshots se generan al cerrar un conteo, los ajustes al
+    // cerrarlo también — ninguno se borra uno por uno). El día que exista
+    // una, tiene que pasar por borrarConSync_ igual que estas cuatro.
+  ];
+  caminos.forEach(([fnName, coleccion]) => {
+    const inicio = src.indexOf('function ' + fnName + '(');
+    assert.ok(inicio !== -1, fnName + ' debe existir en index.html');
+    const cuerpo = src.slice(inicio, src.indexOf('\n}', inicio));
+    assert.ok(cuerpo.includes("borrarConSync_('" + coleccion + "'"), fnName + ' debe borrar a través de borrarConSync_(\'' + coleccion + '\', ...), no a mano');
+  });
+});
 
 (async () => {
   for (const [name, fn] of tests) {

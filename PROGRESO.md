@@ -21,7 +21,7 @@ Después: X1 (un camino de borrado que puede haber quedado sin cablear), X2 (sin
 | Tarea | Estado |
 |---|---|
 | X0 · La alarma de V1 bloquea los push en cada carga de página | ✅ HECHA |
-| X1 · El borrado de V3.4 puede no estar cableado | pendiente |
+| X1 · El borrado de V3.4 puede no estar cableado | ✅ HECHA |
 | X2 · Sincronización incremental | pendiente |
 | W1 · Escala tipográfica | pendiente |
 | W2 · Header con respiro | pendiente |
@@ -64,8 +64,35 @@ A partir de la venta 28, cada carga de página abría una ventana en la que `pus
 4. El panel de Ajustes mostró "🟢 Fase confirmada: POST-migración" tras el login; al borrar la fase persistida a mano y volver a renderizar, mostró "⚪ Fase SIN CONFIRMAR — advierte, nunca bloquea" con el color de advertencia correcto.
 - Sin errores de consola en ningún paso.
 
+### X1 · El borrado de V3.4 puede no estar cableado — HECHA
+
+**Inventario completo de caminos de borrado append-only** (ventas, gastos, mermas, snapshots, ajustes, lotes) — se recorrió `index.html` y `js/core.js` buscando toda reasignación de esas seis colecciones (`grep` de `state.<coleccion> =`, `.filter(`, `.splice(`):
+
+| Colección | Camino(s) de borrado en la UI | ¿Cableado con `marcarBorradoPendiente`? |
+|---|---|---|
+| `ventas` | `eliminarVenta(id)` (botón en Caja, **y el mismo botón reusado en el modal de V3.4** — `renderVentasCostoInvalido_`) | Sí, indirectamente — las dos entradas llaman a la MISMA función |
+| `gastos` | `eliminarGasto(id)` (botón en Caja) | Sí |
+| `mermas` | `eliminarMerma(id)` (botón en Inventario → Mermas) | Sí |
+| `lotes` | `eliminarLoteUI(id)` (botón en Producción de lotes) | Sí |
+| `snapshots` | **Ninguno** — un snapshot se crea al cerrar un conteo físico (T0.1/B2), nunca se borra individualmente desde la UI | N/A — no hay nada que cablear hoy |
+| `ajustes` | **Ninguno** — un ajuste se crea automáticamente al cerrar un conteo con diferencia, nunca se borra individualmente | N/A — no hay nada que cablear hoy |
+
+**El resultado del inventario, con el repo tal como quedó al cierre de la Ronda 5: el modal de V3.4 NO era en realidad un camino sin cablear** — su botón de borrar llama a `eliminarVenta(v.id)`, la misma función que ya declaraba el pendiente desde V0. La preocupación del encargo era válida como RIESGO (era perfectamente posible que se hubiera escrito con una función nueva) pero, verificado el código real, no era un bug presente. Aun así, la guarda estructural de abajo se construyó igual — el riesgo de que el PRÓXIMO camino de borrado sí lo olvide seguía intacto y es lo que el encargo pide cerrar de raíz.
+
+**La guarda estructural — dos mitades, una en cada capa:**
+
+- **`js/core.js` no puede llamar a `marcarBorradoPendiente`** (vive en `js/sync.js`, usa `localStorage`) — core.js es deliberadamente libre de DOM/localStorage, es la regla no negociable de "lógica de negocio testeable sin DOM" que sostiene toda esta auditoría. Así que la mitad de la guarda que SÍ puede vivir en core.js es esta: se agregó `quitarRegistro_(state, coleccion, id)`, la ÚNICA función que reasigna una colección append-only en todo el archivo. `eliminarLote`, `revertVenta` (la usa `eliminarVenta`), `eliminarGasto` y `eliminarMerma` —las cuatro funciones que antes tenían su propio `state.X = state.X.filter(...)` — ahora llaman a esta única función en vez de reimplementar el filtro cada una.
+  - **Test** (`tests/core.test.js`, grupo "X1"): un test lee el código FUENTE de `core.js` y falla si aparece cualquier reasignación inline de una colección append-only fuera de `quitarRegistro_` — si alguien agrega un quinto camino de borrado con su propio `.filter()` suelto, este test lo atrapa antes que cualquier otra cosa. Un segundo test confirma que las cuatro funciones públicas siguen quitando el registro correcto de su colección.
+- **`index.html` no puede declarar un borrado sin pasar por un único punto**: se agregó `borrarConSync_(coleccion, id, aplicarEnCore)` — la única función que llama a `CrumblySync.marcarBorradoPendiente`. Aplica la mutación en `state` (delegando al `CrumblyCore.eliminarX`/`revertVenta` correspondiente), declara el pendiente, y guarda — las tres cosas pegadas, en ese orden, sin forma de tener una sin las otras. `eliminarVenta`, `eliminarGasto`, `eliminarMerma` y `eliminarLoteUI` se reescribieron para pasar por acá en vez de llamar a `CrumblySync.marcarBorradoPendiente` cada una por su cuenta (que es exactamente el patrón que un camino nuevo puede olvidar).
+  - **Test** (`tests/sync.test.js`, grupo "X1"): un test lee el código fuente de `index.html` y falla si `marcarBorradoPendiente(` aparece más de una vez, o si esa única aparición no está dentro de `borrarConSync_`. Un segundo test (el inventario de la tabla de arriba, convertido en test) confirma que las cuatro funciones de borrado conocidas llaman a `borrarConSync_` con la colección correcta — si `eliminarVenta` alguna vez deja de llamar a `borrarConSync_('ventas', ...)`, este test lo atrapa.
+- **Por qué esto es "estructural" y no solo "recordar llamar a la función correcta"**: antes, un desarrollador que agregara un sexto camino de borrado (por ejemplo, borrar un snapshot) tenía que ACORDARSE de llamar a `marcarBorradoPendiente` — un paso fácil de omitir, que es justo lo que este encargo sospechaba que había pasado. Ahora, agregar ese camino sin pasar por `borrarConSync_`/`quitarRegistro_` hace fallar un test inmediatamente, en la próxima corrida de la suite — el olvido se vuelve imposible de que pase desapercibido, aunque técnicamente todavía sea posible escribir el código incorrecto (no hay una barrera de lenguaje/tipo que lo impida, solo un test que lo detecta rápido y barato).
+
+**Suite completa: 348 tests** (auth 10, core 258, rowsync 39, sync 41) — medido corriendo los cuatro archivos.
+
+**Verificado en el navegador con el ciclo completo borrar → push → pull → reload, en las cuatro colecciones con función de borrado real** (mock backend local en `localhost:8802`, cero contacto con `script.google.com`): se registró una venta, un gasto, una merma y un lote reales (`CrumblyCore.applyVenta`/`registrarGasto`/`registrarMerma`/`producirPreparacion`), se sincronizaron, y se borraron los cuatro con sus botones reales (`eliminarVenta`/`eliminarGasto`/`eliminarMerma`/`eliminarLoteUI`, `confirm()` forzado a aceptar) — los cuatro quedaron declarados en `getBorradosPendientes()` automáticamente. Tras el push, el backend confirmó las cuatro colecciones en 0 registros vivos. Se hizo un **reload completo de la página** y un pull fresco contra el mismo backend — las cuatro colecciones se mantuvieron en 0, nada resucitó. Sin errores de consola.
+
 ---
 
 ## Veredicto parcial (se completa al cerrar el run)
 
-X0 — el bloqueador de despliegue que señaló esta ronda — está cerrado y verificado. X1 sigue pendiente; hasta que cierre, T1 sigue sin poder desplegarse (regla de esta ronda: X0 y X1 son los dos criterios de bloqueo). El veredicto final se escribe en la sección de cierre.
+X0 y X1 — los dos bloqueadores de despliegue de esta ronda — están cerrados y verificados. Quedan X2 (sincronización incremental, no bloqueadora) y el bloque W (interfaz, tampoco bloqueador) — el veredicto final, con el estado de esas tareas, se escribe en la sección de cierre.
