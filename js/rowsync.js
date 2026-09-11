@@ -105,11 +105,10 @@
   // `pickNewRecords` solo agrega, nunca quita. Así que borrar un gasto en
   // memoria y sincronizar dejaba la fila en la hoja, y el siguiente pull
   // la traía de vuelta. El arreglo mínimo (sin UI de anulación): cuando un
-  // id existe en la hoja pero NO en el conjunto que el cliente declara
-  // tener, se escribe una fila de LÁPIDA — mismo id, timestamp, usuario.
-  // Fila nueva, nunca se muta ni se borra la original (el punto de
-  // append-only es que nada se pierde). La hidratación excluye los ids
-  // con lápida.
+  // id existe en la hoja pero ya no en el cliente, se escribe una fila de
+  // LÁPIDA — mismo id, timestamp, usuario. Fila nueva, nunca se muta ni se
+  // borra la original (el punto de append-only es que nada se pierde). La
+  // hidratación excluye los ids con lápida.
 
   function isTombstone(rec) {
     return !!(rec && rec._tombstone === true);
@@ -119,35 +118,37 @@
     return { id: id, _tombstone: true, fecha: fecha || new Date().toISOString(), usuario: usuario || '' };
   }
 
-  // De los ids que están como registro VIVO en la hoja, cuáles ya no
-  // aparecen en `knownIds` (el conjunto que el cliente declara tener
-  // completo) y todavía no tienen lápida.
+  // ─── V0 (auditoría Ronda 5): la lápida no puede decidirse por ausencia ──
   //
-  // GUARDA CONTRA FALSO POSITIVO: si `knownIds` no es un array, o es un
-  // array vacío, NO se lapida nada. Un cliente que manda un estado
-  // parcial/recortado/vacío (sesión nueva, error de carga, pull fallido
-  // antes del push) no debe producir una lápida masiva del historial. Un
-  // registro que sobrevive de más se corrige después; un historial
-  // borrado en masa por una lápida espuria, no. (La guarda contra el
-  // borrado masivo NO-vacío vive aparte, en `esBorradoMasivoSospechoso`.)
-  function pickTombstones(sheetLiveIds, knownIds, tombstonedIds) {
-    if (!Array.isArray(knownIds) || knownIds.length === 0) return [];
-    var known = {};
-    knownIds.forEach(function (id) { known[id] = true; });
+  // U1 lapidaba por AUSENCIA: "este id está en la hoja pero el cliente no
+  // lo declaró en `knownIds` → lo borré". Eso confunde "no lo tengo
+  // todavía" (un segundo dispositivo con `lastSync` viejo, que sincroniza
+  // cualquier cosa sin haber hecho pull primero) con "lo borré de verdad".
+  // Ningún umbral arregla esto — con dos dispositivos reales, tres ventas
+  // nuevas del celular bastan para que la tablet (que nunca las vio) las
+  // lapide en su siguiente push. Las dos guardas de U1 (`knownIds` no
+  // vacío, umbral de borrado masivo) existían para compensar esa señal
+  // mal elegida; con la señal correcta no hacen falta y se eliminaron —
+  // dejarlas habría mantenido dos caminos de borrado vivos a la vez.
+  //
+  // La señal correcta: el cliente declara una lista EXPLÍCITA de ids que
+  // borró de verdad (ver `js/sync.js`, `marcarBorradoPendiente` — vive en
+  // localStorage por dispositivo, nunca en el estado sincronizado). El
+  // backend lapida exactamente esos ids y nada más — la ausencia jamás se
+  // interpreta. Efecto secundario deseado: una colección se puede vaciar
+  // por completo (6 ids explícitos de 6 son 6 ids, no una sospecha).
+  function pickExplicitTombstones(sheetLiveIds, idsABorrar, tombstonedIds) {
+    if (!Array.isArray(idsABorrar) || idsABorrar.length === 0) return [];
+    var live = {};
+    (sheetLiveIds || []).forEach(function (id) { live[id] = true; });
     var tomb = {};
     (tombstonedIds || []).forEach(function (id) { tomb[id] = true; });
-    return (sheetLiveIds || []).filter(function (id) {
-      return id !== undefined && id !== null && !known[id] && !tomb[id];
+    var seen = {};
+    return idsABorrar.filter(function (id) {
+      if (id === undefined || id === null || seen[id]) return false;
+      seen[id] = true;
+      return !!live[id] && !tomb[id]; // ya lapidado o nunca llegó a existir en la hoja → nada que hacer, idempotente
     });
-  }
-
-  // Segunda guarda: aunque el cliente declare un conjunto completo no
-  // vacío, si un solo push quisiera lapidar MUCHOS registros a la vez,
-  // es casi seguro un error (no seis borrados manuales). Ante la duda, no
-  // se escribe ninguna lápida — se corrige en el siguiente sync real.
-  // Umbral: más de 10 y más de la mitad de los registros vivos.
-  function esBorradoMasivoSospechoso(candidatos, totalVivos) {
-    return candidatos > 10 && candidatos > totalVivos * 0.5;
   }
 
   // De todas las filas parseadas de una hoja (vivas + lápidas), devuelve
@@ -330,8 +331,7 @@
     verifyMigrationCounts: verifyMigrationCounts,
     isTombstone: isTombstone,
     makeTombstone: makeTombstone,
-    pickTombstones: pickTombstones,
-    esBorradoMasivoSospechoso: esBorradoMasivoSospechoso,
+    pickExplicitTombstones: pickExplicitTombstones,
     hydrateRecords: hydrateRecords,
     validarCabeceraAppend: validarCabeceraAppend,
     buildMigrationReport: buildMigrationReport,

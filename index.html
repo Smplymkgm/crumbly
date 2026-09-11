@@ -2340,6 +2340,7 @@ function producirLoteUI() {
 function eliminarLoteUI(id) {
   if (!confirm('¿Eliminar este lote? Se revierte el consumo de materia prima y el stock que le acreditó a la preparación.')) return;
   CrumblyCore.eliminarLote(state, id);
+  CrumblySync.marcarBorradoPendiente('lotes', id); // V0: se declara EXPLÍCITAMENTE, nunca por ausencia
   saveState();
   renderLoteRendimiento();
   renderLoteHistorial();
@@ -2861,6 +2862,7 @@ function eliminarVenta(id) {
     : '¿Eliminar esta venta? Se devolverá exactamente el stock que consumió.';
   if (!confirm(aviso)) return;
   CrumblyCore.revertVenta(state, venta);
+  CrumblySync.marcarBorradoPendiente('ventas', id); // V0: se declara EXPLÍCITAMENTE, nunca por ausencia
   saveState();
   renderCaja();
   renderInventario();
@@ -3708,6 +3710,7 @@ function eliminarGasto(id) {
     : '¿Eliminar este gasto?';
   if (!confirm(aviso)) return;
   CrumblyCore.eliminarGasto(state, id);
+  CrumblySync.marcarBorradoPendiente('gastos', id); // V0: se declara EXPLÍCITAMENTE, nunca por ausencia
   saveState();
   renderCaja();
   renderInventario();
@@ -3818,6 +3821,7 @@ function saveMerma() {
 function eliminarMerma(id) {
   if (!confirm('¿Eliminar esta merma? El inventario volverá exactamente a la cantidad que tenía antes de registrarla.')) return;
   CrumblyCore.eliminarMerma(state, id);
+  CrumblySync.marcarBorradoPendiente('mermas', id); // V0: se declara EXPLÍCITAMENTE, nunca por ausencia
   saveState();
   renderMermas();
   renderInventario();

@@ -144,21 +144,58 @@
     return f(withQuery(backendUrl, { action: 'migrationStatus', token: token })).then(parseResponse);
   }
 
-  // U1: el cliente declara, por colección append-only, el conjunto
-  // COMPLETO de ids que tiene ahora mismo. El backend usa eso para
-  // detectar ausencias (borrados) y escribir lápidas. Solo se manda si el
-  // estado local es una copia real ya sincronizada (`config.lastSync`) —
-  // un estado fresco/vacío (sesión nueva, error de carga) NO declara
-  // nada, así que el backend no puede confundir "no tengo nada" con
-  // "borré todo".
-  function knownRecordIdsDe_(state) {
-    if (!state || !state.config || !state.config.lastSync) return null;
-    var append = (RowSync && RowSync.COLECCIONES_APPEND) || [];
-    var out = {};
-    append.forEach(function (nombre) {
-      out[nombre] = (state[nombre] || []).map(function (r) { return r && r.id; }).filter(function (id) { return id != null; });
+  // ─── V0 (auditoría Ronda 5): borrados pendientes, por dispositivo ──────
+  //
+  // U1 declaraba el conjunto COMPLETO de ids vivos y dejaba que el backend
+  // lapidara por AUSENCIA — con dos dispositivos reales, uno con
+  // `lastSync` viejo sincroniza sin haber visto todavía lo que el otro
+  // acaba de registrar, y esa ausencia se leía como "lo borré". Ahora el
+  // cliente declara exactamente lo que SÍ borró, nunca lo que le falta.
+  //
+  // `crumbly-borrados-pendientes` en localStorage — nunca en `state`, así
+  // que nunca viaja por sync ni cuenta contra el tope de la celda. Mismo
+  // espíritu que `crumbly-catalog-base`/`conteoEnProgreso`: metadata de
+  // ESTE dispositivo. Forma: { coleccion: [id, id, ...] }.
+  var BORRADOS_PENDIENTES_KEY = 'crumbly-borrados-pendientes';
+
+  function getBorradosPendientes() {
+    try {
+      var raw = localStorage.getItem(BORRADOS_PENDIENTES_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch (e) { return {}; }
+  }
+
+  function setBorradosPendientes_(obj) {
+    try { localStorage.setItem(BORRADOS_PENDIENTES_KEY, JSON.stringify(obj)); } catch (e) { /* no crítico */ }
+  }
+
+  // Llamado desde cada flujo de borrado real (eliminarVenta, eliminarGasto,
+  // eliminarMerma, eliminarLote, borrado de ajustes) — antes de que el
+  // siguiente push mande la lista. Idempotente: agregar el mismo id dos
+  // veces no lo duplica.
+  function marcarBorradoPendiente(coleccion, id) {
+    if (id === undefined || id === null) return;
+    var p = getBorradosPendientes();
+    if (!p[coleccion]) p[coleccion] = [];
+    if (p[coleccion].indexOf(id) === -1) p[coleccion].push(id);
+    setBorradosPendientes_(p);
+  }
+
+  // Quita de lo pendiente exactamente los ids que ESTE push mandó (no
+  // "todo lo pendiente ahora" — algo nuevo pudo agregarse mientras la
+  // petición estaba en vuelo). Solo se llama tras un push con `ok:true`;
+  // si el push falla, lo pendiente queda intacto y se reintenta solo en
+  // el siguiente push (mismo patrón de reintento que ya usa saveState()).
+  function limpiarBorradosPendientes_(enviados) {
+    var p = getBorradosPendientes();
+    Object.keys(enviados || {}).forEach(function (coleccion) {
+      if (!p[coleccion] || !enviados[coleccion].length) return;
+      var idsEnviados = {};
+      enviados[coleccion].forEach(function (id) { idsEnviados[id] = true; });
+      p[coleccion] = p[coleccion].filter(function (id) { return !idsEnviados[id]; });
+      if (!p[coleccion].length) delete p[coleccion];
     });
-    return out;
+    setBorradosPendientes_(p);
   }
 
   function push(backendUrl, token, state, fetchImpl, usuario, baseCatalogVersion) {
@@ -175,8 +212,13 @@
     }
     var f = resolveFetch(fetchImpl);
     var payload = { token: token, action: 'push', state: state };
-    var knownIds = knownRecordIdsDe_(state);
-    if (knownIds) payload.knownRecordIds = knownIds; // U1
+    // V0: lista EXPLÍCITA de lo que este dispositivo borró de verdad —
+    // nunca "lo que tengo" (eso es lo que U1 mandaba y el backend leía
+    // por ausencia). Se captura ahora mismo, no dentro del .then — si
+    // algo nuevo se borra mientras la petición está en vuelo, ese id
+    // sigue pendiente para el próximo push.
+    var idsABorrar = getBorradosPendientes();
+    if (idsABorrar && Object.keys(idsABorrar).length) payload.idsABorrar = idsABorrar;
     if (usuario) payload.usuario = usuario;
     // U4: contra qué versión de catálogo edité — si el backend avanzó
     // desde entonces, devuelve CATALOG_CONFLICT en vez de escribir
@@ -188,7 +230,10 @@
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: body
     }).then(parseResponse).then(function (res) {
-      if (res.ok) recordSyncSize_(sizeInfo.tam);
+      if (res.ok) {
+        recordSyncSize_(sizeInfo.tam);
+        limpiarBorradosPendientes_(idsABorrar); // solo lo que el backend confirmó — un push fallido deja todo pendiente
+      }
       res.sizeInfo = sizeInfo;
       return res;
     });
@@ -218,6 +263,8 @@
     getCatalogSizeInfo: getCatalogSizeInfo,
     getTransferSize: getTransferSize,
     getStateBreakdown: getStateBreakdown,
-    getSyncSizeHistory: getSyncSizeHistory
+    getSyncSizeHistory: getSyncSizeHistory,
+    marcarBorradoPendiente: marcarBorradoPendiente,
+    getBorradosPendientes: getBorradosPendientes
   };
 });

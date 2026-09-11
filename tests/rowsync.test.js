@@ -158,33 +158,44 @@ test('CRITERIO DE ESCALA: 500 ventas + 100 gastos + 10 snapshots de conteo — e
   assert.strictEqual(catalogo.snapshots, undefined);
 });
 
-console.log('\n== U1 (Ronda 4): filas de lápida (los borrados persisten) ==');
+console.log('\n== U1/V0 (Rondas 4-5): filas de lápida (los borrados persisten, EXPLÍCITAMENTE) ==');
 
-test('pickTombstones: un id vivo que ya no está en el conjunto declarado → se lapida', () => {
-  const r = RowSync.pickTombstones(['g1', 'g2', 'g3'], ['g1', 'g3'], []);
+test('pickExplicitTombstones: un id declarado EXPLÍCITAMENTE como borrado, y vivo en la hoja → se lapida', () => {
+  const r = RowSync.pickExplicitTombstones(['g1', 'g2', 'g3'], ['g2'], []);
   assert.deepStrictEqual(r, ['g2']);
 });
 
-test('CRITERIO: doble push con el registro ya ausente → NO se lapida dos veces (ya tiene lápida)', () => {
-  const r = RowSync.pickTombstones(['g1', 'g2', 'g3'], ['g1', 'g3'], ['g2']);
+test('CRITERIO: doble push con la MISMA lista → NO se lapida dos veces (ya tiene lápida)', () => {
+  const r = RowSync.pickExplicitTombstones(['g1', 'g3'], ['g2'], ['g2']);
   assert.deepStrictEqual(r, [], 'g2 ya está lapidado — no vuelve a aparecer como candidato');
 });
 
-test('CRITERIO: guarda de falso positivo — conjunto declarado VACÍO no lapida nada', () => {
-  assert.deepStrictEqual(RowSync.pickTombstones(['g1', 'g2', 'g3'], [], []), []);
+test('pickExplicitTombstones: lista vacía o sin declarar → no lapida nada', () => {
+  assert.deepStrictEqual(RowSync.pickExplicitTombstones(['g1', 'g2', 'g3'], [], []), []);
+  assert.deepStrictEqual(RowSync.pickExplicitTombstones(['g1', 'g2'], undefined, []), []);
+  assert.deepStrictEqual(RowSync.pickExplicitTombstones(['g1', 'g2'], null, []), []);
+  assert.deepStrictEqual(RowSync.pickExplicitTombstones(['g1', 'g2'], 'g1', []), []);
 });
 
-test('guarda de falso positivo — sin conjunto declarado (undefined/no-array) no lapida nada', () => {
-  assert.deepStrictEqual(RowSync.pickTombstones(['g1', 'g2'], undefined, []), []);
-  assert.deepStrictEqual(RowSync.pickTombstones(['g1', 'g2'], null, []), []);
-  assert.deepStrictEqual(RowSync.pickTombstones(['g1', 'g2'], 'g1', []), []);
+test('pickExplicitTombstones: un id declarado que NUNCA existió en la hoja → no hace nada (no inventa una lápida huérfana)', () => {
+  assert.deepStrictEqual(RowSync.pickExplicitTombstones(['g1', 'g2'], ['g99'], []), []);
 });
 
-test('esBorradoMasivoSospechoso: seis borrados de ~50 vivos NO es sospechoso; 40 de 50 SÍ', () => {
-  assert.strictEqual(RowSync.esBorradoMasivoSospechoso(6, 50), false);
-  assert.strictEqual(RowSync.esBorradoMasivoSospechoso(40, 50), true);
-  assert.strictEqual(RowSync.esBorradoMasivoSospechoso(10, 12), false, 'hasta 10 nunca es sospechoso');
-  assert.strictEqual(RowSync.esBorradoMasivoSospechoso(11, 15), true);
+test('CRITERIO (V0): dos dispositivos — la tablet, con lastSync viejo, sincroniza un gasto sin haber visto las 3 ventas nuevas del celular → las 3 ventas NO se lapidan (nunca se declararon como borradas)', () => {
+  // El celular registró v1, v2, v3 y ya sincronizó — están vivas en la hoja.
+  const liveIds = ['v1', 'v2', 'v3'];
+  // La tablet nunca las vio (lastSync viejo, sin pull) — su push NO las
+  // declara como borradas, porque nunca las borró. idsABorrar solo trae
+  // lo que la tablet sí borró (nada, en este escenario).
+  const idsABorrarDeLaTablet = { ventas: [] };
+  const tomb = RowSync.pickExplicitTombstones(liveIds, idsABorrarDeLaTablet.ventas, []);
+  assert.deepStrictEqual(tomb, [], 'ninguna de las 3 ventas se lapida — la ausencia en la declaración de la tablet nunca se interpretó como borrado');
+});
+
+test('CRITERIO: borrar 3 de 3 registros deja la colección vacía (ya no hay guarda de "borrado masivo")', () => {
+  const liveIds = ['v1', 'v2', 'v3'];
+  const tomb = RowSync.pickExplicitTombstones(liveIds, ['v1', 'v2', 'v3'], []);
+  assert.deepStrictEqual(tomb.sort(), ['v1', 'v2', 'v3']);
 });
 
 test('hydrateRecords: excluye las lápidas y los ids lapidados, conserva el resto', () => {
@@ -203,21 +214,23 @@ test('hydrateRecords: deduplica por id (append raro / reintento) quedándose con
   assert.deepStrictEqual(RowSync.hydrateRecords(rows).map(r => r.id), ['v1', 'v2']);
 });
 
-test('CRITERIO (ciclo completo): registrar 3, borrar el del medio, re-hidratar → quedan 2 y el borrado no vuelve', () => {
-  // Simula la hoja: 3 filas + el push que declara [g1, g3]
+test('CRITERIO (ciclo completo): registrar 3, borrar el del medio EXPLÍCITAMENTE, re-hidratar → quedan 2 y el borrado no vuelve', () => {
+  // Simula la hoja: 3 filas + el push que declara idsABorrar=[g2]
   let sheetRecords = [{ id: 'g1', m: 1 }, { id: 'g2', m: 2 }, { id: 'g3', m: 3 }];
   const liveIds = sheetRecords.map(r => r.id);
-  const tomb = RowSync.pickTombstones(liveIds, ['g1', 'g3'], []);
+  const tomb = RowSync.pickExplicitTombstones(liveIds, ['g2'], []);
   assert.deepStrictEqual(tomb, ['g2']);
   // el backend agrega la fila de lápida
   tomb.forEach(id => sheetRecords.push(RowSync.makeTombstone(id, '2026-09-10T00:00:00Z', 'a@b.co')));
   // el siguiente pull hidrata
   const trasPull = RowSync.hydrateRecords(sheetRecords);
   assert.deepStrictEqual(trasPull.map(r => r.id), ['g1', 'g3']);
-  // y un segundo push idéntico no agrega otra lápida
+  // y un segundo push con la MISMA lista pendiente (reintento tras una
+  // falla, o el cliente todavía no confirmó la limpieza local) no agrega
+  // otra lápida
   const liveIds2 = sheetRecords.filter(r => !RowSync.isTombstone(r)).map(r => r.id);
   const tombstonedIds = sheetRecords.filter(r => RowSync.isTombstone(r)).map(r => r.id);
-  assert.deepStrictEqual(RowSync.pickTombstones(liveIds2, ['g1', 'g3'], tombstonedIds), []);
+  assert.deepStrictEqual(RowSync.pickExplicitTombstones(liveIds2, ['g2'], tombstonedIds), []);
 });
 
 console.log('\n== U2 (Ronda 4): validar la forma de la hoja antes de migrar ==');

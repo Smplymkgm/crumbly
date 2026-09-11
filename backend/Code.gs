@@ -125,13 +125,13 @@ function doPost(e) {
       return json_({ ok: false, error: 'ocupado, otro dispositivo está sincronizando — reintenta en unos segundos' });
     }
     try {
-      // U1: knownRecordIds (conjunto completo declarado por colección) y
+      // V0: idsABorrar (lista EXPLÍCITA de ids borrados, por colección) y
       // usuario (para el rastro de la lápida) — ambos opcionales; un
       // cliente viejo que no los mande simplemente no genera lápidas.
       // U4: baseCatalogVersion — contra qué versión del catálogo editó
       // el cliente; también opcional, un cliente viejo sigue con
       // last-write-wins (comportamiento de siempre).
-      var resultado = writeState_(body.state, body.knownRecordIds, body.usuario, body.baseCatalogVersion);
+      var resultado = writeState_(body.state, body.idsABorrar, body.usuario, body.baseCatalogVersion);
       if (!resultado.ok) return json_(resultado); // T0/U4: error tipado (PAYLOAD_TOO_LARGE / CATALOG_CONFLICT), nunca ok:true en silencio
       return json_({ ok: true, ts: new Date().toISOString(), lapidas: resultado.lapidas, catalogVersion: resultado.catalogVersion });
     } finally {
@@ -430,42 +430,47 @@ function appendNewRecords_(name, records) {
   return nuevas.length;
 }
 
-// U1: escribe filas de lápida para los registros que el cliente ya no
-// tiene. Port a mano de `pickTombstones` + `esBorradoMasivoSospechoso`
-// (js/rowsync.js — mantener en sync). Nunca muta ni borra filas
-// existentes. Devuelve { escritas, omitidas, motivo }.
+// V0 (auditoría Ronda 5): escribe filas de lápida para los ids que el
+// cliente declara EXPLÍCITAMENTE haber borrado. Port a mano de
+// `pickExplicitTombstones` (js/rowsync.js — mantener en sync). Nunca muta
+// ni borra filas existentes.
 //
-//   knownIds: array de ids que el cliente declara tener para esta
-//             colección (conjunto completo). Si no es un array, o está
-//             vacío, no se escribe ninguna lápida (ver guarda en
-//             rowsync.js). `undefined` = el cliente no declaró nada.
-function appendTombstones_(name, knownIds, usuario) {
-  if (!Array.isArray(knownIds) || knownIds.length === 0) return { escritas: 0, omitidas: 0, motivo: 'sin conjunto completo declarado' };
+// Reemplaza el diseño de U1 (Ronda 4), que lapidaba por AUSENCIA: "este id
+// está en la hoja pero el cliente no lo declaró como 'que tengo' → lo
+// borré". Con dos dispositivos reales eso confundía "todavía no vi este
+// registro" (lastSync viejo, sin pull) con "lo borré de verdad" —
+// exactamente el bug que esta ronda existe para cerrar (ver PROGRESO.md
+// § V0). La lista explícita no tiene ese problema: la ausencia nunca se
+// interpreta, así que ya no hace falta ninguna guarda de "borrado masivo
+// sospechoso" — 6 ids explícitos de 6 son 6 ids, la colección se puede
+// vaciar por completo si eso es lo que el cliente pidió borrar.
+//
+//   idsABorrar: array de ids que el cliente borró de verdad para esta
+//               colección. `undefined`/vacío = nada que lapidar.
+function appendTombstones_(name, idsABorrar, usuario) {
+  if (!Array.isArray(idsABorrar) || idsABorrar.length === 0) return { escritas: 0 };
 
   var sh = getAppendSheet_(name);
   var lastRow = sh.getLastRow();
-  if (lastRow < 2) return { escritas: 0, omitidas: 0 };
+  if (lastRow < 2) return { escritas: 0 };
 
   var data = sh.getRange(2, 1, lastRow - 1, 4).getValues();
-  var liveIds = [];
+  var liveIds = {};
   var tombstoned = {};
   for (var i = 0; i < data.length; i++) {
     var rec = null;
     try { rec = JSON.parse(data[i][3]); } catch (err) { continue; }
     if (rec && rec._tombstone === true) { if (rec.id != null) tombstoned[rec.id] = true; }
-    else if (rec && rec.id != null) liveIds.push(rec.id);
+    else if (rec && rec.id != null) liveIds[rec.id] = true;
   }
 
-  var known = {};
-  knownIds.forEach(function (id) { known[id] = true; });
-  var candidatos = liveIds.filter(function (id) { return !known[id] && !tombstoned[id]; });
-  if (!candidatos.length) return { escritas: 0, omitidas: 0 };
-
-  // Guarda contra el borrado masivo (aunque el conjunto declarado no esté vacío).
-  if (candidatos.length > 10 && candidatos.length > liveIds.length * 0.5) {
-    Logger.log('U1 — lápidas OMITIDAS en "' + name + '": el push quería lapidar ' + candidatos.length + ' de ' + liveIds.length + ' registros vivos (posible error). No se tocó nada.');
-    return { escritas: 0, omitidas: candidatos.length, motivo: 'borrado masivo sospechoso' };
-  }
+  var seen = {};
+  var candidatos = idsABorrar.filter(function (id) {
+    if (id === undefined || id === null || seen[id]) return false;
+    seen[id] = true;
+    return !!liveIds[id] && !tombstoned[id]; // ya lapidado o nunca existió en la hoja → idempotente, no hace nada
+  });
+  if (!candidatos.length) return { escritas: 0 };
 
   var ahora = new Date().toISOString();
   var filas = candidatos.map(function (id) {
@@ -473,7 +478,7 @@ function appendTombstones_(name, knownIds, usuario) {
     return [id, ahora, id, JSON.stringify(lapida)]; // col C = id (self-supersede) marca visualmente que es lápida
   });
   sh.getRange(sh.getLastRow() + 1, 1, filas.length, 4).setValues(filas);
-  return { escritas: filas.length, omitidas: 0 };
+  return { escritas: filas.length };
 }
 
 function readState_() {
@@ -516,7 +521,7 @@ function setCatalogVersion_(v) {
   getOrCreateSheet_(STATE_SHEET).getRange(2, 1).setValue(v);
 }
 
-function writeState_(state, knownRecordIds, usuario, baseCatalogVersion) {
+function writeState_(state, idsABorrar, usuario, baseCatalogVersion) {
   var catalogo = {};
   Object.keys(state || {}).forEach(function (k) {
     if (APPEND_COLLECTIONS.indexOf(k) === -1) catalogo[k] = state[k];
@@ -553,8 +558,8 @@ function writeState_(state, knownRecordIds, usuario, baseCatalogVersion) {
   var lapidas = {};
   APPEND_COLLECTIONS.forEach(function (nombre) {
     agregados[nombre] = appendNewRecords_(nombre, state[nombre]);
-    var kr = knownRecordIds && knownRecordIds[nombre];
-    lapidas[nombre] = appendTombstones_(nombre, kr, usuario).escritas;
+    var idsColeccion = idsABorrar && idsABorrar[nombre];
+    lapidas[nombre] = appendTombstones_(nombre, idsColeccion, usuario).escritas;
   });
 
   if (catalogConflict) {

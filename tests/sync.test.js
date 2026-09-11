@@ -225,31 +225,71 @@ test('getStateBreakdown: marca enCelda=true para el catálogo y false para las a
   assert.strictEqual(desglose[0].coleccion, 'ventas', 'ordenado por tamaño descendente');
 });
 
-group('U1 (Ronda 4): el push declara el conjunto completo de ids (knownRecordIds)');
+group('V0 (Ronda 5): borrados pendientes — lista EXPLÍCITA, nunca por ausencia');
 
-test('push() incluye knownRecordIds por colección cuando el estado ya se sincronizó (config.lastSync)', async () => {
-  const estado = {
-    config: { lastSync: '2026-09-10T00:00:00Z' },
-    ventas: [{ id: 'v1' }, { id: 'v2' }],
-    gastos: [{ id: 'g1' }],
-    mermas: [], snapshots: [], ajustes: [], lotes: []
+// sync.js guarda los borrados pendientes en localStorage (no existe en
+// Node) — mismo patrón que ya usa recordSyncSize_/getSyncSizeHistory, así
+// que acá se instala un localStorage falso en memoria solo para este
+// grupo, y se desinstala al final (la prueba de más abajo,
+// "getSyncSizeHistory: sin localStorage", sigue corriendo sin él).
+function instalarLocalStorageFalso_() {
+  const store = {};
+  global.localStorage = {
+    getItem: k => (Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null),
+    setItem: (k, v) => { store[k] = String(v); },
+    removeItem: k => { delete store[k]; }
   };
+}
+function desinstalarLocalStorageFalso_() { delete global.localStorage; }
+tests.push([null, instalarLocalStorageFalso_]);
+
+test('marcarBorradoPendiente agrega el id a la colección declarada, sin duplicar si se llama dos veces', () => {
+  Sync.marcarBorradoPendiente('gastos', 'g1');
+  Sync.marcarBorradoPendiente('gastos', 'g1');
+  Sync.marcarBorradoPendiente('gastos', 'g2');
+  assert.deepStrictEqual(Sync.getBorradosPendientes(), { gastos: ['g1', 'g2'] });
+});
+
+test('CRITERIO: push() manda idsABorrar con exactamente lo declarado — nunca "lo que tengo"', async () => {
+  desinstalarLocalStorageFalso_(); instalarLocalStorageFalso_(); // estado limpio para este test
+  Sync.marcarBorradoPendiente('ventas', 'v3');
+  Sync.marcarBorradoPendiente('gastos', 'g1');
   const f = mockFetch([{ body: { ok: true } }]);
-  await Sync.push('https://x.com/exec', 'tok', estado, f, 'dueno@crumbly.co');
+  await Sync.push('https://x.com/exec', 'tok', { config: {}, ventas: [{ id: 'v1' }, { id: 'v2' }] }, f, 'dueno@crumbly.co');
   const body = JSON.parse(f.calls[0].opts.body);
-  assert.deepStrictEqual(body.knownRecordIds.ventas, ['v1', 'v2']);
-  assert.deepStrictEqual(body.knownRecordIds.gastos, ['g1']);
-  assert.deepStrictEqual(body.knownRecordIds.mermas, []);
+  assert.deepStrictEqual(body.idsABorrar, { ventas: ['v3'], gastos: ['g1'] });
   assert.strictEqual(body.usuario, 'dueno@crumbly.co');
 });
 
-test('CRITERIO: push() NO declara knownRecordIds si el estado nunca se sincronizó (evita lápida masiva por estado fresco)', async () => {
-  const estadoFresco = { config: { lastSync: null }, ventas: [], gastos: [] };
+test('CRITERIO: push() exitoso limpia SOLO los ids que mandó — no manda idsABorrar si no hay nada pendiente', async () => {
+  desinstalarLocalStorageFalso_(); instalarLocalStorageFalso_();
+  const fSinPendientes = mockFetch([{ body: { ok: true } }]);
+  await Sync.push('https://x.com/exec', 'tok', { config: {} }, fSinPendientes);
+  const bodySinPendientes = JSON.parse(fSinPendientes.calls[0].opts.body);
+  assert.strictEqual(bodySinPendientes.idsABorrar, undefined, 'sin nada pendiente, no se manda el campo');
+
+  Sync.marcarBorradoPendiente('mermas', 'm1');
   const f = mockFetch([{ body: { ok: true } }]);
-  await Sync.push('https://x.com/exec', 'tok', estadoFresco, f);
-  const body = JSON.parse(f.calls[0].opts.body);
-  assert.strictEqual(body.knownRecordIds, undefined, 'sin lastSync no se declara nada — el backend no puede confundir "vacío" con "borré todo"');
+  await Sync.push('https://x.com/exec', 'tok', { config: {} }, f);
+  assert.deepStrictEqual(Sync.getBorradosPendientes(), {}, 'push exitoso limpia lo que mandó');
 });
+
+test('CRITERIO: un push que falla deja los borrados pendientes — el siguiente los reintenta', async () => {
+  desinstalarLocalStorageFalso_(); instalarLocalStorageFalso_();
+  Sync.marcarBorradoPendiente('lotes', 'l1');
+  const fFalla = mockFetch([{ body: { ok: false, error: 'CATALOG_CONFLICT', code: 'CATALOG_CONFLICT', remoteState: {}, remoteVersion: 1 } }]);
+  await Sync.push('https://x.com/exec', 'tok', { config: {} }, fFalla, undefined, 0);
+  assert.deepStrictEqual(Sync.getBorradosPendientes(), { lotes: ['l1'] }, 'push con ok:false no limpia nada pendiente');
+
+  // el siguiente push (reintento) vuelve a mandar la misma lista
+  const fReintento = mockFetch([{ body: { ok: true } }]);
+  await Sync.push('https://x.com/exec', 'tok', { config: {} }, fReintento);
+  const body = JSON.parse(fReintento.calls[0].opts.body);
+  assert.deepStrictEqual(body.idsABorrar, { lotes: ['l1'] });
+  assert.deepStrictEqual(Sync.getBorradosPendientes(), {}, 'y esta vez sí se limpia, porque el push tuvo éxito');
+});
+
+tests.push([null, desinstalarLocalStorageFalso_]);
 
 group('U4 (Ronda 4): C2 — push() declara baseCatalogVersion');
 
