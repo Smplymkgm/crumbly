@@ -128,3 +128,59 @@ Las secciones de `PROGRESO_R3.md` reportaban 277, 284, 286 y 289 tests en tareas
 | **Total** | **320** |
 
 - **Regla adoptada de aquí en adelante** (tal como pide el encargo): cualquier cifra de tests que aparezca en `PROGRESO.md` — por tarea o en el cierre — se mide corriendo la suite en ese momento, nunca se copia de una nota anterior de la misma sesión. Cada sección de esta ronda (U0 a U4) ya sigue esta regla — la cifra que reporta cada una es la que dio `node tests/<archivo>.test.js` inmediatamente antes de escribir esa sección.
+
+---
+
+## Fuera de alcance, anotado para la próxima ronda
+
+**El payload sigue siendo O(historial completo) en las dos direcciones.** T1 resolvió el límite de ALMACENAMIENTO (la celda), no el de TRANSFERENCIA: cada push manda todas las ventas/gastos/mermas/snapshots/ajustes/lotes de toda la historia del negocio, y cada pull las descarga completas — no hay paginación ni sincronización incremental. U0 solo cambió qué mide la alarma; no cambió cuánto viaja.
+
+Medición ya hecha (mismo fixture de escala de `tests/rowsync.test.js`: 500 ventas + 100 gastos + 10 snapshots de 78 líneas cada uno):
+- Estado completo (lo que viaja en cada push/pull): **282.263 caracteres**.
+- Catálogo (lo único que cuenta contra el tope de la celda, después de T1): **7.761 caracteres**.
+
+Con el volumen actual del negocio esto no duele (segundos de transferencia, muy por debajo de cualquier límite de tamaño de request). Pero el backend deduplica por id contra TODAS las filas existentes en cada push (`appendNewRecords_`/`appendTombstones_` leen la columna A completa de cada hoja), y Apps Script tiene un límite de 6 minutos de ejecución — con miles de ventas acumuladas, ese escaneo lineal por push empieza a costar tiempo real. No es urgente hoy. Es la ronda siguiente, antes de que el volumen lo vuelva doloroso.
+
+---
+
+## Pasos manuales del despliegue de T1 (los ejecuta una persona, no esta sesión)
+
+En este orden, cada uno depende del anterior:
+
+1. **Respaldo del Sheet real.** Archivo → Hacer una copia (o descargar como .xlsx) del Sheet de producción completo, ANTES de tocar nada. Este es el único paso no automatizable y el más importante: si algo sale mal después, este respaldo es la forma de volver atrás.
+
+2. **Inspeccionar las hojas `ventas`, `gastos` y `mermas` del Sheet real (U2).** Abrir cada una y mirar la fila 1 (cabecera) y una fila de datos cualquiera:
+   - Si están vacías, o ya tienen la cabecera `[id, fecha, supersedesId, json]` → no hace falta nada, seguir al paso 3.
+   - Si tienen datos con OTRA forma (el formato viejo real: `ventas` con columnas como `id, fecha, total, ganancia, stockInsuficiente, clienteId`) → **archivar esas tres hojas con otro nombre** antes de continuar (recomendado: `ventas_legado_pre_migracion`, `gastos_legado_pre_migracion`, `mermas_legado_pre_migracion` — ver el razonamiento completo en la sección de U2 arriba). `migrarAAppendOnly()` va a abortar solo y sin tocar nada si este paso se saltea y el formato no calza — pero es más barato confirmarlo ahora que leyendo el mensaje de error.
+
+3. **Desplegar `backend/Code.gs` actualizado** (Extensiones → Apps Script → pegar el contenido de este archivo → Guardar → Implementar → Nueva implementación). Confirmar que el despliegue apunta al mismo Sheet real de siempre (`CRUMBLY_SHEET_ID` en las Propiedades del script no cambia).
+
+4. **Correr `migrarAAppendOnly()` una sola vez**, a mano, desde el editor de Apps Script (elegir la función en el desplegable de arriba → ▷ Ejecutar). Mirar el resultado:
+   - Si devuelve `{ok:false, error:'FORMATO_HOJA_INVALIDO', problemas:[...]}` → alguna hoja del paso 2 no se resolvió bien. Nada se tocó — corregir esa hoja puntual y volver a correr.
+   - Si devuelve `{ok:false, reporte:{...}}` con algún `coincide:false` → los conteos no cuadraron en alguna colección. Nada se tocó (la celda vieja sigue intacta) — no seguir sin entender por qué antes de reintentar.
+   - Si devuelve `{ok:true, reporte:{...}}` con las 6 colecciones en `coincide:true` → la migración salió bien. La celda quedó reducida al catálogo.
+
+5. **Verificar que salió bien, con datos reales**:
+   - Abrir la app normal (la de producción) y confirmar que las ventas/gastos/mermas/etc. de siempre se siguen viendo exactamente igual — la migración no debería cambiar nada visible.
+   - En el Sheet, confirmar que `state_json!A1` ahora es un JSON mucho más chico (solo catálogo) y que las hojas `ventas`/`gastos`/`mermas`/`snapshots`/`ajustes`/`lotes` tienen filas nuevas con el formato `[id, fecha, supersedesId, json]`.
+   - Abrir Ajustes en la app y revisar la sección "Migración a filas append-only" (U3): debería mostrar fase POST-migración y la corrida recién hecha con veredicto OK.
+   - Registrar una venta de prueba real (una, chica, que se pueda borrar después) y confirmar que aparece como fila nueva sin reescribir toda la hoja.
+   - Borrar esa venta de prueba y sincronizar — confirmar que no vuelve al recargar (U1).
+
+6. **Recién después de todo lo anterior**, este despliegue queda considerado terminado. No hace falta ningún paso adicional para U0/U3/U4 — ya quedan activos apenas se despliega el `Code.gs` de esta ronda.
+
+---
+
+## Veredicto: ¿se puede desplegar T1?
+
+**Sí — U0, U1 y U2 (los tres bloqueadores) quedaron cerrados, cada uno commiteado y verificado por separado, con el eje "borrar" cubierto en U1.** Los tres criterios del encargo:
+
+- **U0 cerrado**: la alarma de tamaño mide el catálogo, no el payload — verificado que un historial grande no bloquea la sincronización y que un catálogo grande sí.
+- **U1 cerrado**: los borrados persisten a través de push/pull/reload, verificado de punta a punta para las cuatro colecciones con UI real de borrado (ventas, gastos, mermas, lotes), con las dos guardas contra falso positivo probadas.
+- **U2 cerrado**: `migrarAAppendOnly()` valida la forma de las 6 hojas destino antes de escribir una sola fila, y aborta identificando exactamente qué hoja y qué encontró si algo no calza.
+
+El único paso que falta es humano y está fuera del alcance de esta sesión: alguien tiene que abrir el Sheet real, mirar `ventas`/`gastos`/`mermas` (paso 2 de la lista de arriba), hacer el respaldo, y correr la migración de verdad. **Esta ronda preparó el despliegue — no lo ejecutó, tal como pedían las reglas.**
+
+U3 y U4 no son bloqueadores del despliegue (el encargo los pone después de los tres bloqueadores) pero también quedaron cerrados — no hace falta una ronda más antes de poder desplegar.
+
+No se hizo merge a main. No se desplegó al Apps Script de producción. No se corrió `migrarAAppendOnly()` contra el Sheet real en ningún momento de esta ronda.
