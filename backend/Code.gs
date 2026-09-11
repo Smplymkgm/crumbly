@@ -517,6 +517,54 @@ function writeState_(state, knownRecordIds, usuario) {
   return { ok: true, agregados: agregados, lapidas: lapidas };
 }
 
+// ─── U2 (auditoría Ronda 4): validar la FORMA de la hoja antes de migrar
+// Antes de T1, `mirrorCollections_` escribía hojas "ventas", "gastos" y
+// "mermas" con columnas PLANAS y legibles (id, fecha, total, ganancia...).
+// Después de T1 esos mismos nombres son la fuente de verdad append-only,
+// formato [id, fecha, supersedesId, json]. Si el Sheet real todavía tiene
+// esas hojas en el formato viejo, appendear encima leería la columna A de
+// filas viejas como si fueran ids — puede saltarse registros reales,
+// hidratar basura, o las dos cosas, y encima reportar que los conteos
+// cuadran porque los está contando mal. Esto no se resuelve adivinando:
+// se valida la cabecera de cada hoja destino ANTES de escribir una sola
+// fila, y si algo no calza, se aborta sin tocar nada. Port a mano de
+// `validarCabeceraAppend` (js/rowsync.js — mantener en sync).
+var APPEND_HEADER = ['id', 'fecha', 'supersedesId', 'json'];
+
+function esHeaderVacio_(headerRow) {
+  if (!headerRow || headerRow.length === 0) return true;
+  for (var i = 0; i < headerRow.length; i++) {
+    if (headerRow[i] !== '' && headerRow[i] !== null && headerRow[i] !== undefined) return false;
+  }
+  return true;
+}
+
+function validarCabeceraAppend_(headerRow) {
+  if (esHeaderVacio_(headerRow)) return { ok: true, vacia: true };
+  var coincide = headerRow.length === APPEND_HEADER.length;
+  if (coincide) {
+    for (var i = 0; i < APPEND_HEADER.length; i++) {
+      if (headerRow[i] !== APPEND_HEADER[i]) { coincide = false; break; }
+    }
+  }
+  if (coincide) return { ok: true, vacia: false };
+  return { ok: false, vacia: false, esperado: APPEND_HEADER, encontrado: headerRow };
+}
+
+// No usa `getOrCreateSheet_` a propósito — validar no debe crear nada.
+// Si la hoja no existe, se trata igual que una hoja vacía (ok, se crea
+// después, ya validado el resto).
+function validarFormaHojaAppend_(nombre) {
+  var sh = ss_().getSheetByName(nombre);
+  var header = null;
+  if (sh && sh.getLastRow() >= 1) {
+    header = sh.getRange(1, 1, 1, Math.max(APPEND_HEADER.length, sh.getLastColumn())).getValues()[0];
+  }
+  var v = validarCabeceraAppend_(header);
+  v.hoja = nombre;
+  return v;
+}
+
 // ─── Migración (T1) — correr UNA VEZ a mano desde el editor de Apps ────
 // Script (Extensiones → Apps Script → elegir "migrarAAppendOnly" en el
 // desplegable → Ejecutar). A propósito NO está expuesta por HTTP: una
@@ -535,6 +583,26 @@ function migrarAAppendOnly() {
   var raw = sh.getRange(1, 1).getValue();
   if (!raw) { Logger.log('La celda de estado está vacía — nada que migrar.'); return { ok: false, error: 'celda vacía' }; }
   var estadoViejo = JSON.parse(raw);
+
+  // U2: validar la FORMA de las 6 hojas destino ANTES de escribir una
+  // sola fila. Si cualquiera tiene datos que no son del formato
+  // append-only esperado (el caso real: "ventas"/"gastos"/"mermas" con
+  // el mirror plano de antes de T1), se aborta sin tocar nada — ni
+  // siquiera se crean las que faltan, para que la corrida sea repetible
+  // tal cual una vez resuelto el problema a mano en el Sheet.
+  var problemas = [];
+  APPEND_COLLECTIONS.forEach(function (nombre) {
+    var v = validarFormaHojaAppend_(nombre);
+    if (!v.ok) problemas.push(v);
+  });
+  if (problemas.length) {
+    Logger.log('MIGRACIÓN ABORTADA — formato de hoja inválido, nada se tocó: ' + JSON.stringify(problemas));
+    return { ok: false, error: 'FORMATO_HOJA_INVALIDO', problemas: problemas };
+  }
+  // Formato validado — ahora sí, crear las que faltan/estén vacías con su
+  // cabecera explícita (para que la próxima corrida tenga contra qué
+  // comparar).
+  APPEND_COLLECTIONS.forEach(function (nombre) { getAppendSheet_(nombre); });
 
   var agregados = {};
   APPEND_COLLECTIONS.forEach(function (nombre) {

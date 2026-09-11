@@ -220,6 +220,33 @@ test('CRITERIO (ciclo completo): registrar 3, borrar el del medio, re-hidratar �
   assert.deepStrictEqual(RowSync.pickTombstones(liveIds2, ['g1', 'g3'], tombstonedIds), []);
 });
 
+console.log('\n== U2 (Ronda 4): validar la forma de la hoja antes de migrar ==');
+
+test('validarCabeceraAppend: hoja vacía/inexistente (sin cabecera) → ok, se puede crear', () => {
+  assert.deepStrictEqual(RowSync.validarCabeceraAppend(null), { ok: true, vacia: true });
+  assert.deepStrictEqual(RowSync.validarCabeceraAppend([]), { ok: true, vacia: true });
+  assert.deepStrictEqual(RowSync.validarCabeceraAppend(['', '', '', '']), { ok: true, vacia: true });
+});
+
+test('validarCabeceraAppend: cabecera exacta del formato nuevo → ok', () => {
+  const r = RowSync.validarCabeceraAppend(['id', 'fecha', 'supersedesId', 'json']);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.vacia, false);
+});
+
+test('CRITERIO: cabecera del formato VIEJO simulado (mirrorCollections_ pre-T1 de "ventas") → ok:false, identifica lo encontrado', () => {
+  const headerViejo = ['id', 'fecha', 'total', 'ganancia', 'stockInsuficiente', 'clienteId'];
+  const r = RowSync.validarCabeceraAppend(headerViejo);
+  assert.strictEqual(r.ok, false);
+  assert.deepStrictEqual(r.encontrado, headerViejo);
+  assert.deepStrictEqual(r.esperado, ['id', 'fecha', 'supersedesId', 'json']);
+});
+
+test('validarCabeceraAppend: mismo número de columnas pero un nombre distinto → ok:false', () => {
+  const r = RowSync.validarCabeceraAppend(['id', 'fecha', 'anulaId', 'json']);
+  assert.strictEqual(r.ok, false);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);

@@ -33,6 +33,11 @@
 
   var COLECCIONES_APPEND = ['ventas', 'gastos', 'mermas', 'snapshots', 'ajustes', 'lotes'];
 
+  // Cabecera de una hoja append-only real (Code.gs, `getAppendSheet_`) —
+  // única fuente de verdad de la forma esperada, para U2 y para quien
+  // arme una hoja nueva a mano.
+  var APPEND_HEADER = ['id', 'fecha', 'supersedesId', 'json'];
+
   // Separa un estado completo en { catalogo, colecciones } — catalogo es
   // exactamente lo que debe quedar en la celda JSON después de la
   // migración; colecciones es lo que debe existir como filas (una por
@@ -163,8 +168,37 @@
     return out;
   }
 
+  // ─── U2 (auditoría Ronda 4): colisión de nombres de hoja en el Sheet ───
+  // real. Antes de T1, `mirrorCollections_` escribía hojas "ventas",
+  // "gastos" y "mermas" con columnas PLANAS y legibles (id, fecha, total,
+  // ganancia...). Después de T1 esos mismos nombres son la fuente de
+  // verdad append-only, formato `[id, fecha, supersedesId, json]`. Si el
+  // Sheet real todavía tiene esas hojas en el formato viejo,
+  // `migrarAAppendOnly()` appendearía sobre datos con otra estructura —
+  // `pickNewRecords`/lectura de columna A leerían basura (un `total`
+  // numérico como si fuera un id, por ejemplo), saltándose registros
+  // reales, hidratando basura, o las dos cosas, y la migración
+  // reportaría que los conteos cuadran porque los está contando mal.
+  // Esto no se puede resolver adivinando desde el código — hay que
+  // inspeccionar el Sheet real (ver PROGRESO.md § pasos manuales).
+  //
+  // `validarCabeceraAppend` es la única fuente de verdad de "¿esta hoja
+  // ya tiene el formato correcto, está vacía, o es de otra cosa?" —
+  // `migrarAAppendOnly()` (Code.gs) la corre para las 6 colecciones ANTES
+  // de escribir una sola fila; si cualquiera falla, aborta sin tocar nada.
+  function esHeaderVacio_(headerRow) {
+    return !headerRow || headerRow.length === 0 || headerRow.every(function (c) { return c === '' || c === null || c === undefined; });
+  }
+  function validarCabeceraAppend(headerRow) {
+    if (esHeaderVacio_(headerRow)) return { ok: true, vacia: true };
+    var coincide = headerRow.length === APPEND_HEADER.length && APPEND_HEADER.every(function (h, i) { return headerRow[i] === h; });
+    if (coincide) return { ok: true, vacia: false };
+    return { ok: false, vacia: false, esperado: APPEND_HEADER, encontrado: headerRow };
+  }
+
   return {
     COLECCIONES_APPEND: COLECCIONES_APPEND,
+    APPEND_HEADER: APPEND_HEADER,
     splitCatalogAndAppend: splitCatalogAndAppend,
     mergeState: mergeState,
     pickNewRecords: pickNewRecords,
@@ -173,6 +207,7 @@
     makeTombstone: makeTombstone,
     pickTombstones: pickTombstones,
     esBorradoMasivoSospechoso: esBorradoMasivoSospechoso,
-    hydrateRecords: hydrateRecords
+    hydrateRecords: hydrateRecords,
+    validarCabeceraAppend: validarCabeceraAppend
   };
 });
