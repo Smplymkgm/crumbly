@@ -1118,7 +1118,12 @@ textarea.field{height:auto}
              productos, insumos, recetas, config), no el historial de
              transacciones — eso vive en filas append-only y no tiene
              tope. Mezclarlos en una sola cifra fue lo que confundió. -->
-        <div class="card-title" style="margin-bottom:10px">Tamaño del catálogo (cuenta contra el tope de la celda)</div>
+        <div class="card-title" style="margin-bottom:10px">Alarma de tamaño (tope de una celda de Sheets)</div>
+        <!-- V1 (Ronda 5): qué mide esta alarma depende de si el backend ya
+             migró (fase 'post', U3) — hasta que se sepa con certeza, mide
+             el estado completo, no solo el catálogo, para no quedarse
+             ciega en la ventana entre desplegar el cliente y el backend. -->
+        <p class="item-sub" id="payload-alarma-motivo" style="margin-bottom:6px">Calculando…</p>
         <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px">
           <strong id="payload-tamano" style="font-size:18px">0</strong>
           <span class="item-sub">de <span id="payload-tope">50.000</span> caracteres (<span id="payload-pct">0%</span>)</span>
@@ -1328,12 +1333,16 @@ function pushInBackground() {
       // persistente, no un toast), porque la alternativa es que el
       // usuario siga operando creyendo que se está guardando.
       if (r.code === 'PAYLOAD_TOO_LARGE') {
+        // V1: r.sizeInfo.fase dice qué se midió — 'post' es el catálogo
+        // (menos productos/insumos/recetas lo reduce); 'pre' es el estado
+        // completo (ahí también pesa el historial, no solo el menú).
+        const queMide = r.sizeInfo.fase === 'post' ? 'el catálogo' : 'el estado completo';
         showPersistentError(
-          'No se pudo sincronizar: el catálogo (' + r.sizeInfo.tam.toLocaleString('es-CO') + ' de ' + r.sizeInfo.tope.toLocaleString('es-CO') + ' caracteres) supera el tope de una celda de Sheets. Los cambios quedan SOLO en este dispositivo hasta que se reduzca el catálogo (menos productos/insumos/recetas).',
+          'No se pudo sincronizar: ' + queMide + ' (' + r.sizeInfo.tam.toLocaleString('es-CO') + ' de ' + r.sizeInfo.tope.toLocaleString('es-CO') + ' caracteres) supera el tope de una celda de Sheets. Los cambios quedan SOLO en este dispositivo hasta que se reduzca.',
           'Ver detalle en Ajustes',
           () => openModal('modal-ajustes')
         );
-        updateSyncStatus('Bloqueado por tamaño del catálogo — ver Ajustes', true);
+        updateSyncStatus('Bloqueado por tamaño — ver Ajustes', true);
         return;
       }
       // U4 (C2): otro dispositivo escribió el catálogo desde la última
@@ -1353,8 +1362,9 @@ function pushInBackground() {
       // U0: por debajo del tope de bloqueo, pero el CATÁLOGO ya en zona de
       // advertencia — persistente también (nunca un toast que se va solo).
       if (r.sizeInfo && r.sizeInfo.nivel === 'advertencia') {
+        const queMide = r.sizeInfo.fase === 'post' ? 'El catálogo' : 'El estado completo';
         showPersistentError(
-          'El catálogo va en ' + r.sizeInfo.tam.toLocaleString('es-CO') + ' de ' + r.sizeInfo.tope.toLocaleString('es-CO') + ' caracteres (' + Math.round(r.sizeInfo.pct * 100) + '%) — se acerca al tope de una celda de Sheets.',
+          queMide + ' va en ' + r.sizeInfo.tam.toLocaleString('es-CO') + ' de ' + r.sizeInfo.tope.toLocaleString('es-CO') + ' caracteres (' + Math.round(r.sizeInfo.pct * 100) + '%) — se acerca al tope de una celda de Sheets.',
           'Ver desglose en Ajustes',
           () => openModal('modal-ajustes')
         );
@@ -1434,6 +1444,11 @@ async function afterLogin_(successMsg) {
   refreshAll();
   updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
   if (successMsg) showToast(successMsg);
+  // V1: refresca la fase de la migración cacheada (de la que depende qué
+  // mide la alarma en cada push de esta sesión) — sin bloquear el login;
+  // si falla (backend viejo, sin red) el caché se queda en null y
+  // getAlarmSizeInfo mide como 'pre' — la opción segura.
+  CrumblySync.getMigrationStatus(auth.getBackendUrl(), auth.getToken()).catch(() => {});
 }
 function applyUsuarioHeader_(user) {
   if (!user) return;
@@ -1530,7 +1545,13 @@ const COLECCION_LABEL = {
 };
 function renderPayloadPanel() {
   const snapshot = stateSinConteoEnProgreso(); // T0.1: el conteo en curso ya no viaja, no cuenta acá
-  const info = CrumblySync.getCatalogSizeInfo(snapshot); // U0: mide SOLO el catálogo
+  // V1: la misma alarma que usa push() para decidir advertencia/bloqueo —
+  // mide catálogo o estado completo según la fase de la migración que ya
+  // se pudo confirmar con el backend esta sesión (null hasta entonces,
+  // tratado igual que 'pre': la opción segura).
+  const info = CrumblySync.getAlarmSizeInfo(snapshot, CrumblySync.getFaseConocida());
+  document.getElementById('payload-alarma-motivo').textContent =
+    'Midiendo: ' + info.motivo + '.';
   document.getElementById('payload-tamano').textContent = info.tam.toLocaleString('es-CO');
   document.getElementById('payload-tope').textContent = info.tope.toLocaleString('es-CO');
   document.getElementById('payload-pct').textContent = Math.round(info.pct * 100) + '%';
@@ -1539,9 +1560,10 @@ function renderPayloadPanel() {
   barra.style.width = Math.min(100, info.pct * 100) + '%';
   barra.style.background = info.nivel === 'bloqueado' ? 'var(--danger)' : (info.nivel === 'advertencia' ? '#c98a1f' : 'var(--ink)');
   const msg = document.getElementById('payload-nivel-msg');
-  if (info.nivel === 'bloqueado') { msg.textContent = 'Bloqueado: el catálogo supera el tope de una celda de Sheets. La sincronización se rechaza para no perder datos en silencio.'; msg.style.color = 'var(--danger)'; }
-  else if (info.nivel === 'advertencia') { msg.textContent = 'El catálogo se acerca al tope de una celda de Sheets.'; msg.style.color = '#c98a1f'; }
-  else { msg.textContent = 'Catálogo dentro de rango normal.'; msg.style.color = 'var(--muted)'; }
+  const queMide = info.fase === 'post' ? 'el catálogo' : 'el estado completo';
+  if (info.nivel === 'bloqueado') { msg.textContent = 'Bloqueado: ' + queMide + ' supera el tope de una celda de Sheets. La sincronización se rechaza para no perder datos en silencio.'; msg.style.color = 'var(--danger)'; }
+  else if (info.nivel === 'advertencia') { msg.textContent = queMide.charAt(0).toUpperCase() + queMide.slice(1) + ' se acerca al tope de una celda de Sheets.'; msg.style.color = '#c98a1f'; }
+  else { msg.textContent = 'Dentro de rango normal.'; msg.style.color = 'var(--muted)'; }
 
   const fila = d => `
     <div style="display:flex;justify-content:space-between;font-size:12px">
@@ -1600,6 +1622,7 @@ async function renderMigrationStatus() {
     ? '🟡 PRE-migración — el catálogo todavía tiene transacciones embebidas en la celda.'
     : '🟢 POST-migración — la celda solo tiene catálogo, las transacciones viven en filas.';
   faseEl.textContent = faseLabel;
+  renderPayloadPanel(); // V1: ya se confirmó la fase con el backend — re-dibuja la alarma con el dato certero, no el que había en caché al abrir el panel
 
   if (!r.ultima) { detalleEl.innerHTML = '<p class="item-sub">Todavía no se registró ninguna corrida de migrarAAppendOnly().</p>'; return; }
   const u = r.ultima;

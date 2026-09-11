@@ -71,13 +71,62 @@
     return state || {}; // sin RowSync (no debería pasar) — degradar a medir todo, más seguro que reventar
   }
 
-  // Tamaño del CATÁLOGO (lo único que va a la celda) contra el tope real.
-  // Esto es lo que dispara advertencia/bloqueo en push().
+  // Tamaño del CATÁLOGO (lo único que va a la celda DESPUÉS de migrar)
+  // contra el tope real. Sigue existiendo tal cual para mostrar el
+  // desglose de Ajustes — lo que decide advertencia/bloqueo en push() es
+  // `getAlarmSizeInfo`, consciente de la fase (ver V1 más abajo).
   function getCatalogSizeInfo(state) {
     var tam = JSON.stringify(catalogoDe_(state)).length;
     var nivel = tam >= BLOQUEO_PAYLOAD_CHARS ? 'bloqueado' : (tam >= ADVERTENCIA_PAYLOAD_CHARS ? 'advertencia' : 'ok');
     return { tam: tam, tope: TOPE_PAYLOAD_CHARS, bloqueo: BLOQUEO_PAYLOAD_CHARS, advertencia: ADVERTENCIA_PAYLOAD_CHARS, pct: tam / TOPE_PAYLOAD_CHARS, nivel: nivel };
   }
+
+  // ─── V1 (auditoría Ronda 5): la alarma no puede quedar ciega entre
+  // despliegues ────────────────────────────────────────────────────────
+  //
+  // U0 hizo que la alarma mida el catálogo en vez del payload completo —
+  // correcto DESPUÉS de que el backend ya migró. El frontend (GitHub
+  // Pages) se actualiza con un `git push`; el backend (Apps Script) se
+  // despliega a mano — es fácil que el cliente nuevo llegue primero. En
+  // esa ventana la celda real TODAVÍA contiene el estado completo (el
+  // backend viejo no sabe de catálogo/filas), pero un cliente que mide
+  // solo el catálogo vería un número chico y no avisaría — se pierde la
+  // protección de T0 justo cuando más hace falta, sin ningún síntoma.
+  //
+  // La alarma ahora mide según la FASE de la migración, reportada por el
+  // propio backend (`migrationStatus`, U3): fase 'post' → catálogo
+  // (comportamiento de U0). Fase 'pre', o CUALQUIER fase que no se pudo
+  // determinar (backend viejo que no reconoce la acción, sin sesión,
+  // error de red) → estado completo, el mismo criterio de T0. Elegido a
+  // propósito: medir de más avisa sin razón (falso positivo, molesto);
+  // medir de menos deja la app fallando en silencio (el modo de falla
+  // real que esta ronda existe para cerrar). Ante la duda, la opción
+  // segura es medir de más.
+  function getAlarmSizeInfo(state, fase) {
+    if (fase === 'post') {
+      var info = getCatalogSizeInfo(state);
+      info.fase = 'post';
+      info.motivo = 'catálogo — la migración ya corrió, la celda solo guarda el catálogo';
+      return info;
+    }
+    var tam = getTransferSize(state);
+    var nivel = tam >= BLOQUEO_PAYLOAD_CHARS ? 'bloqueado' : (tam >= ADVERTENCIA_PAYLOAD_CHARS ? 'advertencia' : 'ok');
+    return {
+      tam: tam, tope: TOPE_PAYLOAD_CHARS, bloqueo: BLOQUEO_PAYLOAD_CHARS, advertencia: ADVERTENCIA_PAYLOAD_CHARS,
+      pct: tam / TOPE_PAYLOAD_CHARS, nivel: nivel, fase: 'pre',
+      motivo: fase === 'pre'
+        ? 'estado completo — la migración todavía no corrió, la celda guarda todo'
+        : 'estado completo — no se pudo determinar la fase de la migración, se asume la opción más segura'
+    };
+  }
+
+  // Fase de la migración, cacheada en memoria (por carga de página, nunca
+  // persistida) — se actualiza cada vez que `getMigrationStatus` recibe
+  // una respuesta válida del backend (afterLogin_, pullOnLoad, o al abrir
+  // Ajustes). Arranca en `null` = "todavía no se sabe", que
+  // `getAlarmSizeInfo` trata igual que 'pre'.
+  var faseMigracionConocida_ = null;
+  function getFaseConocida() { return faseMigracionConocida_; }
 
   // Tamaño de lo que viaja en el POST (estado completo). Informativo —
   // NO tiene tope de celda. Sigue siendo O(historial completo) en ambas
@@ -139,9 +188,18 @@
   // última vez, qué reportó, y si el catálogo actual está pre o post
   // migración. Antes esto solo vivía en Logger.log() del editor de Apps
   // Script; ahora el panel de Ajustes lo puede mostrar.
+  //
+  // V1: cada respuesta válida (`ok:true`) actualiza la fase cacheada que
+  // `push()` usa para decidir qué medir — esta es la única vía por la que
+  // ese caché se llena; si nunca se llama (backend viejo que ni siquiera
+  // tiene esta acción, sin sesión, sin red), el caché se queda en `null`
+  // y `getAlarmSizeInfo` mide como si la fase fuera 'pre'.
   function getMigrationStatus(backendUrl, token, fetchImpl) {
     var f = resolveFetch(fetchImpl);
-    return f(withQuery(backendUrl, { action: 'migrationStatus', token: token })).then(parseResponse);
+    return f(withQuery(backendUrl, { action: 'migrationStatus', token: token })).then(parseResponse).then(function (res) {
+      if (res && res.ok && res.fase) faseMigracionConocida_ = res.fase;
+      return res;
+    });
   }
 
   // ─── V0 (auditoría Ronda 5): borrados pendientes, por dispositivo ──────
@@ -198,12 +256,15 @@
     setBorradosPendientes_(p);
   }
 
-  function push(backendUrl, token, state, fetchImpl, usuario, baseCatalogVersion) {
-    // U0: se mide el CATÁLOGO ANTES de mandar nada — sobre el tope de
-    // bloqueo, ni siquiera se hace la petición. El payload completo puede
-    // ser enorme (crece con el historial) y eso ya NO es motivo de
-    // bloqueo — solo el catálogo, que es lo que va a la celda.
-    var sizeInfo = getCatalogSizeInfo(state);
+  function push(backendUrl, token, state, fetchImpl, usuario, baseCatalogVersion, fase) {
+    // U0/V1: se mide ANTES de mandar nada — sobre el tope de bloqueo, ni
+    // siquiera se hace la petición. Qué se mide depende de la fase de la
+    // migración: catálogo si ya se sabe que el backend migró, estado
+    // completo si no se sabe o todavía no migró. `fase` es un override
+    // explícito (para pruebas, o un caller que ya la tiene a mano) — el
+    // caller real (index.html) no lo manda nunca y usa la fase cacheada
+    // por el último `getMigrationStatus()` exitoso de esta sesión.
+    var sizeInfo = getAlarmSizeInfo(state, fase !== undefined ? fase : faseMigracionConocida_);
     sizeInfo.transferencia = getTransferSize(state); // informativo, sin tope
     if (sizeInfo.nivel === 'bloqueado') {
       // Mismo `code` que usa el backend (writeState_) — index.html maneja
@@ -261,6 +322,8 @@
     getMigrationStatus: getMigrationStatus,
     uploadFile: uploadFile,
     getCatalogSizeInfo: getCatalogSizeInfo,
+    getAlarmSizeInfo: getAlarmSizeInfo,
+    getFaseConocida: getFaseConocida,
     getTransferSize: getTransferSize,
     getStateBreakdown: getStateBreakdown,
     getSyncSizeHistory: getSyncSizeHistory,

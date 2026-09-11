@@ -150,7 +150,7 @@ test('propaga ok:false del backend (ej. falta filename) sin lanzar', async () =>
   assert.strictEqual(r.error, 'falta filename o data');
 });
 
-group('U0 (Ronda 4): la alarma mide el CATÁLOGO, no el payload');
+group('U0 (Ronda 4): la alarma mide el CATÁLOGO, no el payload — ahora solo en fase post (ver V1 más abajo)');
 
 // Catálogo de tamaño controlado: el relleno va en `config` (catálogo).
 function catalogoDeTamano(chars) {
@@ -186,18 +186,20 @@ test('getCatalogSizeInfo ignora las colecciones append-only al medir', () => {
   assert.strictEqual(info.nivel, 'ok');
 });
 
-test('CRITERIO U0: payload sobre 48.000 pero catálogo en ~20.000 → push() procede, sin advertencia ni bloqueo', async () => {
+test('CRITERIO U0 (fase post): payload sobre 48.000 pero catálogo en ~20.000 → push() procede, sin advertencia ni bloqueo', async () => {
   const estado = payloadGrandeCatalogoChico(60000, 20000);
   assert.ok(Sync.getTransferSize(estado) > 48000, 'el payload total debe superar 48.000');
   assert.ok(Sync.getCatalogSizeInfo(estado).tam < 22000 && Sync.getCatalogSizeInfo(estado).tam >= 19000, 'el catálogo debe rondar 20.000');
   const f = mockFetch([{ body: { ok: true, ts: '2026-09-10T00:00:00Z' } }]);
-  const r = await Sync.push('https://x.com/exec', 'tok', estado, f);
+  // fase 'post' explícita — este criterio es del U0 original (medir solo
+  // el catálogo), que V1 ahora reserva para cuando el backend YA migró.
+  const r = await Sync.push('https://x.com/exec', 'tok', estado, f, undefined, undefined, 'post');
   assert.strictEqual(r.ok, true);
   assert.strictEqual(f.calls.length, 1, 'la petición SÍ se manda — el catálogo está sano');
   assert.strictEqual(r.sizeInfo.nivel, 'ok');
 });
 
-test('CRITERIO U0 inverso: catálogo sobre el tope con payload total chico → push() bloquea', async () => {
+test('CRITERIO U0 inverso: catálogo sobre el tope con payload total chico → push() bloquea (en cualquier fase, acá payload≈catálogo)', async () => {
   const estado = catalogoDeTamano(49000); // solo config, sin ventas — payload ≈ catálogo acá
   const f = mockFetch([{ body: { ok: true } }]);
   const r = await Sync.push('https://x.com/exec', 'tok', estado, f);
@@ -207,10 +209,10 @@ test('CRITERIO U0 inverso: catálogo sobre el tope con payload total chico → p
   assert.strictEqual(f.calls.length, 0, 'no debe haber intentado la petición');
 });
 
-test('push() adjunta sizeInfo (catálogo) + sizeInfo.transferencia (payload total) en la respuesta', async () => {
+test('push() adjunta sizeInfo + sizeInfo.transferencia en la respuesta (fase post: tam=catálogo < transferencia)', async () => {
   const estado = payloadGrandeCatalogoChico(30000, 5000);
   const f = mockFetch([{ body: { ok: true, ts: '2026-09-10T00:00:00Z' } }]);
-  const r = await Sync.push('https://x.com/exec', 'tok', estado, f);
+  const r = await Sync.push('https://x.com/exec', 'tok', estado, f, undefined, undefined, 'post');
   assert.strictEqual(r.sizeInfo.nivel, 'ok');
   assert.ok(r.sizeInfo.transferencia > r.sizeInfo.tam, 'la transferencia (payload) es mayor que el catálogo');
 });
@@ -223,6 +225,58 @@ test('getStateBreakdown: marca enCelda=true para el catálogo y false para las a
   assert.strictEqual(porNombre.ventas, false);
   assert.strictEqual(porNombre.lotes, false);
   assert.strictEqual(desglose[0].coleccion, 'ventas', 'ordenado por tamaño descendente');
+});
+
+group('V1 (Ronda 5): la alarma no puede quedar ciega entre despliegues');
+
+test('CRITERIO: fase "pre" con catálogo chico y estado grande → advierte (mide el estado completo)', () => {
+  const estado = payloadGrandeCatalogoChico(42000, 2000); // catálogo chico, payload en zona de advertencia
+  const info = Sync.getAlarmSizeInfo(estado, 'pre');
+  assert.strictEqual(info.fase, 'pre');
+  assert.strictEqual(info.tam, Sync.getTransferSize(estado), 'en fase pre se mide el estado completo, no el catálogo');
+  assert.strictEqual(info.nivel, 'advertencia');
+});
+
+test('CRITERIO: fase "post" con la misma forma (catálogo chico, estado grande) → NO advierte (mide solo el catálogo)', () => {
+  const estado = payloadGrandeCatalogoChico(42000, 2000);
+  const info = Sync.getAlarmSizeInfo(estado, 'post');
+  assert.strictEqual(info.fase, 'post');
+  assert.strictEqual(info.tam, Sync.getCatalogSizeInfo(estado).tam, 'en fase post se mide solo el catálogo');
+  assert.strictEqual(info.nivel, 'ok');
+});
+
+test('CRITERIO: fase indeterminable (undefined/null/backend viejo) → se comporta como "pre"', () => {
+  const estado = payloadGrandeCatalogoChico(42000, 2000);
+  [undefined, null, 'desconocida', ''].forEach(faseIndeterminada => {
+    const info = Sync.getAlarmSizeInfo(estado, faseIndeterminada);
+    assert.strictEqual(info.fase, 'pre', 'fase=' + faseIndeterminada + ' debe tratarse como pre');
+    assert.strictEqual(info.tam, Sync.getTransferSize(estado));
+    assert.strictEqual(info.nivel, 'advertencia');
+  });
+});
+
+// (La otra mitad del criterio — "sin fase conocida, push() mide de más" —
+// no se prueba contra el caché en memoria de faseMigracionConocida_
+// directamente: ese caché es un singleton de módulo compartido por TODO
+// este archivo de pruebas, y depender de que ningún test anterior lo haya
+// poblado ya es frágil por diseño. Queda cubierto igual, sin ese riesgo:
+// `getAlarmSizeInfo(estado, undefined)` de arriba prueba exactamente esa
+// rama, y el test de abajo prueba que push() SÍ lee del caché cuando
+// `getMigrationStatus()` lo pobló — juntos cubren la ruta completa.)
+
+test('getMigrationStatus() cachea la fase reportada por el backend — un push posterior (sin override) la usa', async () => {
+  const estado = payloadGrandeCatalogoChico(60000, 2000);
+  const fStatus = mockFetch([{ body: { ok: true, ultima: null, fase: 'post' } }]);
+  const rStatus = await Sync.getMigrationStatus('https://x.com/exec', 'tok', fStatus);
+  assert.strictEqual(rStatus.fase, 'post');
+  const fPush = mockFetch([{ body: { ok: true } }]);
+  const r = await Sync.push('https://x.com/exec', 'tok', estado, fPush); // sin override — debe usar la fase recién cacheada
+  assert.strictEqual(r.ok, true, 'con la fase post cacheada, el catálogo chico deja pasar el push');
+  assert.strictEqual(r.sizeInfo.fase, 'post');
+  // limpieza: el caché de fase es un módulo compartido por todo el
+  // archivo de pruebas — se deja de vuelta en 'pre' para no afectar los
+  // tests que corren después de este.
+  await Sync.getMigrationStatus('https://x.com/exec', 'tok', mockFetch([{ body: { ok: true, ultima: null, fase: 'pre' } }]));
 });
 
 group('V0 (Ronda 5): borrados pendientes — lista EXPLÍCITA, nunca por ausencia');
