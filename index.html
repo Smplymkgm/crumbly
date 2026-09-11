@@ -512,11 +512,36 @@ textarea.field{height:auto}
           <div class="page-title">Inventario</div>
           <div style="display:flex;gap:8px">
             <button class="btn btn-outline" onclick="openModalConteo()"><i class="ph ph-clipboard-text"></i> Conteo físico</button>
-            <button class="btn" onclick="openInsumoModal()"><i class="ph ph-plus"></i> Agregar insumo</button>
+            <button class="btn" id="inv-btn-agregar" onclick="openInsumoModal()"><i class="ph ph-plus"></i> Agregar insumo</button>
           </div>
         </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap" id="inv-chips-tipo"></div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px" id="inv-chips"></div>
+        <!-- Z2 (Ronda 7): buscador por nombre, en vivo, combinado con los
+             filtros — no los reemplaza. Z1: los filtros (tipo + categoría)
+             ya no están siempre desplegados — un solo botón (embudo +
+             contador de filtros activos, mismo patrón que Movimientos)
+             los despliega/colapsa. Colapsado por defecto. -->
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="search" id="inv-buscador" class="field" style="flex:1" placeholder="Buscar por nombre..." oninput="setInventarioBusqueda(this.value)">
+          <button class="btn btn-outline" style="padding:6px 10px;flex-shrink:0" onclick="toggleInventarioFiltros()"><i class="ph ph-funnel"></i> <span id="inv-filtros-activos"></span></button>
+        </div>
+        <div id="inv-filtro-panel" style="display:none;flex-direction:column;gap:10px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px">
+          <div>
+            <div style="font-size:var(--fs-xs);font-weight:var(--fw-bold);color:var(--muted);margin-bottom:6px">Tipo</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap" id="inv-chips-tipo"></div>
+          </div>
+          <div id="inv-categoria-wrap">
+            <!-- Z1: "las categorías, también desplegables" — un segundo
+                 nivel de colapso, aparte del panel de filtros: en el
+                 estado real son diez, mostrarlas siempre alargaba el
+                 modal/panel igual que antes de este cambio. -->
+            <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleInventarioCategoriaPanel()">
+              <div style="font-size:var(--fs-xs);font-weight:var(--fw-bold);color:var(--muted)">Categoría <span id="inv-categoria-activa-label"></span></div>
+              <i class="ph ph-caret-down" id="inv-categoria-caret" style="font-size:var(--fs-xs);color:var(--muted)"></i>
+            </div>
+            <div style="display:none;gap:6px;flex-wrap:wrap;margin-top:8px" id="inv-chips"></div>
+          </div>
+          <button style="align-self:flex-start;background:transparent;border:none;color:var(--muted);font-size:var(--fs-sm);font-weight:var(--fw-medium);cursor:pointer;padding:4px 0" onclick="clearInventarioFiltros()">Limpiar filtros</button>
+        </div>
         <div class="card" style="padding:0;overflow:hidden">
           <div id="inv-list"><p class="empty" style="padding:1.5rem">No hay insumos registrados</p></div>
         </div>
@@ -531,15 +556,6 @@ textarea.field{height:auto}
             <i class="ph ph-caret-down" id="inv-necesidades-caret" style="font-size:var(--fs-sm);color:var(--muted)"></i>
           </div>
           <div id="inv-necesidades-list" style="display:none;flex-direction:column;gap:8px;margin-top:12px"></div>
-        </div>
-
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px">
-          <div class="page-title" style="font-size:var(--fs-sm)">Preparaciones</div>
-          <button class="btn btn-outline" style="padding:7px 12px" onclick="openModalPreparacion()"><i class="ph ph-plus"></i> Agregar preparación</button>
-        </div>
-        <p class="item-sub">Una sub-receta (masa, salsa, crumble...) armada con insumos u otras preparaciones, reutilizable entre productos.</p>
-        <div class="card">
-          <div id="preparaciones-list"><p class="empty">No hay preparaciones registradas</p></div>
         </div>
 
         <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px">
@@ -620,7 +636,13 @@ textarea.field{height:auto}
       <div class="modal-field" style="flex:1">
         <label class="field-label">Categoría (escribe para crear una nueva)</label>
         <input type="text" id="ins-categoria" class="field" placeholder="Ej: Frutas">
-        <div id="ins-categorias-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
+        <!-- Z1 (Ronda 7): en el estado real son diez categorías —
+             mostrarlas siempre alargaba el modal. Colapsadas por
+             defecto, con un botón que las despliega. -->
+        <button type="button" style="background:transparent;border:none;color:var(--muted);font-size:var(--fs-xs);font-weight:var(--fw-medium);cursor:pointer;padding:6px 0;display:flex;align-items:center;gap:4px" onclick="toggleInsCategoriasChips()">
+          Ver categorías existentes <i class="ph ph-caret-down" id="ins-categorias-caret"></i>
+        </button>
+        <div id="ins-categorias-chips" style="display:none;flex-wrap:wrap;gap:6px;margin-top:2px"></div>
       </div>
       <div class="modal-field" style="flex:1">
         <label class="field-label">Tipo de medición</label>
@@ -2063,7 +2085,16 @@ const TIPO_MEDICION_UNIDAD = { gramos: 'g', mililitros: 'ml', kilogramos: 'kg', 
 const UNIDAD_TIPO_MEDICION = { g: 'gramos', ml: 'mililitros', kg: 'kilogramos' };
 let insInventarioTipo = 'todos';
 let insInventarioCategoria = 'todos';
-const TIPO_INSUMO_LABEL = { materia: 'Materia prima', empaques: 'Empaque', toppings: 'Toppings' };
+let insInventarioBusqueda = ''; // Z2 (Ronda 7)
+let invFiltroPanelOpen = false; // Z1 (Ronda 7): colapsado por defecto
+let invCategoriaPanelOpen = false; // Z1: segundo nivel, también colapsado
+// Z3 (Ronda 7): Preparaciones — antes un bucket propio de inventario
+// (B4, ronda 2, con su propio stock y su lugar en getValorInventario y
+// los snapshots de conteo) pero alcanzable solo desplazándose hasta el
+// final de la página. Ahora es un tipo más, al mismo nivel que los otros
+// tres — no tiene `categoria` (no es un insumo con receta de compra, es
+// una sub-receta), así que el filtro de categoría no aplica a este tipo.
+const TIPO_INSUMO_LABEL = { materia: 'Materia prima', empaques: 'Empaque', toppings: 'Toppings', preparaciones: 'Preparaciones' };
 
 // Bug real reportado: los chips de Inventario eran solo "categoría"
 // (texto libre que cada quien escribe al crear un insumo) — sin ningún
@@ -2082,6 +2113,36 @@ function setInventarioTipo(tipo, el) {
   insInventarioCategoria = 'todos'; // la categoría anterior puede no existir en el tipo nuevo
   document.querySelectorAll('#inv-chips-tipo .chip').forEach(c => c.classList.remove('active'));
   el.classList.add('active');
+  document.getElementById('inv-btn-agregar').innerHTML = tipo === 'preparaciones'
+    ? '<i class="ph ph-plus"></i> Agregar preparación'
+    : '<i class="ph ph-plus"></i> Agregar insumo';
+  document.getElementById('inv-btn-agregar').setAttribute('onclick', tipo === 'preparaciones' ? 'openModalPreparacion()' : 'openInsumoModal()');
+  renderInventario();
+}
+// Z1 (Ronda 7): un solo botón despliega/colapsa TODO el panel de
+// filtros (tipo + categoría) — mismo patrón que Movimientos (Caja),
+// colapsado por defecto.
+function toggleInventarioFiltros() {
+  invFiltroPanelOpen = !invFiltroPanelOpen;
+  document.getElementById('inv-filtro-panel').style.display = invFiltroPanelOpen ? 'flex' : 'none';
+}
+// Segundo nivel de colapso, solo para la categoría — en el estado real
+// son diez, mostrarlas siempre alargaba el panel igual que antes de
+// este cambio (o el modal de editar insumo, ver ins-categorias-chips).
+function toggleInventarioCategoriaPanel() {
+  invCategoriaPanelOpen = !invCategoriaPanelOpen;
+  document.getElementById('inv-chips').style.display = invCategoriaPanelOpen ? 'flex' : 'none';
+  document.getElementById('inv-categoria-caret').className = 'ph ' + (invCategoriaPanelOpen ? 'ph-caret-up' : 'ph-caret-down');
+}
+function setInventarioBusqueda(v) {
+  insInventarioBusqueda = v;
+  renderInventario();
+}
+function clearInventarioFiltros() {
+  insInventarioTipo = 'todos';
+  insInventarioCategoria = 'todos';
+  insInventarioBusqueda = '';
+  document.getElementById('inv-buscador').value = '';
   renderInventario();
 }
 
@@ -2139,10 +2200,38 @@ function openInsumoModal(id) {
   document.getElementById('ins-categorias-chips').innerHTML = insumoCategorias().map(c =>
     `<button type="button" class="chip" onclick="document.getElementById('ins-categoria').value='${esc(c)}'">${esc(c)}</button>`
   ).join('');
+  // Z1: colapsadas cada vez que se abre el modal, sin importar cómo quedaron la última vez.
+  document.getElementById('ins-categorias-chips').style.display = 'none';
+  document.getElementById('ins-categorias-caret').className = 'ph ph-caret-down';
   document.getElementById('ins-calc-precio').value = '';
   document.getElementById('ins-calc-contenido').value = '';
   actualizarMargenAdicion();
   openModal('modal-insumo');
+  insumoModalSnapshot_ = snapshotInsumoModal_(); // Z5: base para detectar cambios sin guardar al tocar fuera
+}
+// Z5 (Ronda 7): snapshot de los campos del modal de insumo al abrirlo —
+// comparado contra el estado actual para decidir si un toque fuera del
+// modal (fondo oscuro) puede cerrarlo sin preguntar, o si hay que
+// confirmar primero (mismo criterio que perder un conteo a medias).
+let insumoModalSnapshot_ = null;
+const INSUMO_MODAL_CAMPOS_ = ['ins-nombre', 'ins-categoria', 'ins-tipo-insumo', 'ins-tipo-medicion', 'ins-cantidad', 'ins-costo', 'ins-minimo', 'ins-nombre-adicion', 'ins-precio-adicion', 'ins-porcion'];
+function snapshotInsumoModal_() {
+  const snap = {};
+  INSUMO_MODAL_CAMPOS_.forEach(id => { const el = document.getElementById(id); if (el) snap[id] = el.value; });
+  snap['ins-precio-variable'] = document.getElementById('ins-precio-variable').checked;
+  snap['ins-es-adicion'] = document.getElementById('ins-es-adicion').checked;
+  return snap;
+}
+function hayCambiosSinGuardarInsumo_() {
+  if (!insumoModalSnapshot_) return false;
+  const actual = snapshotInsumoModal_();
+  return Object.keys(actual).some(k => actual[k] !== insumoModalSnapshot_[k]);
+}
+function toggleInsCategoriasChips() {
+  const el = document.getElementById('ins-categorias-chips');
+  const abierto = el.style.display !== 'none';
+  el.style.display = abierto ? 'none' : 'flex';
+  document.getElementById('ins-categorias-caret').className = 'ph ' + (abierto ? 'ph-caret-down' : 'ph-caret-up');
 }
 // Bug real que esto previene: cargar el precio del PAQUETE completo
 // directo en "Costo por unidad" — el mismo error de fondo detrás del
@@ -2344,20 +2433,62 @@ function renderNecesidadesCompra() {
 }
 function renderInventario() {
   renderNecesidadesCompra();
-  const todos = CrumblyCore.getInsumosUnificados(state);
-  const tipos = ['todos', 'materia', 'empaques', 'toppings'];
+  const tipos = ['todos', 'materia', 'empaques', 'toppings', 'preparaciones']; // Z3: preparaciones, cuarto tipo real
   document.getElementById('inv-chips-tipo').innerHTML = tipos.map(t =>
     `<button class="chip ${t === insInventarioTipo ? 'active' : ''}" onclick="setInventarioTipo('${t}',this)">${t === 'todos' ? 'Todos' : esc(TIPO_INSUMO_LABEL[t])}</button>`
   ).join('');
-  const cats = insumoCategorias();
+  // Z3: las preparaciones no tienen `categoria` (no son un insumo con
+  // receta de compra) — el filtro de categoría no aplica a ese tipo.
+  const categoriaAplica = insInventarioTipo !== 'preparaciones';
+  document.getElementById('inv-categoria-wrap').style.display = categoriaAplica ? 'block' : 'none';
+  const cats = categoriaAplica ? insumoCategorias() : [];
   document.getElementById('inv-chips').innerHTML = ['todos', ...cats].map(c =>
     `<button class="chip ${c === insInventarioCategoria ? 'active' : ''}" onclick="setInventarioCategoria('${esc(c)}',this)">${c === 'todos' ? 'Todas las categorías' : esc(c)}</button>`
   ).join('');
+  document.getElementById('inv-categoria-activa-label').textContent = (categoriaAplica && insInventarioCategoria !== 'todos') ? '· ' + insInventarioCategoria : '';
+  // Z1: contador de filtros activos, visible en el botón sin necesidad de abrirlo.
+  const filtrosActivos = (insInventarioTipo !== 'todos' ? 1 : 0) + (categoriaAplica && insInventarioCategoria !== 'todos' ? 1 : 0) + (insInventarioBusqueda.trim() ? 1 : 0);
+  document.getElementById('inv-filtros-activos').textContent = filtrosActivos ? String(filtrosActivos) : '';
+
+  const el = document.getElementById('inv-list');
+  const busq = insInventarioBusqueda.trim().toLowerCase();
+
+  // Z3/Z4: tipo "preparaciones" muestra la lista de preparaciones en el
+  // mismo lugar — antes vivían en una sección aparte, alcanzable solo
+  // desplazándose hasta el final de la página.
+  if (insInventarioTipo === 'preparaciones') {
+    const preps = state.preparaciones.filter(p => !busq || p.nombre.toLowerCase().includes(busq));
+    if (!state.preparaciones.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">No hay preparaciones registradas</p>'; return; }
+    if (!preps.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">Ninguna preparación coincide con "' + esc(insInventarioBusqueda) + '"</p>'; return; }
+    el.innerHTML = preps.map(prep => {
+      let costo, error = null;
+      try { costo = CrumblyCore.getPreparacionCosto(state, prep.id); }
+      catch (e) { error = e.message; costo = { gramosTotal: 0, costoPorGramo: 0 }; }
+      const modoLabel = prep.modo === 'directo' ? 'Directo' : 'Porcentaje panadero';
+      // Y0: gramosTotal ya viene corregido (antes de esta ronda mostraba
+      // 84.000g donde debía mostrar 840 — ver PROGRESO.md § Y0).
+      return `<div class="list-row" style="padding:12px 16px;cursor:pointer" onclick="openModalPreparacion('${prep.id}')">
+        <div style="flex:1;min-width:0">
+          <div class="item-name">${esc(prep.nombre)}</div>
+          <div class="item-sub" style="${error ? 'color:var(--danger)' : ''}">${modoLabel} · ${costo.gramosTotal.toFixed(0)}g totales · ${error ? error : fmtGramoCosto(costo.costoPorGramo) + '/g'}</div>
+          <div class="item-sub">Stock: ${Math.round(Number(prep.cantidad) || 0).toLocaleString('es-CO')}g${prep.faltante ? ' · faltante ' + Math.round(prep.faltante).toLocaleString('es-CO') + 'g' : ''}</div>
+        </div>
+        <div style="display:flex;gap:4px;align-items:center;flex-shrink:0" onclick="event.stopPropagation()">
+          <button class="btn-icon" onclick="openModalLote('${prep.id}')" title="Producir lote"><i class="ph ph-cooking-pot"></i></button>
+          <button class="btn-icon danger" onclick="deletePreparacion('${prep.id}')" title="Eliminar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+        </div>
+        <i class="ph ph-caret-right" style="color:var(--soft);font-size:var(--fs-sm);margin-left:6px"></i>
+      </div>`;
+    }).join('');
+    return;
+  }
+
+  const todos = CrumblyCore.getInsumosUnificados(state);
   const items = todos
     .filter(i => insInventarioTipo === 'todos' || i.tipo === insInventarioTipo)
-    .filter(i => insInventarioCategoria === 'todos' || i.categoria === insInventarioCategoria);
-  const el = document.getElementById('inv-list');
-  if (!items.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">No hay insumos en esta categoría</p>'; return; }
+    .filter(i => insInventarioCategoria === 'todos' || i.categoria === insInventarioCategoria)
+    .filter(i => !busq || i.nombre.toLowerCase().includes(busq)); // Z2: buscador, combinado con los filtros de arriba
+  if (!items.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">' + (busq ? 'Ningún insumo coincide con "' + esc(insInventarioBusqueda) + '"' : 'No hay insumos en esta categoría') + '</p>'; return; }
   // Umbral de "esto probablemente está mal cargado" — distinto por unidad
   // de medida: nada medido por gramo/mililitro (harina, mantequilla,
   // salsas...) debería costar más de unos pocos cientos de pesos por
@@ -2388,6 +2519,11 @@ function renderInventario() {
   }).join('');
   renderDashboardAlerts();
 }
+// Z3/Z4: la lista de preparaciones vive ahora dentro de renderInventario
+// (tipo "preparaciones") — esta función queda como alias para los seis
+// llamadores existentes (savePreparacionUI, deletePreparacion, producir/
+// eliminar lote...), que no necesitan saber que la sección se fusionó.
+function renderPreparaciones() { renderInventario(); }
 
 /* ─── PREPARACIONES (HANDOFF §10.2) ───
    Sub-recetas (masa, salsas, crumble...) armadas con materia prima o con
@@ -2542,33 +2678,6 @@ function deletePreparacion(id) {
   renderPreparaciones();
   showToast('Preparación eliminada');
 }
-function renderPreparaciones() {
-  const el = document.getElementById('preparaciones-list');
-  if (!el) return;
-  if (!state.preparaciones.length) { el.innerHTML = '<p class="empty">No hay preparaciones registradas</p>'; return; }
-  el.innerHTML = state.preparaciones.map(prep => {
-    let costo, error = null;
-    try { costo = CrumblyCore.getPreparacionCosto(state, prep.id); }
-    catch (e) { error = e.message; costo = { gramosTotal: 0, costoPorGramo: 0 }; }
-    const modoLabel = prep.modo === 'directo' ? 'Directo' : 'Porcentaje panadero';
-    return `<div class="list-row">
-      <div style="flex:1;min-width:0">
-        <div class="item-name">${esc(prep.nombre)}</div>
-        <div class="item-sub">${modoLabel} · ${costo.gramosTotal.toFixed(0)}g totales</div>
-        <div class="item-sub" style="${error ? 'color:var(--danger)' : ''}">${error ? error : fmtGramoCosto(costo.costoPorGramo) + '/g'}</div>
-        <!-- T3: stock de la preparación (WIP), antes solo visible dentro
-             del modal de Conteo físico. -->
-        <div class="item-sub">Stock: ${Math.round(Number(prep.cantidad) || 0).toLocaleString('es-CO')}g${prep.faltante ? ' · faltante ' + Math.round(prep.faltante).toLocaleString('es-CO') + 'g' : ''}</div>
-      </div>
-      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0">
-        <button class="btn-icon" onclick="openModalLote('${prep.id}')" title="Producir lote"><i class="ph ph-cooking-pot"></i></button>
-        <button class="btn-icon" onclick="openModalPreparacion('${prep.id}')" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
-        <button class="btn-icon danger" onclick="deletePreparacion('${prep.id}')" title="Eliminar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
 /* ─── LOTES DE PRODUCCIÓN (T3, Ronda 3) ───
    producirPreparacion/eliminarLote/getPromedioRendimientoObservado ya
    existían (Ronda 2, con tests) pero sin pantalla — código muerto hasta
@@ -4614,6 +4723,31 @@ function openModal(id) {
   if (id === 'modal-ajustes') { renderPayloadPanel(); renderReporteIntegridad(); renderMigrationStatus(); renderCategoriasComportamiento(); }
 }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+// ─── Z5 (Ronda 7): tocar el fondo oscuro cierra el modal ────────────────
+// En el celular, con el pulgar, la X es el objetivo más chico y más
+// lejano de la pantalla. Un solo manejador delegado en `document` para
+// TODOS los modales de la app (patrón común, no una copia por modal) —
+// `e.target` solo es el propio `.modal-overlay` cuando el toque cae en
+// el fondo oscuro, nunca cuando cae dentro de `.modal` (ahí `e.target`
+// es un descendiente, no el overlay, así que nunca se cierra por tocar
+// el contenido). Excepción obligatoria: los modales con datos sin
+// guardar no se cierran por un toque accidental — perder un conteo a
+// medias sería exactamente el tipo de pérdida que T0.1 se construyó
+// para evitar. La X se queda donde estaba, para cerrar sin condiciones.
+document.addEventListener('click', function (e) {
+  if (!e.target.classList.contains('modal-overlay') || !e.target.classList.contains('open')) return;
+  const id = e.target.id;
+  if (id === 'modal-conteo') {
+    if (!confirm('¿Cerrar el conteo? Lo contado hasta ahora se guarda solo y podés seguir después.')) return;
+  } else if (id === 'modal-insumo' && hayCambiosSinGuardarInsumo_()) {
+    if (!confirm('Hay cambios sin guardar en este insumo — ¿cerrar igual?')) return;
+  } else if (id === 'modal-venta' && ventaCart.length) {
+    if (!confirm('Hay una venta con productos en el carrito — ¿cerrar igual? Se perderá el carrito.')) return;
+  } else if (id === 'modal-conflictos-catalogo') {
+    return; // nunca por toque fuera — hay que resolver cada conflicto o usar la X
+  }
+  closeModal(id);
+});
 
 // P2-6: doble confirmación porque es destructivo y no hay deshacer.
 // Importación única del menú Crumbly 2026 (PDF que compartió el usuario).

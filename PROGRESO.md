@@ -22,12 +22,12 @@ Esta ronda tiene dos orígenes distintos: **Y0**, un bug de cálculo real encont
 |---|---|
 | Y0 · Factor 100 en el modo porcentaje | ✅ HECHA |
 | Y1 · Pantalla de aportes (qué componente rompe un producto) | ✅ HECHA |
-| Z1 · Filtros colapsables | pendiente |
-| Z2 · Buscador en Inventario | pendiente |
-| Z3 · Preparaciones como cuarto botón de tipo | pendiente |
-| Z4 · Preparaciones editables desde su lista | pendiente |
-| Z5 · Cerrar modales al tocar fuera | pendiente |
-| Z6 · No regresiones | pendiente |
+| Z1 · Filtros colapsables | ✅ HECHA |
+| Z2 · Buscador en Inventario | ✅ HECHA |
+| Z3 · Preparaciones como cuarto botón de tipo | ✅ HECHA |
+| Z4 · Preparaciones editables desde su lista | ✅ HECHA |
+| Z5 · Cerrar modales al tocar fuera | ✅ HECHA |
+| Z6 · No regresiones | ✅ HECHA |
 
 ## Detalle por tarea
 
@@ -99,3 +99,71 @@ Con esto, el conteo físico de preparaciones (WIP) queda habilitado para usarse 
 **Suite completa: 359 tests** (auth 10, core 269, rowsync 39, sync 41) — medido corriendo los cuatro archivos.
 
 **Verificado en el navegador** (mock backend local en `localhost:8802`, cero contacto con `script.google.com`): se creó "Waffle caramel" (precio $20.000) con Leche a $3.550/ml (200 unidades → $710.000) y Harina normal — el modal de desglose de V3.1 mostró la línea de Leche resaltada en rojo con **"3550% del precio ⚠"** (Harina, normal, "3% del precio" sin resaltar); el centro de alertas mostró exactamente **"Waffle caramel: Leche aporta $710.000 (3.550% del precio)"**, y hacer clic en la alerta navegó a Productos y abrió el modal de edición de ESE producto; Ajustes → Reporte de integridad mostró la nueva fila "Componentes que aportan más del 50% del precio de venta (Y1)" con la misma línea. Sin errores de consola.
+
+---
+
+## Bloque Z — Interfaz, segunda tanda (pedido directo del dueño, uso en celular)
+
+Mismas reglas que el bloque W (Ronda 6): ninguna lógica de negocio ni fórmula de costeo/margen/varianza se tocó en todo este bloque — todos los cambios son de `index.html` (markup + funciones de UI), salvo donde se indica lo contrario.
+
+### Z1 · Filtros colapsables — HECHA
+
+- **Movimientos (Caja) ya tenía el patrón correcto** (botón embudo + contador de filtros activos, panel colapsado por defecto) — no se tocó, sirvió de referencia.
+- **Inventario no lo tenía**: tipo y categoría estaban siempre desplegados, dos filas completas antes de ver el primer insumo. Ahora: un botón embudo + `#inv-filtros-activos` (mismo patrón visual que Caja) despliega/colapsa `#inv-filtro-panel` (tipo + categoría + buscador), colapsado por defecto (`invFiltroPanelOpen = false`). El contador de filtros activos (`toggleInventarioFiltros`/`renderInventario`) se calcula sin necesidad de abrir el panel — cuenta tipo≠todos, categoría≠todos (solo si aplica) y búsqueda no vacía.
+- **"Las categorías, también desplegables" — un segundo nivel de colapso**, separado del panel general, en los DOS lugares que la mostraban siempre:
+  - Inventario: la fila "Categoría" dentro del panel de filtros tiene su propio toggle (`toggleInventarioCategoriaPanel`, caret que rota) — las categorías (10 en el estado real) solo se ven si alguien las despliega a propósito.
+  - El modal de editar insumo: `#ins-categorias-chips` (las mismas 10 categorías) pasó de mostrarse siempre a un botón "Ver categorías existentes ⌄" colapsado por defecto — se recolapsa cada vez que el modal se abre, sin importar cómo quedó la vez anterior.
+- El selector de categoría del modal de PRODUCTOS no se tocó — el encargo solo nombra Inventario y el modal de insumo como los dos lugares con el problema (categorías de producto son unas pocas, no diez).
+
+### Z2 · Buscador en Inventario — HECHA
+
+- Campo de búsqueda por nombre (`#inv-buscador`, `setInventarioBusqueda`) en la cabecera de Inventario, filtra en vivo (`oninput`) — se combina con los filtros de tipo/categoría existentes (`renderInventario` aplica los tres `.filter()` en cadena), no los reemplaza. Cuenta como un filtro activo más para el contador de Z1.
+- Aplica igual a la vista de insumos y a la de preparaciones (Z3) — ambas ramas de `renderInventario` filtran por `nombre.toLowerCase().includes(busq)`.
+- Resultado vacío: mensaje explícito con el término buscado ('Ningún insumo coincide con "…"' / 'Ninguna preparación coincide con "…"'), no una lista en blanco sin explicación.
+
+### Z3 · Preparaciones como cuarto botón de tipo — HECHA
+
+- **Preparaciones** es ahora un valor más de `insInventarioTipo` (`'preparaciones'`), listado en `inv-chips-tipo` al mismo nivel que Todos/Materia prima/Empaque/Toppings — ya no hay que desplazarse hasta el final de la página para llegar a ellas.
+- Cuando este tipo está activo: la fila de categoría se oculta (una preparación no tiene `categoria` — es una sub-receta, no un insumo con receta de compra), y el botón de acción de la cabecera cambia de "Agregar insumo" a "Agregar preparación" (`setInventarioTipo` reescribe el texto y el `onclick` del botón).
+- Respeta el buscador de Z2 (por nombre) — el filtro de categoría no aplica a este tipo, tal como pide el encargo ("que respete... y el filtro de categoría": respetarlo acá significa no ofrecerlo donde no tiene sentido, no forzarlo).
+- **La sección separada "Preparaciones" (con su propia card y botón "Agregar preparación") se eliminó** — quedaba duplicada con el nuevo tipo unificado, y mantener las dos habría dejado dos lugares con la misma información pudiendo desincronizarse. `renderPreparaciones()` (con sus seis llamadores existentes — guardar/borrar preparación, producir/eliminar lote) se convirtió en un alias de una línea que llama a `renderInventario()`: ningún llamador existente necesitó cambiar.
+
+### Z4 · Preparaciones editables desde su lista — HECHA
+
+- Cada fila de preparación (dentro del tipo "Preparaciones" de la lista unificada) abre `openModalPreparacion(id)` al tocar la fila completa — mismo patrón que las filas de insumos (`cursor:pointer`, caret `›` a la derecha). Los botones de acción propios de la fila (producir lote, eliminar) siguen funcionando por separado, con `event.stopPropagation()` para que tocarlos no dispare TAMBIÉN la apertura del modal de edición.
+- El stock WIP (`cantidad`) ya se mostraba en la fila desde T3 (Ronda 3) — confirmado que sigue apareciendo, sin cambios en ese dato.
+- El `gramosTotal` de la fila ya muestra el valor corregido por Y0 (840g, no 84.000g) — automático, sin tocar la fila: viene de `getPreparacionCosto`, que Y0 corrigió en su fuente.
+
+### Z5 · Cerrar modales al tocar fuera — HECHA
+
+- **Un solo manejador**, delegado en `document`, para TODOS los modales de la app — no una copia por modal. Se dispara solo cuando `e.target` es el propio `.modal-overlay` (el fondo oscuro) y no un descendiente — un clic dentro de `.modal` nunca cierra nada, porque el target ahí es un hijo, no el overlay.
+- **Excepciones, tal como exigía el encargo** — piden confirmación (nunca cierran directo):
+  - `modal-conteo` (conteo físico en progreso).
+  - `modal-insumo`, solo si hay cambios sin guardar — se compara un snapshot de los campos tomado al abrir el modal (`snapshotInsumoModal_`/`hayCambiosSinGuardarInsumo_`) contra el estado actual; si no cambió nada, cierra directo sin preguntar.
+  - `modal-venta`, solo si el carrito tiene algo (`ventaCart.length`).
+  - `modal-conflictos-catalogo`: **nunca** se cierra por toque fuera, ni con confirmación — hay que resolver cada conflicto o usar la X. No tiene un "cancelar" que tenga sentido (los conflictos no desaparecen si se ignoran).
+- La X se deja exactamente donde estaba en los seis casos — sigue cerrando sin condiciones.
+
+### Z6 · No regresiones — HECHA
+
+Recorrido completo en 375px y escritorio: Dashboard (Resumen y Costeo, con una cifra de 9 dígitos para probar overflow), Caja con sus filtros (sin cambios, sirvieron de referencia para Z1), Inventario con los cinco botones de tipo + buscador + filtros colapsados, Productos con el desglose de V3.1 y los aportes de Y1, Clientes, conteo físico (abierto, con la guarda de Z5 probada), producción de lotes (probado en Y0 y de nuevo acá vía la fila de preparación), y los tres modales del header de W3 (Ajustes/Alertas/Sesión). Se confirmó explícitamente que el cierre por toque fuera NO se dispara en ninguno de los cuatro modales con datos sin guardar (los cuatro probados uno por uno, con y sin cambios reales) y que sí cierra normalmente en un modal sin ese riesgo (Ajustes). Sin errores de consola en ningún paso, cero contacto con `script.google.com`.
+
+**Suite completa: 359 tests** (auth 10, core 269, rowsync 39, sync 41) — sin cambios respecto a Y1: todo el bloque Z es interfaz (markup + funciones de `index.html`), sin lógica nueva que testear en Node.
+
+---
+
+## Cierre del run
+
+**Suite completa, medida corriendo los cuatro archivos justo antes de escribir esta sección: 359 tests.**
+
+| Archivo | Tests |
+|---|---|
+| `tests/auth.test.js` | 10 |
+| `tests/core.test.js` | 269 |
+| `tests/rowsync.test.js` | 39 |
+| `tests/sync.test.js` | 41 |
+| **Total** | **359** |
+
+Todas las tareas de esta ronda (Y0, Y1, Z1–Z6) quedaron cerradas, verificadas en el navegador donde correspondía, y commiteadas por separado. El veredicto sobre Y0 — el único criterio de esta ronda que condiciona si el conteo físico de WIP puede hacerse con confianza — está en la sección de Y0 arriba: **sí, cerrado en las funciones que lo heredaban, con no-regresión confirmada en modo directo.**
+
+No se hizo merge a main. No se desplegó al Apps Script de producción. No se corrió `migrarAAppendOnly()` contra el Sheet real en ningún momento de esta ronda. Ningún dato real se tocó — el dueño siguió corrigiendo recetas a mano en la app mientras esta sesión trabajaba, tal como advertía el encargo.
