@@ -231,6 +231,96 @@
     return { ok: false, vacia: false, esperado: APPEND_HEADER, encontrado: headerRow };
   }
 
+  // ─── U4 (auditoría Ronda 4): C2 — fusión de catálogo POR REGISTRO ──────
+  //
+  // T1 resolvió el conflicto entre transacciones concurrentes (cada venta
+  // es su propia fila). El catálogo (productos, materia, empaques,
+  // toppings, preparaciones, clientes, config) sigue en el blob, y
+  // `pullOnLoad` reemplazaba el estado local completo con el remoto —
+  // dos personas editando recetas o insumos a la vez perdían trabajo en
+  // silencio, y quien perdía no se enteraba. Pasó de verdad: el dueño
+  // editando insumos a mano mientras el sistema sincronizaba.
+  //
+  // Alcance explícitamente LIMITADO (no es un merge automático completo,
+  // esa es otra ronda): detectar quién cambió qué desde la última base
+  // compartida, combinar lo que no choca, y cuando SÍ choca (el mismo
+  // registro cambiado distinto en los dos lados), no decidir sola —
+  // conservar la versión local en el resultado (para no perder el
+  // trabajo en curso) y reportar el conflicto aparte con las dos
+  // versiones, para que el usuario elija.
+  //
+  // Las colecciones de catálogo que son listas de registros CON id se
+  // fusionan registro por registro. El resto (config, schemaVersion) no
+  // tiene múltiples registros que fusionar — si el remoto cambió respecto
+  // a la base, gana el remoto (nadie más edita "el correo de la marca"
+  // desde dos dispositivos a la vez en la práctica); si no, gana lo mío.
+  var COLECCIONES_CATALOGO_CON_ID = ['productos', 'materia', 'empaques', 'toppings', 'preparaciones', 'clientes'];
+
+  // Igualdad estructural simple. LIMITACIÓN ACEPTADA: usa JSON.stringify,
+  // así que dos objetos con las mismas claves en OTRO orden se verían
+  // como "distintos" (falso positivo de cambio, nunca al revés) — en la
+  // práctica los registros siempre se construyen con el mismo código
+  // (`saveInsumo`, `savePreparacion`...), así que el orden de claves es
+  // estable. Documentado en vez de resuelto con una comparación profunda
+  // más cara, para no sobre-construir esto (alcance: detectar, no un
+  // motor de diffing genérico).
+  function catalogRecordsIguales_(a, b) {
+    if (a === undefined && b === undefined) return true;
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  function indexarPorId_(lista) {
+    var out = {};
+    (lista || []).forEach(function (r) { if (r && r.id !== undefined && r.id !== null) out[r.id] = r; });
+    return out;
+  }
+
+  // `base`: catálogo tal cual estaba la última vez que este dispositivo
+  // se sincronizó con éxito. `mine`: mi copia local ahora (con mis
+  // ediciones desde entonces). `remote`: lo que el servidor tiene ahora.
+  // Devuelve `{ merged, conflicts }` — `conflicts` es la lista de
+  // registros donde los dos lados cambiaron a valores DISTINTOS desde la
+  // base (nunca vacía silenciosamente resuelta: el llamador decide qué
+  // hacer con cada uno, ver `index.html`).
+  function mergeCatalogs(base, mine, remote) {
+    base = base || {}; mine = mine || {}; remote = remote || {};
+    var merged = {};
+    var conflicts = [];
+    var todasLasClaves = {};
+    Object.keys(base).concat(Object.keys(mine), Object.keys(remote)).forEach(function (k) { todasLasClaves[k] = true; });
+
+    Object.keys(todasLasClaves).forEach(function (coleccion) {
+      if (COLECCIONES_CATALOGO_CON_ID.indexOf(coleccion) === -1) {
+        var remotoCambio = !catalogRecordsIguales_(remote[coleccion], base[coleccion]);
+        merged[coleccion] = remotoCambio ? remote[coleccion] : mine[coleccion];
+        return;
+      }
+      var baseIdx = indexarPorId_(base[coleccion]);
+      var mineIdx = indexarPorId_(mine[coleccion]);
+      var remoteIdx = indexarPorId_(remote[coleccion]);
+      var ids = {};
+      Object.keys(baseIdx).concat(Object.keys(mineIdx), Object.keys(remoteIdx)).forEach(function (id) { ids[id] = true; });
+
+      var salida = [];
+      Object.keys(ids).forEach(function (id) {
+        var b = baseIdx[id], m = mineIdx[id], r = remoteIdx[id];
+        var mineChanged = !catalogRecordsIguales_(m, b);
+        var remoteChanged = !catalogRecordsIguales_(r, b);
+        if (mineChanged && remoteChanged && !catalogRecordsIguales_(m, r)) {
+          conflicts.push({ coleccion: coleccion, id: id, base: b || null, mio: m || null, remoto: r || null });
+          if (m) salida.push(m); // se conserva lo mío hasta que el usuario decida — nunca se pierde en silencio
+          return;
+        }
+        if (remoteChanged) { if (r) salida.push(r); return; } // solo cambió (o lo agregaron/borraron en) el remoto
+        if (mineChanged) { if (m) salida.push(m); return; } // solo cambié yo
+        if (m) salida.push(m); // nadie cambió — cualquiera sirve
+      });
+      merged[coleccion] = salida;
+    });
+
+    return { merged: merged, conflicts: conflicts };
+  }
+
   return {
     COLECCIONES_APPEND: COLECCIONES_APPEND,
     APPEND_HEADER: APPEND_HEADER,
@@ -245,6 +335,8 @@
     hydrateRecords: hydrateRecords,
     validarCabeceraAppend: validarCabeceraAppend,
     buildMigrationReport: buildMigrationReport,
-    faseMigracion: faseMigracion
+    faseMigracion: faseMigracion,
+    COLECCIONES_CATALOGO_CON_ID: COLECCIONES_CATALOGO_CON_ID,
+    mergeCatalogs: mergeCatalogs
   };
 });

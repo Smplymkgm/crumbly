@@ -161,7 +161,7 @@
     return out;
   }
 
-  function push(backendUrl, token, state, fetchImpl, usuario) {
+  function push(backendUrl, token, state, fetchImpl, usuario, baseCatalogVersion) {
     // U0: se mide el CATÁLOGO ANTES de mandar nada — sobre el tope de
     // bloqueo, ni siquiera se hace la petición. El payload completo puede
     // ser enorme (crece con el historial) y eso ya NO es motivo de
@@ -178,6 +178,10 @@
     var knownIds = knownRecordIdsDe_(state);
     if (knownIds) payload.knownRecordIds = knownIds; // U1
     if (usuario) payload.usuario = usuario;
+    // U4: contra qué versión de catálogo edité — si el backend avanzó
+    // desde entonces, devuelve CATALOG_CONFLICT en vez de escribir
+    // encima. Sin esto (undefined), sigue last-write-wins de siempre.
+    if (baseCatalogVersion !== undefined && baseCatalogVersion !== null) payload.baseCatalogVersion = baseCatalogVersion;
     var body = JSON.stringify(payload);
     return f(backendUrl, {
       method: 'POST',

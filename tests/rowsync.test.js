@@ -281,6 +281,114 @@ test('faseMigracion: colecciones append-only presentes pero VACÍAS → "post" (
   assert.strictEqual(RowSync.faseMigracion({ ventas: [], gastos: [], mermas: [], snapshots: [], ajustes: [], lotes: [] }), 'post');
 });
 
+console.log('\n== U4 (Ronda 4): C2 — mergeCatalogs (fusión de catálogo por registro) ==');
+
+function catalogoBase() {
+  return {
+    schemaVersion: 10,
+    config: { email: 'negocio@crumbly.co' },
+    materia: [
+      { id: 'm1', nombre: 'Harina', costo: 5, cantidad: 1000 },
+      { id: 'm2', nombre: 'Azúcar', costo: 4, cantidad: 500 }
+    ],
+    productos: [{ id: 'p1', nombre: 'Waffle', precio: 12000 }]
+  };
+}
+
+test('CRITERIO: dos clientes editando insumos DISTINTOS → los dos cambios sobreviven', () => {
+  const base = catalogoBase();
+  const mine = JSON.parse(JSON.stringify(base));
+  mine.materia[0] = Object.assign({}, mine.materia[0], { costo: 6 }); // yo edito m1
+  const remote = JSON.parse(JSON.stringify(base));
+  remote.materia[1] = Object.assign({}, remote.materia[1], { costo: 4.5 }); // otro dispositivo edita m2
+
+  const { merged, conflicts } = RowSync.mergeCatalogs(base, mine, remote);
+  assert.strictEqual(conflicts.length, 0, 'no debería haber ningún conflicto — son insumos distintos');
+  const porId = Object.fromEntries(merged.materia.map(m => [m.id, m]));
+  assert.strictEqual(porId.m1.costo, 6, 'mi edición de m1 sobrevive');
+  assert.strictEqual(porId.m2.costo, 4.5, 'la edición remota de m2 también sobrevive');
+});
+
+test('CRITERIO: dos clientes editando el MISMO insumo a valores distintos → se detecta, nada se pierde, el usuario decide', () => {
+  const base = catalogoBase();
+  const mine = JSON.parse(JSON.stringify(base));
+  mine.materia[0] = Object.assign({}, mine.materia[0], { costo: 6 });
+  const remote = JSON.parse(JSON.stringify(base));
+  remote.materia[0] = Object.assign({}, remote.materia[0], { costo: 999 }); // el mismo m1, otro valor
+
+  const { merged, conflicts } = RowSync.mergeCatalogs(base, mine, remote);
+  assert.strictEqual(conflicts.length, 1);
+  assert.strictEqual(conflicts[0].coleccion, 'materia');
+  assert.strictEqual(conflicts[0].id, 'm1');
+  assert.strictEqual(conflicts[0].mio.costo, 6);
+  assert.strictEqual(conflicts[0].remoto.costo, 999);
+  // nada se pierde en silencio: mi versión queda activa en el merge hasta que se decida
+  const m1Fusionado = merged.materia.find(m => m.id === 'm1');
+  assert.strictEqual(m1Fusionado.costo, 6);
+});
+
+test('el mismo cambio en los dos lados (no un conflicto real) no se reporta como conflicto', () => {
+  const base = catalogoBase();
+  const mine = JSON.parse(JSON.stringify(base));
+  mine.materia[0] = Object.assign({}, mine.materia[0], { costo: 6 });
+  const remote = JSON.parse(JSON.stringify(base));
+  remote.materia[0] = Object.assign({}, remote.materia[0], { costo: 6 }); // idéntico
+
+  const { conflicts } = RowSync.mergeCatalogs(base, mine, remote);
+  assert.strictEqual(conflicts.length, 0);
+});
+
+test('un insumo nuevo agregado SOLO en el remoto aparece en el merge', () => {
+  const base = catalogoBase();
+  const mine = JSON.parse(JSON.stringify(base));
+  const remote = JSON.parse(JSON.stringify(base));
+  remote.materia.push({ id: 'm3', nombre: 'Mantequilla', costo: 10, cantidad: 200 });
+
+  const { merged, conflicts } = RowSync.mergeCatalogs(base, mine, remote);
+  assert.strictEqual(conflicts.length, 0);
+  assert.ok(merged.materia.some(m => m.id === 'm3'));
+});
+
+test('un insumo que yo borré, sin que el remoto lo tocara, queda borrado en el merge', () => {
+  const base = catalogoBase();
+  const mine = JSON.parse(JSON.stringify(base));
+  mine.materia = mine.materia.filter(m => m.id !== 'm2');
+  const remote = JSON.parse(JSON.stringify(base));
+
+  const { merged, conflicts } = RowSync.mergeCatalogs(base, mine, remote);
+  assert.strictEqual(conflicts.length, 0);
+  assert.ok(!merged.materia.some(m => m.id === 'm2'));
+});
+
+test('yo borré un insumo pero el remoto lo editó → conflicto (no se borra en silencio lo que otro acaba de cambiar)', () => {
+  const base = catalogoBase();
+  const mine = JSON.parse(JSON.stringify(base));
+  mine.materia = mine.materia.filter(m => m.id !== 'm2');
+  const remote = JSON.parse(JSON.stringify(base));
+  remote.materia[1] = Object.assign({}, remote.materia[1], { costo: 4.5 });
+
+  const { conflicts } = RowSync.mergeCatalogs(base, mine, remote);
+  assert.strictEqual(conflicts.length, 1);
+  assert.strictEqual(conflicts[0].id, 'm2');
+  assert.strictEqual(conflicts[0].mio, null);
+  assert.strictEqual(conflicts[0].remoto.costo, 4.5);
+});
+
+test('config (no es una lista con id): si el remoto cambió, gana el remoto; si no, gana lo mío', () => {
+  const base = catalogoBase();
+  const mine = JSON.parse(JSON.stringify(base));
+  mine.config.factorPrestacional = 1.4; // yo cambié algo que el remoto no tocó
+  const remote = JSON.parse(JSON.stringify(base));
+  remote.config.email = 'nuevo@crumbly.co'; // el remoto cambió otra cosa
+
+  const r1 = RowSync.mergeCatalogs(base, mine, remote);
+  assert.strictEqual(r1.merged.config.email, 'nuevo@crumbly.co', 'el remoto cambió config -> gana el remoto');
+
+  const remoteSinCambios = JSON.parse(JSON.stringify(base));
+  const r2 = RowSync.mergeCatalogs(base, mine, remoteSinCambios);
+  assert.strictEqual(r2.merged.config.factorPrestacional, 1.4, 'el remoto no tocó config -> gana lo mío');
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);

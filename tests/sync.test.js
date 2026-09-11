@@ -251,6 +251,31 @@ test('CRITERIO: push() NO declara knownRecordIds si el estado nunca se sincroniz
   assert.strictEqual(body.knownRecordIds, undefined, 'sin lastSync no se declara nada — el backend no puede confundir "vacío" con "borré todo"');
 });
 
+group('U4 (Ronda 4): C2 — push() declara baseCatalogVersion');
+
+test('push() incluye baseCatalogVersion cuando se pasa explícitamente', async () => {
+  const f = mockFetch([{ body: { ok: true, catalogVersion: 5 } }]);
+  await Sync.push('https://x.com/exec', 'tok', { config: {} }, f, undefined, 4);
+  const body = JSON.parse(f.calls[0].opts.body);
+  assert.strictEqual(body.baseCatalogVersion, 4);
+});
+
+test('push() no manda baseCatalogVersion si no se pasa (compatibilidad con un cliente/llamada vieja)', async () => {
+  const f = mockFetch([{ body: { ok: true } }]);
+  await Sync.push('https://x.com/exec', 'tok', { config: {} }, f);
+  const body = JSON.parse(f.calls[0].opts.body);
+  assert.strictEqual(body.baseCatalogVersion, undefined);
+});
+
+test('push() propaga CATALOG_CONFLICT del backend (remoteState + remoteVersion) sin lanzar', async () => {
+  const f = mockFetch([{ body: { ok: false, error: 'CATALOG_CONFLICT', code: 'CATALOG_CONFLICT', remoteState: { materia: [] }, remoteVersion: 7 } }]);
+  const r = await Sync.push('https://x.com/exec', 'tok', { config: {} }, f, undefined, 3);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.code, 'CATALOG_CONFLICT');
+  assert.strictEqual(r.remoteVersion, 7);
+  assert.deepStrictEqual(r.remoteState, { materia: [] });
+});
+
 test('getSyncSizeHistory: sin localStorage (Node) devuelve un array vacío, nunca revienta', () => {
   assert.deepStrictEqual(Sync.getSyncSizeHistory(), []);
 });

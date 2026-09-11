@@ -1235,6 +1235,34 @@ function stateSinConteoEnProgreso() {
   return resto;
 }
 
+// ─── U4 (auditoría, Ronda 4): C2 — base de catálogo para detectar
+// conflictos ─────────────────────────────────────────────────────────
+// Metadata LOCAL de este dispositivo (nunca sincronizada, mismo espíritu
+// que `conteoEnProgreso`): la versión de catálogo y el catálogo tal cual
+// estaban la última vez que este dispositivo se sincronizó con éxito
+// (pull o push). Es la "base" para `CrumblyRowSync.mergeCatalogs` —
+// sin ella no hay forma de saber qué cambié YO desde entonces versus qué
+// cambió el servidor.
+const CATALOG_BASE_KEY = 'crumbly-catalog-base';
+function loadCatalogBase() {
+  try {
+    const raw = localStorage.getItem(CATALOG_BASE_KEY);
+    return raw ? JSON.parse(raw) : { version: 0, catalogo: {} };
+  } catch (e) { return { version: 0, catalogo: {} }; }
+}
+function saveCatalogBase(version, catalogo) {
+  try { localStorage.setItem(CATALOG_BASE_KEY, JSON.stringify({ version: version || 0, catalogo: catalogo || {} })); }
+  catch (e) { /* no crítico — en el peor caso, el próximo push/pull vuelve a detectar el mismo conflicto */ }
+}
+function catalogoActualDeState() {
+  return CrumblyRowSync.splitCatalogAndAppend(stateSinConteoEnProgreso()).catalogo;
+}
+
+// Conflictos de catálogo pendientes de que el usuario decida (nunca se
+// resuelven solos por timestamp) — ver `mostrarConflictosCatalogo` y
+// `resolverConflictoCatalogo` más abajo.
+let conflictosCatalogoPendientes = [];
+
 function loadState() {
   let raw = null;
   try {
@@ -1291,7 +1319,8 @@ function schedulePush() {
 }
 function pushInBackground() {
   const usuario = (auth.getCurrentUser() && auth.getCurrentUser().email) || '';
-  CrumblySync.push(auth.getBackendUrl(), auth.getToken(), stateSinConteoEnProgreso(), undefined, usuario)
+  const base = loadCatalogBase();
+  CrumblySync.push(auth.getBackendUrl(), auth.getToken(), stateSinConteoEnProgreso(), undefined, usuario, base.version)
     .then(r => {
       // T0: sobre el tope de bloqueo, push() ni siquiera intenta la
       // petición — esto es lo que evita la falla silenciosa. El aviso
@@ -1307,8 +1336,18 @@ function pushInBackground() {
         updateSyncStatus('Bloqueado por tamaño del catálogo — ver Ajustes', true);
         return;
       }
+      // U4 (C2): otro dispositivo escribió el catálogo desde la última
+      // vez que este sincronizó. Nunca se sobreescribe a ciegas (ni el
+      // remoto pisa lo mío, ni yo piso lo remoto) — se fusiona por
+      // registro y, si algo choca de verdad, se avisa y decide la
+      // persona, nunca el reloj.
+      if (r.code === 'CATALOG_CONFLICT') {
+        resolverConflictoDePush_(r);
+        return;
+      }
       if (!r.ok) { updateSyncStatus('Error al sincronizar: ' + (r.error || 'desconocido'), true); return; }
       state.config.lastSync = r.ts || new Date().toISOString();
+      saveCatalogBase(r.catalogVersion, catalogoActualDeState()); // U4: mi catálogo ya aceptado tal cual = nueva base
       try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
       updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
       // U0: por debajo del tope de bloqueo, pero el CATÁLOGO ya en zona de
@@ -1322,6 +1361,30 @@ function pushInBackground() {
       }
     })
     .catch(() => updateSyncStatus('Sin conexión con el backend — los cambios quedan solo en este navegador por ahora', true));
+}
+
+// U4 (C2): un push chocó contra una versión de catálogo más nueva.
+// Fusiona por registro (base = mi última sincronización real, mine = mi
+// estado actual, remote = lo que el backend tiene ahora) y aplica el
+// resultado. Los registros sin conflicto real quedan combinados sin que
+// nadie tenga que hacer nada; los que sí chocan quedan con MI versión
+// activa (nada se pierde) y se muestran para que la persona decida.
+function resolverConflictoDePush_(r) {
+  const base = loadCatalogBase();
+  const mine = catalogoActualDeState();
+  const remote = CrumblyRowSync.splitCatalogAndAppend(r.remoteState).catalogo;
+  const { merged, conflicts } = CrumblyRowSync.mergeCatalogs(base.catalogo, mine, remote);
+  Object.assign(state, merged); // solo toca claves de catálogo — las colecciones append-only locales no se tocan acá
+  saveCatalogBase(r.remoteVersion, merged);
+  try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
+  refreshAll();
+  if (conflicts.length) {
+    mostrarConflictosCatalogo(conflicts);
+    updateSyncStatus('Conflicto de sincronización — ' + conflicts.length + ' registro(s) por revisar', true);
+  } else {
+    updateSyncStatus('Se combinaron cambios de otro dispositivo — reintentando sincronizar');
+    saveState(); // vuelve a intentar con la nueva base — ya no debería chocar
+  }
 }
 
 // Client ID de OAuth de Google Cloud Console — público (va en el HTML,
@@ -1366,6 +1429,7 @@ async function afterLogin_(successMsg) {
   state = CrumblyCore.migrateState(r.state);
   restaurarConteoEnProgresoLocal(); // T0.1: el pull no trae conteoEnProgreso — se restaura desde este dispositivo, nunca se pierde
   state.config.lastSync = new Date().toISOString();
+  saveCatalogBase(r.catalogVersion, catalogoActualDeState()); // U4: primera sincronización real de este dispositivo = nueva base
   saveState();
   refreshAll();
   updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
@@ -1409,12 +1473,49 @@ function pullOnLoad() {
   CrumblySync.pull(auth.getBackendUrl(), auth.getToken())
     .then(r => {
       if (!r.ok || !r.state) return;
+      // U4 (C2): antes esto reemplazaba `state` completo con lo remoto
+      // sin preguntar — un pull de OTRO dispositivo podía pisar en
+      // silencio una edición de catálogo que este dispositivo todavía no
+      // había sincronizado. Ahora primero se pregunta si hay algo propio
+      // sin sincronizar (comparando contra la BASE, no contra lo que
+      // llegó) antes de decidir cómo aplicar el pull.
+      const base = loadCatalogBase();
+      const mineCatalogo = catalogoActualDeState(); // ANTES de tocar `state`
+      const sinEdicionLocal = JSON.stringify(mineCatalogo) === JSON.stringify(base.catalogo);
+
+      if (sinEdicionLocal) {
+        // Nada propio pendiente — seguro reemplazar tal cual (comportamiento de siempre).
+        state = CrumblyCore.migrateState(r.state);
+        restaurarConteoEnProgresoLocal(); // T0.1: un pull de OTRO dispositivo nunca pisa el conteo en curso de este
+        state.config.lastSync = new Date().toISOString();
+        saveCatalogBase(r.catalogVersion, catalogoActualDeState());
+        try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
+        updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
+        refreshAll();
+        return;
+      }
+
+      // Hay ediciones de catálogo locales sin sincronizar — fusionar por
+      // registro en vez de reemplazar. Las colecciones append-only SÍ
+      // vienen frescas del servidor (T1/U1: esa parte ya es fuente única
+      // de verdad, sin conflicto posible), solo el catálogo se fusiona.
+      const remoteCatalogo = CrumblyRowSync.splitCatalogAndAppend(r.state).catalogo;
+      const { merged, conflicts } = CrumblyRowSync.mergeCatalogs(base.catalogo, mineCatalogo, remoteCatalogo);
+      const conteoActual = state.conteoEnProgreso;
       state = CrumblyCore.migrateState(r.state);
-      restaurarConteoEnProgresoLocal(); // T0.1: un pull de OTRO dispositivo nunca pisa el conteo en curso de este
+      state.conteoEnProgreso = conteoActual; // T0.1: tampoco se pisa por este camino
+      Object.assign(state, merged); // el catálogo no es el remoto puro — es el fusionado por registro
       state.config.lastSync = new Date().toISOString();
+      saveCatalogBase(r.catalogVersion, merged);
       try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
-      updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
       refreshAll();
+      if (conflicts.length) {
+        mostrarConflictosCatalogo(conflicts);
+        updateSyncStatus('Conflicto de sincronización — ' + conflicts.length + ' registro(s) por revisar', true);
+      } else {
+        updateSyncStatus('Se combinaron cambios de otro dispositivo · ' + formatSyncTime(state.config.lastSync));
+        saveState(); // sincroniza de vuelta el resultado del merge con la nueva base
+      }
     })
     .catch(() => updateSyncStatus('Trabajando sin conexión con el backend — se sincronizará cuando vuelva la red', true));
 }
@@ -1562,6 +1663,71 @@ function showPersistentError(msg, actionLabel, actionFn) {
   dismiss.onclick = () => el.remove();
   row.appendChild(dismiss);
   el.appendChild(row);
+}
+
+// ─── U4 (C2): resolución de conflictos de catálogo ──────────────────────
+// Un conflicto real (mismo registro, editado distinto en dos lados) NUNCA
+// se resuelve solo — se muestra con las dos versiones y la persona
+// elige. Modal armado por JS (mismo patrón que showPersistentError) en
+// vez de markup estático: no forma parte del flujo normal de ninguna
+// pantalla, solo aparece cuando de verdad hay algo que decidir.
+function resumenRegistroConflicto_(item) {
+  if (!item) return '(no existe / fue borrado)';
+  const campos = ['nombre', 'costo', 'precio', 'cantidad', 'unidad', 'categoria'].filter(k => item[k] !== undefined);
+  return campos.map(k => k + ': ' + item[k]).join(' · ') || JSON.stringify(item);
+}
+function mostrarConflictosCatalogo(conflicts) {
+  conflictosCatalogoPendientes = conflicts;
+  renderConflictosCatalogo_();
+  showPersistentError(
+    conflicts.length + ' registro(s) se editaron en dos dispositivos a la vez — nada se perdió, pero hay que elegir cuál versión se queda.',
+    'Revisar conflictos',
+    () => document.getElementById('modal-conflictos-catalogo').classList.add('open')
+  );
+}
+function renderConflictosCatalogo_() {
+  let overlay = document.getElementById('modal-conflictos-catalogo');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'modal-conflictos-catalogo';
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = '<div class="modal"><div class="modal-title-row"><span class="modal-title">Conflictos de sincronización</span><button class="modal-close" onclick="closeModal(\'modal-conflictos-catalogo\')"><i class="ph ph-x"></i></button></div><div id="conflictos-catalogo-lista" style="display:flex;flex-direction:column;gap:14px"></div></div>';
+    document.body.appendChild(overlay);
+  }
+  const lista = document.getElementById('conflictos-catalogo-lista');
+  if (!conflictosCatalogoPendientes.length) {
+    lista.innerHTML = '<p class="empty">Sin conflictos pendientes.</p>';
+    return;
+  }
+  lista.innerHTML = conflictosCatalogoPendientes.map((c, i) => `
+    <div class="card" style="padding:12px">
+      <div class="item-name" style="margin-bottom:6px">${esc(COLECCION_LABEL[c.coleccion] || c.coleccion)} · ${esc((c.mio && c.mio.nombre) || (c.remoto && c.remoto.nombre) || c.id)}</div>
+      <div class="item-sub" style="margin-bottom:4px">Lo mío: ${esc(resumenRegistroConflicto_(c.mio))}</div>
+      <div class="item-sub" style="margin-bottom:8px">Lo remoto: ${esc(resumenRegistroConflicto_(c.remoto))}</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-outline" style="flex:1;padding:8px" onclick="resolverConflictoCatalogo(${i},'mio')">Mantener el mío</button>
+        <button class="btn btn-outline" style="flex:1;padding:8px" onclick="resolverConflictoCatalogo(${i},'remoto')">Usar el remoto</button>
+      </div>
+    </div>`).join('');
+}
+function resolverConflictoCatalogo(i, cual) {
+  const c = conflictosCatalogoPendientes[i];
+  if (!c) return;
+  const elegido = cual === 'mio' ? c.mio : c.remoto;
+  const lista = state[c.coleccion] || [];
+  const idx = lista.findIndex(x => x.id === c.id);
+  if (elegido) { if (idx >= 0) lista[idx] = elegido; else lista.push(elegido); }
+  else if (idx >= 0) lista.splice(idx, 1); // la versión elegida no existe -> se había borrado en ese lado
+  conflictosCatalogoPendientes.splice(i, 1);
+  renderConflictosCatalogo_();
+  refreshAll();
+  saveState(); // esta elección ya es la nueva base -> el próximo push no debería volver a chocar por este registro
+  if (!conflictosCatalogoPendientes.length) {
+    closeModal('modal-conflictos-catalogo');
+    const banner = document.getElementById('persistent-error');
+    if (banner) banner.remove();
+    showToast('Conflictos resueltos ✓');
+  }
 }
 
 function navTo(page, el) {

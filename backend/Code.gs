@@ -81,7 +81,11 @@ function doGet(e) {
     return json_({ ok: true, ts: new Date().toISOString() });
   }
   if (params.action === 'pull') {
-    return json_({ ok: true, state: readState_() });
+    // U4: catalogVersion viaja APARTE de `state` (nunca dentro del
+    // catálogo mismo) — es la base que el cliente va a declarar en su
+    // próximo push para que el backend detecte si alguien más escribió
+    // desde entonces.
+    return json_({ ok: true, state: readState_(), catalogVersion: getCatalogVersion_() });
   }
   if (params.action === 'migrationStatus') {
     return json_({ ok: true, ultima: getUltimaMigracion_(), fase: RowSyncFaseMigracion_(leerCatalogoCrudo_()) });
@@ -124,9 +128,12 @@ function doPost(e) {
       // U1: knownRecordIds (conjunto completo declarado por colección) y
       // usuario (para el rastro de la lápida) — ambos opcionales; un
       // cliente viejo que no los mande simplemente no genera lápidas.
-      var resultado = writeState_(body.state, body.knownRecordIds, body.usuario);
-      if (!resultado.ok) return json_(resultado); // T0: error tipado (ej. PAYLOAD_TOO_LARGE), nunca ok:true en silencio
-      return json_({ ok: true, ts: new Date().toISOString(), lapidas: resultado.lapidas });
+      // U4: baseCatalogVersion — contra qué versión del catálogo editó
+      // el cliente; también opcional, un cliente viejo sigue con
+      // last-write-wins (comportamiento de siempre).
+      var resultado = writeState_(body.state, body.knownRecordIds, body.usuario, body.baseCatalogVersion);
+      if (!resultado.ok) return json_(resultado); // T0/U4: error tipado (PAYLOAD_TOO_LARGE / CATALOG_CONFLICT), nunca ok:true en silencio
+      return json_({ ok: true, ts: new Date().toISOString(), lapidas: resultado.lapidas, catalogVersion: resultado.catalogVersion });
     } finally {
       lock.releaseLock();
     }
@@ -494,7 +501,22 @@ function readState_() {
 var PAYLOAD_TOPE_CHARS = 50000;
 var PAYLOAD_BLOQUEO_CHARS = 48000;
 
-function writeState_(state, knownRecordIds, usuario) {
+// ─── U4 (auditoría Ronda 4): versión del catálogo ──────────────────────
+// Contador simple en `state_json!A2` (aparte de la celda del catálogo en
+// A1 y el timestamp en B1) — se incrementa solo cuando el CONTENIDO del
+// catálogo cambia de verdad (no en cada push; muchos pushes no tocan el
+// catálogo para nada). El cliente declara contra qué versión editó
+// (`baseCatalogVersion`); si el catálogo avanzó desde entonces, hay un
+// conflicto que resolver — ver `mergeCatalogs` en js/rowsync.js.
+function getCatalogVersion_() {
+  var v = getOrCreateSheet_(STATE_SHEET).getRange(2, 1).getValue();
+  return (typeof v === 'number' && v > 0) ? v : 0;
+}
+function setCatalogVersion_(v) {
+  getOrCreateSheet_(STATE_SHEET).getRange(2, 1).setValue(v);
+}
+
+function writeState_(state, knownRecordIds, usuario, baseCatalogVersion) {
   var catalogo = {};
   Object.keys(state || {}).forEach(function (k) {
     if (APPEND_COLLECTIONS.indexOf(k) === -1) catalogo[k] = state[k];
@@ -503,21 +525,46 @@ function writeState_(state, knownRecordIds, usuario) {
   if (json.length >= PAYLOAD_BLOQUEO_CHARS) {
     return { ok: false, error: 'PAYLOAD_TOO_LARGE', code: 'PAYLOAD_TOO_LARGE', tam: json.length, tope: PAYLOAD_TOPE_CHARS };
   }
-  var sh = getOrCreateSheet_(STATE_SHEET);
-  sh.getRange(1, 1).setValue(json);
-  sh.getRange(1, 2).setValue(new Date().toISOString());
 
+  var sh = getOrCreateSheet_(STATE_SHEET);
+  var currentVersion = getCatalogVersion_();
+
+  // U4: detectar el conflicto ANTES de escribir. Un cliente viejo que no
+  // manda `baseCatalogVersion` (undefined/null) sigue con last-write-wins
+  // — mismo comportamiento de siempre, sin romper compatibilidad.
+  var catalogConflict = (baseCatalogVersion !== undefined && baseCatalogVersion !== null && baseCatalogVersion < currentVersion);
+
+  if (!catalogConflict) {
+    var catalogoAnterior = sh.getRange(1, 1).getValue();
+    var cambioDeCatalogo = json !== catalogoAnterior;
+    sh.getRange(1, 1).setValue(json);
+    sh.getRange(1, 2).setValue(new Date().toISOString());
+    if (cambioDeCatalogo) {
+      currentVersion += 1;
+      setCatalogVersion_(currentVersion);
+    }
+  }
+
+  // Las colecciones append-only son seguras de escribir SIEMPRE, haya o
+  // no conflicto de catálogo — T1 ya las hizo independientes por id, y
+  // este push puede traer una venta nueva legítima aunque su catálogo
+  // esté desactualizado.
   var agregados = {};
   var lapidas = {};
   APPEND_COLLECTIONS.forEach(function (nombre) {
     agregados[nombre] = appendNewRecords_(nombre, state[nombre]);
-    // U1: si el cliente declaró el conjunto completo de esta colección,
-    // escribir lápidas para los ids que ya no están.
     var kr = knownRecordIds && knownRecordIds[nombre];
     lapidas[nombre] = appendTombstones_(nombre, kr, usuario).escritas;
   });
+
+  if (catalogConflict) {
+    // No se escribió el catálogo — se le devuelve el estado remoto
+    // completo para que el cliente fusione por registro (mergeCatalogs)
+    // y decida qué hacer con lo que de verdad choque.
+    return { ok: false, error: 'CATALOG_CONFLICT', code: 'CATALOG_CONFLICT', remoteState: readState_(), remoteVersion: currentVersion };
+  }
   mirrorCollections_(state); // catálogo únicamente ahora — ver nota en mirrorCollections_
-  return { ok: true, agregados: agregados, lapidas: lapidas };
+  return { ok: true, agregados: agregados, lapidas: lapidas, catalogVersion: currentVersion };
 }
 
 // ─── U2 (auditoría Ronda 4): validar la FORMA de la hoja antes de migrar
