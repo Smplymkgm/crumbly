@@ -1365,7 +1365,18 @@ console.log('\n== T2.1 (Ronda 3): reporte de integridad (solo diagnóstico, no c
 
 function stateIntegridadOk() {
   return C.migrateState({
-    productos: [{ id: 'p1', nombre: 'Waffle', precio: 20000, componentes: [{ tipo: 'materia', refId: 'm1', gramos: 100 }], empaquesUsados: [] }],
+    // A2 (Ronda 8): los tres insumos están en uso — m1/m2/m3, cada uno
+    // referenciado por el producto — así "estado sano" también da vacío
+    // en insumosDuplicados/insumosHuerfanos (ver esos tests en § A2).
+    productos: [{
+      id: 'p1', nombre: 'Waffle', precio: 20000,
+      componentes: [
+        { tipo: 'materia', refId: 'm1', gramos: 100 },
+        { tipo: 'materia', refId: 'm2', gramos: 20 },
+        { tipo: 'materia', refId: 'm3', gramos: 10 }
+      ],
+      empaquesUsados: []
+    }],
     materia: [
       { id: 'm1', nombre: 'Harina', unidad: 'g', costo: 5, cantidad: 1000, minimo: 0 },
       { id: 'm2', nombre: 'Azúcar', unidad: 'g', costo: 4, cantidad: 1000, minimo: 0 },
@@ -3215,6 +3226,79 @@ test('moverInsumoDeTipo: id inexistente en el bucket viejo no rompe nada (false,
   const s = C.emptyState();
   const ok = C.moverInsumoDeTipo(s, 'no-existe', 'empaques', 'materia');
   assert.strictEqual(ok, false);
+});
+
+console.log('\n== A2 (Ronda 8): insumos duplicados y huérfanos ==');
+
+test('CRITERIO: dos insumos de nombre similar (uno en uso, otro huérfano) se reportan juntos con sus costos, severidad alta', () => {
+  const s = C.emptyState();
+  s.materia.push({ id: 'm-viejo', nombre: 'Mantequilla', unidad: 'g', costo: 6, cantidad: 500, minimo: 0 });
+  s.materia.push({ id: 'm-nuevo', nombre: 'Mantequilla D1', unidad: 'g', costo: 8, cantidad: 500, minimo: 0 });
+  s.productos.push({ id: 'p1', nombre: 'Waffle', precio: 10000, componentes: [{ tipo: 'materia', refId: 'm-viejo', gramos: 50 }] });
+
+  const r = C.getInsumosDuplicadosYHuerfanos(s);
+  assert.strictEqual(r.duplicados.length, 1);
+  const par = r.duplicados[0];
+  assert.strictEqual(par.severidad, 'alta');
+  assert.strictEqual(par.tipo, 'materia');
+  const idsEnPar = [par.a.id, par.b.id].sort();
+  assert.deepStrictEqual(idsEnPar, ['m-nuevo', 'm-viejo']);
+  const viejo = par.a.id === 'm-viejo' ? par.a : par.b;
+  const nuevo = par.a.id === 'm-viejo' ? par.b : par.a;
+  assert.strictEqual(viejo.usos, 1, 'el viejo sigue en uso — es el que las recetas leen de verdad');
+  assert.strictEqual(nuevo.usos, 0, 'el corregido quedó huérfano');
+  assert.strictEqual(viejo.costo, 6);
+  assert.strictEqual(nuevo.costo, 8);
+  assert.strictEqual(r.huerfanos.length, 0, 'ya salió en duplicados — no se repite en huérfanos sueltos');
+});
+
+test('CRITERIO: un huérfano SIN gemelo de nombre similar reporta severidad baja, aparte de duplicados', () => {
+  const s = C.emptyState();
+  s.materia.push({ id: 'm-solo', nombre: 'Vainilla en pasta', unidad: 'g', costo: 40, cantidad: 100, minimo: 0 });
+  const r = C.getInsumosDuplicadosYHuerfanos(s);
+  assert.strictEqual(r.duplicados.length, 0);
+  assert.strictEqual(r.huerfanos.length, 1);
+  assert.strictEqual(r.huerfanos[0].id, 'm-solo');
+  assert.strictEqual(r.huerfanos[0].severidad, 'baja');
+});
+
+test('CRITERIO: un estado sin duplicados ni huérfanos no reporta nada', () => {
+  const s = C.emptyState();
+  s.materia.push({ id: 'm1', nombre: 'Harina', unidad: 'g', costo: 5, cantidad: 1000, minimo: 0 });
+  s.productos.push({ id: 'p1', nombre: 'Waffle', precio: 10000, componentes: [{ tipo: 'materia', refId: 'm1', gramos: 100 }] });
+  const r = C.getInsumosDuplicadosYHuerfanos(s);
+  assert.strictEqual(r.duplicados.length, 0);
+  assert.strictEqual(r.huerfanos.length, 0);
+});
+
+test('nombres similares en buckets DISTINTOS no se reportan como duplicados (el bucket importa)', () => {
+  const s = C.emptyState();
+  s.materia.push({ id: 'm-caja', nombre: 'Caja', unidad: 'unidad', costo: 100, cantidad: 50, minimo: 0 });
+  s.empaques.push({ id: 'e-caja', nombre: 'Caja grande', unidad: 'unidad', costo: 300, cantidad: 50, minimo: 0 });
+  const r = C.getInsumosDuplicadosYHuerfanos(s);
+  assert.strictEqual(r.duplicados.length, 0);
+  assert.strictEqual(r.huerfanos.length, 2, 'los dos siguen siendo huérfanos individuales — solo no se emparejan entre buckets distintos');
+});
+
+test('ambos insumos del par en uso → severidad media (no alta, no hay huérfano en el par)', () => {
+  const s = C.emptyState();
+  s.materia.push({ id: 'm-a', nombre: 'Crema de leche', unidad: 'ml', costo: 9, cantidad: 500, minimo: 0 });
+  s.materia.push({ id: 'm-b', nombre: 'Crema de leche 1lt', unidad: 'ml', costo: 11, cantidad: 500, minimo: 0 });
+  s.productos.push({ id: 'p1', nombre: 'A', precio: 5000, componentes: [{ tipo: 'materia', refId: 'm-a', gramos: 10 }] });
+  s.productos.push({ id: 'p2', nombre: 'B', precio: 5000, componentes: [{ tipo: 'materia', refId: 'm-b', gramos: 10 }] });
+  const r = C.getInsumosDuplicadosYHuerfanos(s);
+  assert.strictEqual(r.duplicados.length, 1);
+  assert.strictEqual(r.duplicados[0].severidad, 'media');
+});
+
+test('getReporteIntegridad incluye insumosDuplicados/insumosHuerfanos (integrado, no un cálculo aparte)', () => {
+  const s = C.emptyState();
+  s.materia.push({ id: 'm-viejo', nombre: 'Huevos', unidad: 'unidad', costo: 300, cantidad: 50, minimo: 0 });
+  s.materia.push({ id: 'm-nuevo', nombre: 'Huevos x30', unidad: 'unidad', costo: 9000, cantidad: 1, minimo: 0 });
+  s.productos.push({ id: 'p1', nombre: 'Torta', precio: 20000, componentes: [{ tipo: 'materia', refId: 'm-viejo', gramos: 3 }] });
+  const r = C.getReporteIntegridad(s);
+  assert.strictEqual(r.insumosDuplicados.length, 1);
+  assert.strictEqual(r.insumosDuplicados[0].severidad, 'alta');
 });
 
 console.log('\n== Resumen ==');

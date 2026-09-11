@@ -1205,14 +1205,89 @@
     var productosCostoMayorAPrecio = (state.productos || []).filter(function (p) {
       return getCostoProducto(p, state) > (Number(p.precio) || 0);
     }).map(function (p) { return { id: p.id, nombre: p.nombre, costo: getCostoProducto(p, state), precio: Number(p.precio) || 0 }; });
+    // A2 (Ronda 8): insumos duplicados/huérfanos — ver getInsumosDuplicadosYHuerfanos.
+    var dyh = getInsumosDuplicadosYHuerfanos(state);
     return {
       sinUnidad: sinUnidad,
       costoFueraDeRango: costoFueraDeRango,
       stockConCostoCero: stockConCostoCero,
       stockNegativoOFaltante: stockNegativoOFaltante,
       ventasCostoMayorATotal: ventasCostoMayorATotal,
-      productosCostoMayorAPrecio: productosCostoMayorAPrecio
+      productosCostoMayorAPrecio: productosCostoMayorAPrecio,
+      insumosDuplicados: dyh.duplicados,
+      insumosHuerfanos: dyh.huerfanos
     };
+  }
+
+  // ─── A2 (auditoría Ronda 8): insumos duplicados y huérfanos ───────────
+  //
+  // A1 dio la capacidad de corregir un insumo mal clasificado sin romper
+  // recetas — esto detecta la otra mitad del mismo problema real: antes
+  // de A1, la única corrección posible era borrar y volver a crear, y
+  // eso dejaba DOS registros — el viejo (que las recetas siguen usando)
+  // y el nuevo (corregido, pero huérfano, sin ninguna receta que lo
+  // referencie). Esta función encuentra esos pares.
+  //
+  // "Nombre similar" = uno es prefijo del otro, comparando normalizado
+  // (minúsculas, sin acentos, espacios colapsados) — cubre los 4 casos
+  // reales encontrados (Mantequilla/Mantequilla D1, Crema de leche/Crema
+  // de leche 1lt, Huevos/Huevos x30, Malteada frutos rojos
+  // porcentaje/directo). Falso positivo conocido: dos insumos genuinamente
+  // distintos donde uno es prefijo casual del otro (ej. "Sal" y "Salsa de
+  // tomate") — reporta el par igual, la decisión de si son el mismo
+  // insumo es de la persona, esto no fusiona nada solo.
+  //
+  // NO hace ninguna acción automática — ni fusión, ni "arreglar todo". Un
+  // auto-merge que adivina mal rompe recetas en silencio, exactamente el
+  // problema que esto expone. Cada caso lo resuelve una persona, ahora
+  // con A1 disponible para mover/corregir sin perder el id.
+  function normalizarNombreInsumo_(nombre) {
+    return (nombre || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim().replace(/\s+/g, ' ');
+  }
+  function nombresSimilares_(a, b) {
+    return a.length > 0 && b.length > 0 && (a.indexOf(b) === 0 || b.indexOf(a) === 0);
+  }
+  function getInsumosDuplicadosYHuerfanos(state) {
+    var insumos = getInsumosUnificados(state);
+    var usoPorId = {};
+    insumos.forEach(function (i) {
+      var uso = findProductosUsandoInsumo(state, i.id);
+      usoPorId[i.id] = uso.productos.length + uso.preparaciones.length;
+    });
+
+    var duplicados = [];
+    var enUnPar = {};
+    ['materia', 'empaques', 'toppings'].forEach(function (tipo) {
+      var delBucket = insumos.filter(function (i) { return i.tipo === tipo; });
+      for (var a = 0; a < delBucket.length; a++) {
+        for (var b = a + 1; b < delBucket.length; b++) {
+          var i1 = delBucket[a], i2 = delBucket[b];
+          if (!nombresSimilares_(normalizarNombreInsumo_(i1.nombre), normalizarNombreInsumo_(i2.nombre))) continue;
+          var unoOrfanoElOtroNo = (usoPorId[i1.id] === 0) !== (usoPorId[i2.id] === 0);
+          duplicados.push({
+            tipo: tipo,
+            a: { id: i1.id, nombre: i1.nombre, costo: Number(i1.costo) || 0, usos: usoPorId[i1.id] },
+            b: { id: i2.id, nombre: i2.nombre, costo: Number(i2.costo) || 0, usos: usoPorId[i2.id] },
+            // "alta": exactamente uno de los dos está en uso — la señal
+            // exacta de "alguien corrigió creando uno nuevo, el costeo
+            // sigue leyendo el viejo". "media": los dos en uso, o los dos
+            // huérfanos — sigue siendo información útil, pero sin esa
+            // urgencia (nada se está costeando mal en silencio ahora mismo).
+            severidad: unoOrfanoElOtroNo ? 'alta' : 'media'
+          });
+          enUnPar[i1.id] = true; enUnPar[i2.id] = true;
+        }
+      }
+    });
+
+    // Huérfanos SIN un gemelo de nombre similar — igual es información
+    // (podría ser un insumo nuevo recién cargado, todavía sin receta), no
+    // un error: severidad baja, sin el contexto de "alguien más lo usa".
+    var huerfanos = insumos
+      .filter(function (i) { return usoPorId[i.id] === 0 && !enUnPar[i.id]; })
+      .map(function (i) { return { tipo: i.tipo, id: i.id, nombre: i.nombre, costo: Number(i.costo) || 0, severidad: 'baja' }; });
+
+    return { duplicados: duplicados, huerfanos: huerfanos };
   }
 
   function getAdiciones(state) {
@@ -2946,6 +3021,7 @@
     findProductosUsandoInsumo: findProductosUsandoInsumo,
     findProductosAfectadosPorInsumo: findProductosAfectadosPorInsumo,
     moverInsumoDeTipo: moverInsumoDeTipo,
+    getInsumosDuplicadosYHuerfanos: getInsumosDuplicadosYHuerfanos,
     GASTO_CATEGORIAS: GASTO_CATEGORIAS,
     costoPromedioPonderado: costoPromedioPonderado,
     registrarGasto: registrarGasto,

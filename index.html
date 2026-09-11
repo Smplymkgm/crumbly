@@ -1742,7 +1742,13 @@ function renderReporteIntegridad() {
     { titulo: 'Insumos con stock negativo o faltante pendiente', lista: r.stockNegativoOFaltante, aItem: i => i.nombre + ' (cant. ' + i.cantidad + (i.faltante ? ', faltante ' + i.faltante : '') + ')' },
     { titulo: 'Ventas cuyo costo superó lo vendido', lista: r.ventasCostoMayorATotal, aItem: v => (v.fecha ? new Date(v.fecha).toLocaleDateString('es-CO') : v.id) + ' — total ' + fmt(v.total) },
     { titulo: 'Productos cuyo costo actual supera su precio', lista: r.productosCostoMayorAPrecio, aItem: p => p.nombre + ' — costo ' + fmt(p.costo) + ' > precio ' + fmt(p.precio) },
-    { titulo: 'Componentes que aportan más del 50% del precio de venta (Y1)', lista: aportesAnomalos, aItem: a => a.productoNombre + ': ' + a.componenteNombre + ' aporta ' + fmt(a.aporteAbsoluto) + ' (' + Math.round(a.pctDelPrecio * 100).toLocaleString('es-CO') + '% del precio)' }
+    { titulo: 'Componentes que aportan más del 50% del precio de venta (Y1)', lista: aportesAnomalos, aItem: a => a.productoNombre + ': ' + a.componenteNombre + ' aporta ' + fmt(a.aporteAbsoluto) + ' (' + Math.round(a.pctDelPrecio * 100).toLocaleString('es-CO') + '% del precio)' },
+    // A2 (Ronda 8): pares de nombre similar (mismo bucket, ids distintos)
+    // — el patrón real de "se corrigió creando uno nuevo, el costeo sigue
+    // leyendo el viejo". Solo diagnóstico: cada caso lo resuelve una
+    // persona con A1 (mover/corregir sin perder el id).
+    { titulo: 'Insumos con nombre similar (posible duplicado)', lista: r.insumosDuplicados, aItem: d => (d.severidad === 'alta' ? '⚠ ' : '') + d.a.nombre + ' (' + fmt(d.a.costo) + ', ' + d.a.usos + ' uso(s)) ↔ ' + d.b.nombre + ' (' + fmt(d.b.costo) + ', ' + d.b.usos + ' uso(s))' },
+    { titulo: 'Insumos huérfanos (sin ninguna receta que los use)', lista: r.insumosHuerfanos, aItem: i => i.nombre + ' — ' + fmt(i.costo) }
   ];
   document.getElementById('reporte-integridad').innerHTML = checks.map(c => `
     <div>
@@ -1813,6 +1819,18 @@ function getAlertasCentro_() {
     sev: 3, texto: '"' + i.nombre + '" tiene un costo fuera de rango (' + fmt(i.costo) + '/' + i.unidad + ')',
     accion: () => { closeModal('modal-alertas'); navTo('inventario'); openInsumoModal(i.id); }
   }));
+  // 3 — A2: par de nombre similar donde UNO está huérfano y el otro en
+  // uso — el costeo real probablemente está leyendo el registro
+  // equivocado. Solo los 'alta' llegan acá; 'media'/'baja' quedan en el
+  // reporte de integridad (informativos, sin la misma urgencia).
+  r.insumosDuplicados.filter(d => d.severidad === 'alta').forEach(d => {
+    const huerfano = d.a.usos === 0 ? d.a : d.b;
+    const enUso = d.a.usos === 0 ? d.b : d.a;
+    alertas.push({
+      sev: 3, texto: '"' + enUso.nombre + '" y "' + huerfano.nombre + '" parecen el mismo insumo — el costeo usa "' + enUso.nombre + '" (' + fmt(enUso.costo) + '), "' + huerfano.nombre + '" quedó sin ninguna receta',
+      accion: () => { closeModal('modal-alertas'); navTo('inventario'); openInsumoModal(huerfano.id); }
+    });
+  });
   // 4 — inventario inconsistente.
   r.stockNegativoOFaltante.forEach(i => alertas.push({
     sev: 4, texto: '"' + i.nombre + '" tiene stock negativo o faltante sin saldar',
