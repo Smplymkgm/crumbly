@@ -1209,6 +1209,8 @@
     var dyh = getInsumosDuplicadosYHuerfanos(state);
     // A3 (Ronda 8): ingredientes cargados en empaques — ver getIngredientesMalClasificadosComoEmpaque.
     var ingredientesEnEmpaques = getIngredientesMalClasificadosComoEmpaque(state);
+    // B1 (Ronda 9): referencias que no resuelven — ver getReferenciasRotas.
+    var referenciasRotas = getReferenciasRotas(state);
     return {
       sinUnidad: sinUnidad,
       costoFueraDeRango: costoFueraDeRango,
@@ -1218,7 +1220,8 @@
       productosCostoMayorAPrecio: productosCostoMayorAPrecio,
       insumosDuplicados: dyh.duplicados,
       insumosHuerfanos: dyh.huerfanos,
-      ingredientesEnEmpaques: ingredientesEnEmpaques
+      ingredientesEnEmpaques: ingredientesEnEmpaques,
+      referenciasRotas: referenciasRotas
     };
   }
 
@@ -1368,6 +1371,78 @@
         productosAfectados: productosAfectados
       };
     });
+  }
+
+  // ─── B1 (auditoría Ronda 9): guarda contra el costeo en cero ─────────
+  //
+  // A1 documentó el riesgo latente, B0 lo confirmó real: getCostoProducto/
+  // getCostoProductoDesglosado/aplicarComponentes buscan el insumo en la
+  // colección que dice el `tipo` del componente, no donde el insumo
+  // realmente vive. Un desajuste devuelve $0 sin ningún aviso — un
+  // costo que se ve creíble pero no significa nada, exactamente lo que
+  // esta auditoría entera existe para atajar.
+  //
+  // Esto NO cambia lo que devuelven las funciones de costeo — un
+  // componente roto sigue aportando 0 al total, tal cual (cambiar el
+  // valor rompería contratos verificados en ocho rondas). Solo detecta y
+  // reporta, aparte, para que se SEPA que ese 0 no es "no cuesta nada"
+  // sino "no se pudo calcular".
+  //
+  // Distingue dos casos, porque tienen causas y arreglos distintos:
+  //  - El insumo existe, pero en OTRA colección de la que el `tipo` del
+  //    componente declara → desajuste de tipo (el modo de falla de B0:
+  //    alguien movió el insumo de bucket sin que esta referencia se
+  //    reclasificara). Mensaje: "X está en <bucket real> pero la receta
+  //    lo busca en <bucket declarado>".
+  //  - El insumo no existe en NINGUNA colección → referencia borrada (el
+  //    insumo se eliminó y esto quedó apuntando a un id que ya no está).
+  var COLECCIONES_INSUMO_ = ['materia', 'empaques', 'toppings'];
+  function coleccionEsperadaPorTipo_(tipo) {
+    if (tipo === 'empaques') return 'empaques';
+    if (tipo === 'toppings') return 'toppings';
+    if (tipo === 'preparacion') return null; // no es una referencia a insumo — otro chequeo (nesting de preparaciones), fuera de este
+    return 'materia'; // default histórico, igual que getCostoProducto/getCostoProductoDesglosado
+  }
+  function buscarInsumoEnCualquierBucket_(state, refId) {
+    for (var i = 0; i < COLECCIONES_INSUMO_.length; i++) {
+      var bucket = COLECCIONES_INSUMO_[i];
+      var found = (state[bucket] || []).find(function (x) { return x.id === refId; });
+      if (found) return { bucket: bucket, nombre: found.nombre };
+    }
+    return null;
+  }
+  function armarReferenciaRota_(origen, item, refId, coleccionEsperada, state) {
+    var real = buscarInsumoEnCualquierBucket_(state, refId);
+    return {
+      origen: origen, id: item.id, nombre: item.nombre,
+      refId: refId, coleccionEsperada: coleccionEsperada,
+      bucketReal: real ? real.bucket : null,
+      motivo: real
+        ? ('"' + real.nombre + '" está en ' + real.bucket + ' pero la receta lo busca en ' + coleccionEsperada)
+        : ('la referencia "' + refId + '" no existe en ninguna colección de insumos — probablemente se borró')
+    };
+  }
+  function getReferenciasRotas(state) {
+    var rotas = [];
+    function revisarComponentes(lista, origen) {
+      (lista || []).forEach(function (item) {
+        (item.componentes || []).forEach(function (c) {
+          var coleccionEsperada = coleccionEsperadaPorTipo_(c.tipo);
+          if (!coleccionEsperada) return;
+          var existe = (state[coleccionEsperada] || []).some(function (x) { return x.id === c.refId; });
+          if (!existe) rotas.push(armarReferenciaRota_(origen, item, c.refId, coleccionEsperada, state));
+        });
+      });
+    }
+    revisarComponentes(state.productos, 'producto');
+    revisarComponentes(state.preparaciones, 'preparacion');
+    (state.productos || []).forEach(function (p) {
+      (p.empaquesUsados || []).forEach(function (e) {
+        var existe = (state.empaques || []).some(function (x) { return x.id === e.empaqueId; });
+        if (!existe) rotas.push(armarReferenciaRota_('producto', p, e.empaqueId, 'empaques', state));
+      });
+    });
+    return rotas;
   }
 
   function getAdiciones(state) {
@@ -3164,6 +3239,7 @@
     moverInsumoDeTipo: moverInsumoDeTipo,
     getInsumosDuplicadosYHuerfanos: getInsumosDuplicadosYHuerfanos,
     getIngredientesMalClasificadosComoEmpaque: getIngredientesMalClasificadosComoEmpaque,
+    getReferenciasRotas: getReferenciasRotas,
     GASTO_CATEGORIAS: GASTO_CATEGORIAS,
     costoPromedioPonderado: costoPromedioPonderado,
     registrarGasto: registrarGasto,

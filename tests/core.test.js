@@ -3459,6 +3459,66 @@ test('mover hacia materia SIEMPRE es seguro para preparaciones (nunca se bloquea
   assert.strictEqual(r.ok, true);
 });
 
+console.log('\n== B1 (Ronda 9): guarda contra el costeo en cero ==');
+
+test('CRITERIO: un componente tipo:empaques cuyo refId vive en materia se reporta como DESAJUSTE, nombrando las dos colecciones', () => {
+  const s = C.emptyState();
+  s.materia.push({ id: 'croissant', nombre: 'Croissant', unidad: 'unidad', costo: 3600, cantidad: 50, minimo: 5 });
+  s.productos.push({ id: 'p1', nombre: 'Croffle', precio: 9000, componentes: [{ tipo: 'empaques', refId: 'croissant', gramos: 1 }] });
+  const r = C.getReferenciasRotas(s);
+  assert.strictEqual(r.length, 1);
+  assert.strictEqual(r[0].origen, 'producto');
+  assert.strictEqual(r[0].id, 'p1');
+  assert.strictEqual(r[0].coleccionEsperada, 'empaques');
+  assert.strictEqual(r[0].bucketReal, 'materia');
+  assert.ok(r[0].motivo.includes('Croissant') && r[0].motivo.includes('materia') && r[0].motivo.includes('empaques'));
+});
+
+test('CRITERIO: un refId que no existe en NINGUNA colección se reporta como referencia borrada', () => {
+  const s = C.emptyState();
+  s.productos.push({ id: 'p1', nombre: 'Waffle', precio: 9000, componentes: [{ tipo: 'materia', refId: 'no-existe-en-ningun-lado', gramos: 1 }] });
+  const r = C.getReferenciasRotas(s);
+  assert.strictEqual(r.length, 1);
+  assert.strictEqual(r[0].bucketReal, null);
+  assert.ok(r[0].motivo.includes('no existe en ninguna colección'));
+});
+
+test('CRITERIO: un estado sano no reporta ninguna referencia rota', () => {
+  const s = C.emptyState();
+  s.materia.push({ id: 'harina', nombre: 'Harina', unidad: 'g', costo: 5, cantidad: 1000, minimo: 100 });
+  s.empaques.push({ id: 'caja', nombre: 'Caja', unidad: 'unidad', costo: 500, cantidad: 100, minimo: 10 });
+  s.productos.push({ id: 'p1', nombre: 'Waffle', precio: 9000, componentes: [{ tipo: 'materia', refId: 'harina', gramos: 100 }], empaquesUsados: [{ empaqueId: 'caja', cantidad: 1 }] });
+  assert.deepStrictEqual(C.getReferenciasRotas(s), []);
+});
+
+test('detecta también una empaquesUsados[] rota, y una referencia rota dentro de una preparación', () => {
+  const s = C.emptyState();
+  s.empaques.push({ id: 'caja', nombre: 'Caja', unidad: 'unidad', costo: 500, cantidad: 100, minimo: 10 });
+  s.productos.push({ id: 'p1', nombre: 'Waffle', precio: 9000, componentes: [], empaquesUsados: [{ empaqueId: 'ya-no-existe', cantidad: 1 }] });
+  s.preparaciones.push({ id: 'prep1', nombre: 'Base', modo: 'directo', rendimientoPct: 100, componentes: [{ tipo: 'materia', refId: 'ya-no-existe-2', gramos: 50 }] });
+  const r = C.getReferenciasRotas(s);
+  assert.strictEqual(r.length, 2);
+  assert.ok(r.some(x => x.origen === 'producto' && x.refId === 'ya-no-existe'));
+  assert.ok(r.some(x => x.origen === 'preparacion' && x.refId === 'ya-no-existe-2'));
+});
+
+test('CRITERIO: el costo total que devuelven las funciones de costeo NO cambia en ningún caso — sigue siendo 0 para el componente roto', () => {
+  const s = C.emptyState();
+  s.materia.push({ id: 'croissant', nombre: 'Croissant', unidad: 'unidad', costo: 3600, cantidad: 50, minimo: 5 });
+  s.materia.push({ id: 'harina', nombre: 'Harina', unidad: 'g', costo: 5, cantidad: 1000, minimo: 100 });
+  s.productos.push({ id: 'p1', nombre: 'Croffle', precio: 9000, componentes: [
+    { tipo: 'empaques', refId: 'croissant', gramos: 1 }, // roto: vive en materia
+    { tipo: 'materia', refId: 'harina', gramos: 10 }
+  ] });
+  // getReferenciasRotas detecta el problema, pero getCostoProducto sigue
+  // devolviendo exactamente lo mismo que sin la detección: el componente
+  // roto sigue aportando 0 (10 * 5 de la harina, nada del croissant).
+  assert.strictEqual(C.getCostoProducto(s.productos[0], s), 50);
+  const rotas = C.getReferenciasRotas(s);
+  assert.strictEqual(rotas.length, 1);
+  assert.strictEqual(C.getCostoProducto(s.productos[0], s), 50, 'detectar el problema no cambia el costo devuelto');
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);
