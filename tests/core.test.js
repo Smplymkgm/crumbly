@@ -2821,6 +2821,98 @@ test('migrateState agrega lotes:[] a un estado viejo sin romper nada', () => {
   assert.deepStrictEqual(s.lotes, []);
 });
 
+console.log('\n== V3.1 (Ronda 5): desglose del costo de un producto ==');
+
+test('CRITERIO: getDesgloseCostoProducto suma EXACTAMENTE el costo que devuelve getCostoProducto', () => {
+  const s = stateProductoConPreparacion(); // relleno 940 + azúcar 20 + empaque 500 = 1460
+  const costoTotal = C.getCostoProducto(s.productos[0], s);
+  const { lineas, costoTotal: costoDesglose } = C.getDesgloseCostoProducto(s, 'p1');
+  assert.ok(Math.abs(costoDesglose - costoTotal) < 0.0001);
+  const sumaLineas = lineas.reduce((a, l) => a + l.subtotal, 0);
+  assert.ok(Math.abs(sumaLineas - costoTotal) < 0.0001);
+  assert.strictEqual(lineas.length, 3, 'preparación + materia directa + empaque');
+});
+
+test('getDesgloseCostoProducto separa alimento y empaque (reusa la separación de C1)', () => {
+  const s = stateProductoConPreparacion();
+  const { lineas } = C.getDesgloseCostoProducto(s, 'p1');
+  const empaque = lineas.filter(l => l.grupo === 'empaque');
+  const alimento = lineas.filter(l => l.grupo === 'alimento');
+  assert.strictEqual(empaque.length, 1);
+  assert.ok(Math.abs(empaque[0].subtotal - 500) < 0.01);
+  assert.strictEqual(alimento.length, 2, 'preparación + azúcar directa');
+});
+
+test('CRITERIO: un insumo de costo absurdo aparece PRIMERO (orden descendente) y marcado sospechoso', () => {
+  const s = stateIntegridadOk(); // p1: 100g de m1 (Harina, costo 5) -> costo normal 500
+  s.materia.push({ id: 'm9', nombre: 'Vainilla carísima', unidad: 'g', costo: 9000, cantidad: 100, minimo: 0 });
+  s.productos[0].componentes.push({ tipo: 'materia', refId: 'm9', gramos: 1 }); // 1g pero a 9000/g -> domina el total
+  const { lineas, costoTotal } = C.getDesgloseCostoProducto(s, 'p1');
+  assert.ok(Math.abs(costoTotal - C.getCostoProducto(s.productos[0], s)) < 0.0001);
+  assert.strictEqual(lineas[0].refId, 'm9', 'la línea más pesada aparece primero');
+  assert.strictEqual(lineas[0].sospechoso, true, 'checkCostoSospechoso la marca (9000 > mediana*100 de m1/m2/m3)');
+  assert.strictEqual(lineas[1].sospechoso, false);
+});
+
+test('getDesgloseCostoProducto: producto inexistente devuelve vacío, no revienta', () => {
+  const s = stateIntegridadOk();
+  const r = C.getDesgloseCostoProducto(s, 'no-existe');
+  assert.deepStrictEqual(r, { lineas: [], costoTotal: 0 });
+});
+
+console.log('\n== V3.3 (Ronda 5): qué productos dependen de un insumo ==');
+
+test('findProductosAfectadosPorInsumo: uso DIRECTO en la receta del producto', () => {
+  const s = stateIntegridadOk(); // p1 usa m1 directamente
+  const afectados = C.findProductosAfectadosPorInsumo(s, 'm1');
+  assert.deepStrictEqual(afectados.map(p => p.id), ['p1']);
+});
+
+test('CRITERIO: findProductosAfectadosPorInsumo encuentra el uso INDIRECTO a través de una preparación', () => {
+  const s = stateProductoConPreparacion(); // p1 usa la preparación "relleno", que usa materia "chocolate"/"crema"
+  const afectados = C.findProductosAfectadosPorInsumo(s, 'chocolate');
+  assert.deepStrictEqual(afectados.map(p => p.id), ['p1'], 'p1 no referencia chocolate directo — solo a través de la preparación');
+});
+
+test('findProductosAfectadosPorInsumo: un insumo que nadie usa devuelve vacío', () => {
+  const s = stateIntegridadOk();
+  s.materia.push({ id: 'suelto', nombre: 'Sin usar', unidad: 'g', costo: 1, cantidad: 10, minimo: 0 });
+  assert.deepStrictEqual(C.findProductosAfectadosPorInsumo(s, 'suelto'), []);
+});
+
+console.log('\n== V3.4 (Ronda 5): el dashboard no puede promediar basura en silencio ==');
+
+test('CRITERIO: un período con una venta de costo inválido la reporta, sin excluirla del resto', () => {
+  const s = stateIntegridadOk();
+  const hoy = new Date().toISOString();
+  s.ventas = [
+    { id: 'v1', fecha: hoy, total: 20000, items: [{ productoId: 'p1', qty: 1, costo: 500 }] }, // válida
+    { id: 'v2', fecha: hoy, total: 5000, items: [{ productoId: 'p1', qty: 1, costo: 10500 }] } // costo > total
+  ];
+  const invalidas = C.getVentasCostoInvalidoEnPeriodo(s, 'mes', hoy);
+  assert.strictEqual(invalidas.length, 1);
+  assert.strictEqual(invalidas[0].id, 'v2');
+  // la venta sigue en state.ventas -- getVentasCostoInvalidoEnPeriodo NO la excluye del estado ni de otros cálculos
+  assert.strictEqual(s.ventas.length, 2);
+});
+
+test('getVentasCostoInvalidoEnPeriodo respeta el filtro de período (no mezcla con ventas viejas)', () => {
+  const s = stateIntegridadOk();
+  const hoy = new Date().toISOString();
+  s.ventas = [
+    { id: 'vvieja', fecha: '2020-01-01T00:00:00', total: 100, items: [{ productoId: 'p1', qty: 1, costo: 99999 }] }, // inválida pero FUERA del período
+    { id: 'vhoy', fecha: hoy, total: 20000, items: [{ productoId: 'p1', qty: 1, costo: 500 }] }
+  ];
+  assert.deepStrictEqual(C.getVentasCostoInvalidoEnPeriodo(s, 'dia', hoy), []);
+});
+
+test('un período sin ventas de costo inválido devuelve vacío', () => {
+  const s = stateIntegridadOk();
+  const hoy = new Date().toISOString();
+  s.ventas = [{ id: 'v1', fecha: hoy, total: 20000, items: [{ productoId: 'p1', qty: 1, costo: 500 }] }];
+  assert.deepStrictEqual(C.getVentasCostoInvalidoEnPeriodo(s, 'mes', hoy), []);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);

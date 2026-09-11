@@ -277,6 +277,17 @@ textarea.field{height:auto}
           </div>
         </div>
 
+        <!-- V3.4 (auditoría Ronda 5): si el período tiene ventas con costo
+             CONGELADO inválido (superó lo vendido), el margen de arriba no
+             significa nada — nunca se excluyen del cálculo en silencio
+             (mismo principio que la guarda de varianza de la Ronda 2):
+             mejor decir que el número no sirve que mostrar uno limpio que
+             esconde el problema. -->
+        <div id="dash-costo-invalido-stripe" style="display:none;background:rgba(200,60,60,0.1);border:1px solid var(--danger);border-radius:9px;padding:10px 14px;margin-bottom:2px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <span style="font-size:12px;color:var(--danger)" id="dash-costo-invalido-texto"></span>
+          <button class="btn-outline" style="padding:6px 12px;font-size:12px" onclick="renderVentasCostoInvalido_()">Ver ventas</button>
+        </div>
+
         <div class="charts-grid">
           <div class="card">
             <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px">
@@ -1967,6 +1978,20 @@ function saveInsumo() {
     );
     if (!seguir) return;
   }
+  // V3.3: si el costo de un insumo YA existente cambia, capturar ANTES de
+  // mutar nada qué productos dependen de él (directo o a través de una
+  // preparación) y su costo/margen ACTUAL — para poder mostrar antes→
+  // después una vez guardado. Si el costo no cambió, no hay nada que
+  // avisar (la mayoría de las ediciones son nombre/categoría/mínimo).
+  let productosAfectados = null, margenAntesPorProducto = null;
+  if (editId) {
+    const costoAntes = Number(state[editTipo].find(x => x.id === editId).costo) || 0;
+    if (costoAntes !== datos.costo) {
+      productosAfectados = CrumblyCore.findProductosAfectadosPorInsumo(state, editId);
+      margenAntesPorProducto = {};
+      productosAfectados.forEach(p => { margenAntesPorProducto[p.id] = CrumblyCore.getMargenProducto(p, state); });
+    }
+  }
   if (editId) {
     // Edición: nunca cambia de colección — solo actualiza sus campos +
     // reetiqueta la unidad (no convierte cantidades entre medidas).
@@ -1991,6 +2016,43 @@ function saveInsumo() {
   }
   saveState(); closeModal('modal-insumo'); renderInventario(); renderReportes();
   showToast('Insumo guardado ✓');
+  if (productosAfectados && productosAfectados.length) {
+    mostrarProductosAfectadosPorInsumo_(productosAfectados, margenAntesPorProducto);
+  }
+}
+// V3.3: aviso + modal con antes/después de costo y margen — se muestra
+// SOLO cuando el costo de un insumo ya existente cambió y algo lo usa
+// (directo o vía una preparación). Mismo patrón que showPersistentError +
+// modal armado por JS que ya usa el resto de esta auditoría (U4, V0).
+function mostrarProductosAfectadosPorInsumo_(productos, margenAntesPorProducto) {
+  showPersistentError(
+    'El costo cambió y afecta a ' + productos.length + ' producto(s).',
+    'Ver productos afectados',
+    () => renderProductosAfectadosPorInsumo_(productos, margenAntesPorProducto)
+  );
+}
+function renderProductosAfectadosPorInsumo_(productos, margenAntesPorProducto) {
+  let overlay = document.getElementById('modal-productos-afectados');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'modal-productos-afectados';
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = '<div class="modal"><div class="modal-title-row"><span class="modal-title">Productos afectados por el cambio de costo</span><button class="modal-close" onclick="closeModal(\'modal-productos-afectados\')"><i class="ph ph-x"></i></button></div><div id="productos-afectados-lista" style="display:flex;flex-direction:column;gap:8px"></div></div>';
+    document.body.appendChild(overlay);
+  }
+  document.getElementById('productos-afectados-lista').innerHTML = productos.map(p => {
+    const antes = margenAntesPorProducto[p.id];
+    const despues = CrumblyCore.getMargenProducto(p, state); // costo/margen EN VIVO, ya con el insumo actualizado
+    const empeoro = despues.margenPct < antes.margenPct;
+    const color = empeoro ? 'var(--danger)' : 'var(--ink)';
+    return `
+      <div style="padding:10px 12px;border-radius:8px;background:var(--bg)">
+        <div style="font-size:12px;color:var(--ink);margin-bottom:4px">${esc(p.nombre)}</div>
+        <div style="font-size:11px;color:var(--muted)">Costo: ${fmt(antes.costo)} → <strong style="color:${color}">${fmt(despues.costo)}</strong></div>
+        <div style="font-size:11px;color:var(--muted)">Margen: ${Math.round(antes.margenPct * 100)}% → <strong style="color:${color}">${Math.round(despues.margenPct * 100)}%</strong></div>
+      </div>`;
+  }).join('');
+  openModal('modal-productos-afectados');
 }
 function deleteInsumo() {
   const id = document.getElementById('ins-edit-id').value;
@@ -2622,19 +2684,68 @@ function renderProductos() {
     // P0-2: costo calculado en vivo, nunca leído de un campo guardado.
     const r = CrumblyCore.getMargenProducto(p, state);
     const margenPct = Math.round(r.margenPct * 100);
-    const marginColor = r.costo && margenPct < 50 ? 'var(--danger)' : 'var(--muted)';
+    const precio = Number(p.precio) || 0;
+    // V3.2: insignia en la fila — hoy un producto roto solo se veía en el
+    // reporte de integridad de Ajustes, había que ir a buscarlo. Dos
+    // niveles: costo > precio (venta a pérdida real) y costo > 60% del
+    // precio (margen bajo, todavía no pérdida pero cerca).
+    const perdida = precio > 0 ? r.costo > precio : r.costo > 0;
+    const margenBajo = !perdida && precio > 0 && r.costo > precio * 0.6;
+    const insignia = perdida
+      ? '<span class="badge" style="background:var(--danger);color:#fff;font-size:10px;white-space:nowrap">⚠ costo &gt; precio</span>'
+      : margenBajo
+        ? '<span class="badge" style="background:#c98a1f;color:#fff;font-size:10px;white-space:nowrap">costo &gt; 60% precio</span>'
+        : '';
+    const marginColor = perdida ? 'var(--danger)' : (margenBajo ? '#c98a1f' : (r.costo && margenPct < 50 ? 'var(--danger)' : 'var(--muted)'));
     const foto = p.foto ? `<img src="${p.foto}" style="width:100%;height:100%;object-fit:cover">` : '';
     return `<div class="prod-card" onclick="openModalProducto('${p.id}')" style="background:var(--white);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;cursor:pointer">
       <div style="width:100%;height:150px;background:var(--bg)">${foto}</div>
       <div style="padding:14px">
-        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;gap:8px">
           <span style="font-size:12px;color:var(--ink)">${esc(p.nombre)}</span>
-          <span style="font-size:12px;color:var(--ink)">${fmt(p.precio)}</span>
+          <span style="font-size:12px;color:var(--ink);text-decoration:underline;cursor:pointer" onclick="event.stopPropagation();abrirDesgloseCosto('${p.id}')" title="Ver de dónde sale el costo">${fmt(p.precio)}</span>
         </div>
-        <div style="font-size:11px;color:${marginColor}">margen ${margenPct}%${r.costo ? ' · ' + fmt(r.ganancia) : ''}</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
+          <span style="font-size:11px;color:${marginColor}">margen ${margenPct}%${r.costo ? ' · ' + fmt(r.ganancia) : ''}</span>
+          ${insignia}
+        </div>
       </div>
     </div>`;
   }).join('');
+}
+// ─── V3.1 (auditoría Ronda 5): desglose del costo de un producto ───────
+// Solo lectura — no cambia ninguna fórmula. Modal armado por JS (mismo
+// patrón que el de conflictos de catálogo, U4): no forma parte del markup
+// estático, solo existe cuando alguien pide ver de dónde sale un costo.
+function abrirDesgloseCosto(productoId) {
+  const producto = state.productos.find(p => p.id === productoId);
+  if (!producto) return;
+  const { lineas, costoTotal } = CrumblyCore.getDesgloseCostoProducto(state, productoId);
+  let overlay = document.getElementById('modal-desglose-costo');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'modal-desglose-costo';
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = '<div class="modal"><div class="modal-title-row"><span class="modal-title" id="desglose-costo-titulo">Desglose de costo</span><button class="modal-close" onclick="closeModal(\'modal-desglose-costo\')"><i class="ph ph-x"></i></button></div><div id="desglose-costo-resumen" class="item-sub" style="margin-bottom:10px"></div><div id="desglose-costo-lista" style="display:flex;flex-direction:column;gap:8px"></div></div>';
+    document.body.appendChild(overlay);
+  }
+  document.getElementById('desglose-costo-titulo').textContent = 'Costo de ' + producto.nombre;
+  const precio = Number(producto.precio) || 0;
+  document.getElementById('desglose-costo-resumen').textContent =
+    'Costo total: ' + fmt(costoTotal) + ' · precio de venta: ' + fmt(precio) + (precio ? ' · margen ' + Math.round(((precio - costoTotal) / precio) * 100) + '%' : '');
+  const grupoLabel = { alimento: 'Alimento', empaque: 'Empaque' };
+  document.getElementById('desglose-costo-lista').innerHTML = lineas.length ? lineas.map(l => `
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:8px 10px;border-radius:8px;background:${l.sospechoso ? 'rgba(200,60,60,0.1)' : 'var(--bg)'}">
+      <div>
+        <div style="font-size:12px;color:var(--ink)">${esc(l.nombre)}${l.sospechoso ? ' <strong style="color:var(--danger)">⚠ costo sospechoso</strong>' : ''}</div>
+        <div style="font-size:11px;color:var(--muted)">${grupoLabel[l.grupo] || l.grupo} · ${l.tipo === 'manual' ? 'monto fijo' : (l.cantidad + 'g × ' + fmt(l.costoUnitario) + '/g')}</div>
+      </div>
+      <div style="text-align:right;white-space:nowrap">
+        <div style="font-size:12px;color:var(--ink)">${fmt(l.subtotal)}</div>
+        <div style="font-size:11px;color:var(--muted)">${Math.round(l.pctDelTotal * 100)}%</div>
+      </div>
+    </div>`).join('') : '<p class="empty">Este producto no tiene componentes en su receta.</p>';
+  openModal('modal-desglose-costo');
 }
 /* ─── VENTA (modal, rediseño) ───
    El carrito vive en memoria (ventaCart) mientras el modal está abierto —
@@ -3050,12 +3161,48 @@ function renderReportes() {
   document.getElementById('r-ganancias').textContent = fmt(ganancias);
   document.getElementById('r-ticket-promedio').textContent = fmt(CrumblyCore.getTicketPromedio(ventas));
   document.getElementById('r-num-ventas').textContent = ventas.length;
+  renderVentasCostoInvalidoStripe_(ventas);
   renderChartBars();
   renderDonut(ventas);
   renderDashboardAlerts();
   renderCierreCaja();
   renderDetalleFinanciero();
   renderReportesCosteo();
+}
+// V3.4: franja de advertencia + marca "no confiable" en el margen neto —
+// NUNCA se excluyen estas ventas del cálculo de arriba, solo se avisa.
+let ventasCostoInvalidoDelPeriodo_ = [];
+function renderVentasCostoInvalidoStripe_(ventasDelPeriodo) {
+  ventasCostoInvalidoDelPeriodo_ = ventasDelPeriodo.filter(CrumblyCore.esVentaCostoInvalido);
+  const stripe = document.getElementById('dash-costo-invalido-stripe');
+  const ganNeto = document.getElementById('r-ganancias');
+  if (!ventasCostoInvalidoDelPeriodo_.length) {
+    stripe.style.display = 'none';
+    ganNeto.style.color = '';
+    ganNeto.title = '';
+    return;
+  }
+  stripe.style.display = 'flex';
+  document.getElementById('dash-costo-invalido-texto').textContent =
+    '⚠ ' + ventasCostoInvalidoDelPeriodo_.length + ' venta(s) de este período tienen un costo congelado que supera lo vendido — el margen neto de abajo NO es confiable.';
+  ganNeto.style.color = 'var(--danger)';
+  ganNeto.title = 'No confiable: ' + ventasCostoInvalidoDelPeriodo_.length + ' venta(s) del período tienen costo inválido (ver la franja de arriba)';
+}
+function renderVentasCostoInvalido_() {
+  let overlay = document.getElementById('modal-ventas-costo-invalido');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'modal-ventas-costo-invalido';
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = '<div class="modal"><div class="modal-title-row"><span class="modal-title">Ventas con costo inválido</span><button class="modal-close" onclick="closeModal(\'modal-ventas-costo-invalido\')"><i class="ph ph-x"></i></button></div><p class="item-sub" style="margin-bottom:10px">El costo congelado de estas ventas supera lo que cobraron — revisalas o borralas una por una. No se excluyen solas del cálculo.</p><div id="ventas-costo-invalido-lista" style="display:flex;flex-direction:column;gap:8px"></div></div>';
+    document.body.appendChild(overlay);
+  }
+  document.getElementById('ventas-costo-invalido-lista').innerHTML = ventasCostoInvalidoDelPeriodo_.map(v => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:8px;background:var(--bg)">
+      <span style="font-size:12px;color:var(--ink)">${v.fecha ? esc(new Date(v.fecha).toLocaleDateString('es-CO')) : v.id} — total ${fmt(v.total)}</span>
+      <button class="btn-icon danger" onclick="eliminarVenta('${v.id}');renderVentasCostoInvalido_()" title="Eliminar"><i class="ph ph-trash"></i></button>
+    </div>`).join('') || '<p class="empty">Sin ventas de costo inválido en este período.</p>';
+  openModal('modal-ventas-costo-invalido');
 }
 
 /* ─── P3.2: pestaña Costeo (C1/C3/C4/C5 — motor hecho en la Ronda 2,

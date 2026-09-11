@@ -820,6 +820,68 @@
     return { costoAlimento: costoAlimento, costoEmpaque: costoEmpaque, costoTotal: costoAlimento + costoEmpaque };
   }
 
+  // ─── V3.1 (auditoría Ronda 5): desglose del costo de un producto ───────
+  // Solo lectura — el motor de costeo YA está bien (auditado en Ronda 2,
+  // corregido en C1/C2/C3 de la Ronda 1). Lo que faltaba era visibilidad:
+  // un número roto no decía de dónde venía. Esta función no cambia
+  // ninguna fórmula — recorre EXACTAMENTE el mismo camino que
+  // getCostoProducto (componentes + empaquesUsados + empaqueManual), con
+  // los mismos lookups, partido en una línea por componente en vez de un
+  // solo total. La suma de `subtotal` de todas las líneas es por
+  // construcción idéntica a getCostoProducto(producto, state) — mismos
+  // términos, mismo orden de suma.
+  function getDesgloseCostoProducto(state, productoId) {
+    var producto = (state.productos || []).find(function (p) { return p.id === productoId; });
+    if (!producto) return { lineas: [], costoTotal: 0 };
+    var lineas = [];
+
+    function lineaInsumo(tipo, coleccion, refId, cantidad, grupo) {
+      var ins = (state[coleccion] || []).find(function (x) { return x.id === refId; });
+      var costoUnitario = ins ? (Number(ins.costo) || 0) : 0;
+      var sospechoso = !!(ins && ins.unidad && checkCostoSospechoso(state, ins.unidad, costoUnitario, ins.id));
+      lineas.push({
+        tipo: tipo, refId: refId, nombre: ins ? ins.nombre : '(insumo eliminado)',
+        cantidad: cantidad, costoUnitario: costoUnitario, subtotal: cantidad * costoUnitario,
+        grupo: grupo, sospechoso: sospechoso
+      });
+    }
+
+    (producto.componentes || []).forEach(function (c) {
+      var gramos = Number(c.gramos) || 0;
+      if (c.tipo === 'preparacion') {
+        var prep = (state.preparaciones || []).find(function (x) { return x.id === c.refId; });
+        var costoUnitario = getPreparacionCosto(state, c.refId).costoPorGramo;
+        lineas.push({
+          tipo: 'preparacion', refId: c.refId, nombre: prep ? prep.nombre : '(preparación eliminada)',
+          cantidad: gramos, costoUnitario: costoUnitario, subtotal: gramos * costoUnitario,
+          grupo: 'alimento', sospechoso: false // checkCostoSospechoso compara insumos por unidad, no aplica al costo/gramo de una preparación
+        });
+      } else if (c.tipo === 'empaques') {
+        lineaInsumo('empaques', 'empaques', c.refId, gramos, 'empaque');
+      } else if (c.tipo === 'toppings') {
+        lineaInsumo('toppings', 'toppings', c.refId, gramos, 'alimento'); // un topping es comestible — food cost, mismo criterio que getCostoProductoDesglosado
+      } else {
+        lineaInsumo('materia', 'materia', c.refId, gramos, 'alimento');
+      }
+    });
+    (producto.empaquesUsados || []).forEach(function (e) {
+      lineaInsumo('empaques', 'empaques', e.empaqueId, Number(e.cantidad) || 0, 'empaque');
+    });
+    if (Number(producto.empaqueManual) > 0) {
+      lineas.push({
+        tipo: 'manual', refId: null, nombre: 'Empaque manual (sin insumo asociado)',
+        cantidad: 1, costoUnitario: Number(producto.empaqueManual), subtotal: Number(producto.empaqueManual),
+        grupo: 'empaque', sospechoso: false
+      });
+    }
+
+    var costoTotal = lineas.reduce(function (a, l) { return a + l.subtotal; }, 0);
+    lineas.forEach(function (l) { l.pctDelTotal = costoTotal > 0 ? l.subtotal / costoTotal : 0; });
+    lineas.sort(function (a, b) { return b.subtotal - a.subtotal; }); // el que rompe el número aparece primero
+
+    return { lineas: lineas, costoTotal: costoTotal };
+  }
+
   // Desglosa el costo YA CONGELADO de una línea de venta (item.costo,
   // fijado en applyVenta al momento de vender — mismo dato que ya usa
   // computeCascada para el COGS del período) en alimento/empaque,
@@ -987,6 +1049,29 @@
     return perdidas;
   }
 
+  // Una venta cuyo costo CONGELADO (item.costo, fijado al vender) supera
+  // lo que se cobró — señal compartida por getReporteIntegridad (global)
+  // y getVentasCostoInvalidoEnPeriodo (V3.4, acotada a un período).
+  function ventaCostoInvalido_(v) {
+    var costoTotal = (v.items || []).reduce(function (a, it) { return a + (Number(it.costo) || 0) * (Number(it.qty) || 0); }, 0);
+    return costoTotal > (Number(v.total) || 0);
+  }
+
+  // ─── V3.4 (auditoría Ronda 5): el dashboard no puede promediar basura en
+  // silencio ────────────────────────────────────────────────────────────
+  // Si el período del dashboard contiene ventas con costo congelado
+  // inválido, el margen que se muestra no significa nada. Mismo chequeo
+  // que ya usa getReporteIntegridad (ventaCostoInvalido_), acotado al
+  // período — NUNCA se excluyen del cálculo en silencio (mismo principio
+  // que la guarda de varianza de la Ronda 2): es preferible decir que el
+  // número no sirve que mostrar uno limpio que esconde el problema. La UI
+  // decide qué hacer con la lista (mostrar la franja, ofrecer revisar).
+  function getVentasCostoInvalidoEnPeriodo(state, period, ref) {
+    return getVentasByPeriod(state.ventas, period, ref)
+      .filter(ventaCostoInvalido_)
+      .map(function (v) { return { id: v.id, fecha: v.fecha, total: v.total }; });
+  }
+
   // T2.1: reporte de integridad — SOLO diagnóstico, no corrige nada. Junta
   // en un solo lugar las mismas señales de T2 (unidad, costo sospechoso)
   // más el resto de inconsistencias que la auditoría de Ronda 3 pidió
@@ -1000,10 +1085,8 @@
     });
     var stockConCostoCero = insumos.filter(function (i) { return Number(i.cantidad) > 0 && !(Number(i.costo) > 0); });
     var stockNegativoOFaltante = insumos.filter(function (i) { return Number(i.cantidad) < 0 || Number(i.faltante) > 0; });
-    var ventasCostoMayorATotal = (state.ventas || []).filter(function (v) {
-      var costoTotal = (v.items || []).reduce(function (a, it) { return a + (Number(it.costo) || 0) * (Number(it.qty) || 0); }, 0);
-      return costoTotal > (Number(v.total) || 0);
-    }).map(function (v) { return { id: v.id, fecha: v.fecha, total: v.total }; });
+    var ventasCostoMayorATotal = (state.ventas || []).filter(ventaCostoInvalido_)
+      .map(function (v) { return { id: v.id, fecha: v.fecha, total: v.total }; });
     var productosCostoMayorAPrecio = (state.productos || []).filter(function (p) {
       return getCostoProducto(p, state) > (Number(p.precio) || 0);
     }).map(function (p) { return { id: p.id, nombre: p.nombre, costo: getCostoProducto(p, state), precio: Number(p.precio) || 0 }; });
@@ -2632,6 +2715,42 @@
     return { productos: productos, preparaciones: preparaciones };
   }
 
+  // ─── V3.3 (auditoría Ronda 5): qué productos dependen de un insumo ─────
+  // findProductosUsandoInsumo (C10) ya encuentra el uso DIRECTO (producto
+  // que referencia el insumo en su propia receta) y las preparaciones que
+  // lo usan directo — pero NO expande esas preparaciones hacia los
+  // productos que las usan a ELLAS (ni las preparaciones que anidan otras
+  // preparaciones, B4/WIP). Reusa ese resultado y los recorridos que ya
+  // existen (findPreparacionesUsandoPreparacion, findProductosUsandoPreparacion)
+  // para cerrar la cadena completa, sin repetir el recorrido de recetas
+  // anidadas en un tercer lugar.
+  function findProductosAfectadosPorInsumo(state, insumoId) {
+    var directo = findProductosUsandoInsumo(state, insumoId);
+    var productosPorId = {};
+    directo.productos.forEach(function (p) { productosPorId[p.id] = p; });
+
+    // BFS sobre la cadena de preparaciones que usan (directa o
+    // transitivamente, anidamiento arbitrario) el insumo.
+    var prepsPorId = {};
+    directo.preparaciones.forEach(function (p) { prepsPorId[p.id] = p; });
+    var frontera = directo.preparaciones.slice();
+    while (frontera.length) {
+      var siguiente = [];
+      frontera.forEach(function (prep) {
+        findPreparacionesUsandoPreparacion(state, prep.id).forEach(function (p2) {
+          if (!prepsPorId[p2.id]) { prepsPorId[p2.id] = p2; siguiente.push(p2); }
+        });
+      });
+      frontera = siguiente;
+    }
+
+    Object.keys(prepsPorId).forEach(function (prepId) {
+      findProductosUsandoPreparacion(state, prepId).forEach(function (p) { productosPorId[p.id] = p; });
+    });
+
+    return Object.keys(productosPorId).map(function (id) { return productosPorId[id]; });
+  }
+
   return {
     SCHEMA_VERSION: SCHEMA_VERSION,
     formatCOP: formatCOP,
@@ -2648,6 +2767,7 @@
     aplicarComponentes: aplicarComponentes,
     getCostoConVolatilidad: getCostoConVolatilidad,
     getCostoProductoDesglosado: getCostoProductoDesglosado,
+    getDesgloseCostoProducto: getDesgloseCostoProducto,
     getFoodCostPct: getFoodCostPct,
     getPaperCostPct: getPaperCostPct,
     getFoodCostPctRango: getFoodCostPctRango,
@@ -2662,6 +2782,7 @@
     findProductosUsandoMateria: findProductosUsandoMateria,
     findProductosUsandoEmpaque: findProductosUsandoEmpaque,
     findProductosUsandoInsumo: findProductosUsandoInsumo,
+    findProductosAfectadosPorInsumo: findProductosAfectadosPorInsumo,
     GASTO_CATEGORIAS: GASTO_CATEGORIAS,
     costoPromedioPonderado: costoPromedioPonderado,
     registrarGasto: registrarGasto,
@@ -2709,6 +2830,8 @@
     checkCostoSospechoso: checkCostoSospechoso,
     checkVentaAPerdida: checkVentaAPerdida,
     getReporteIntegridad: getReporteIntegridad,
+    esVentaCostoInvalido: ventaCostoInvalido_,
+    getVentasCostoInvalidoEnPeriodo: getVentasCostoInvalidoEnPeriodo,
     getAdiciones: getAdiciones,
     getMovimientos: getMovimientos,
     findInsumoConTipo: findInsumoConTipo,
