@@ -138,52 +138,79 @@ test('propaga ok:false del backend (ej. falta filename) sin lanzar', async () =>
   assert.strictEqual(r.error, 'falta filename o data');
 });
 
-group('T0: alarma de tamaño de payload');
+group('U0 (Ronda 4): la alarma mide el CATÁLOGO, no el payload');
 
-function estadoDeTamano(chars) {
-  // Un string de relleno de tamaño controlado, dentro de un campo — así
-  // JSON.stringify(state).length se puede calcular a mano y verificar.
-  return { relleno: 'x'.repeat(Math.max(0, chars - 14)) }; // '{"relleno":""}' = 14 chars de estructura
+// Catálogo de tamaño controlado: el relleno va en `config` (catálogo).
+function catalogoDeTamano(chars) {
+  return { config: { relleno: 'x'.repeat(Math.max(0, chars - 25)) } }; // '{"config":{"relleno":""}}' ≈ 25
+}
+// Payload grande pero catálogo chico: el peso va en `ventas` (append-only).
+function payloadGrandeCatalogoChico(payloadChars, catalogoChars) {
+  return {
+    config: { relleno: 'c'.repeat(Math.max(0, catalogoChars - 25)) },
+    ventas: [{ id: 'v1', j: 'v'.repeat(Math.max(0, payloadChars)) }]
+  };
 }
 
-test('getPayloadSizeInfo: nivel "ok" por debajo de 40.000', () => {
-  const info = Sync.getPayloadSizeInfo(estadoDeTamano(1000));
+test('getCatalogSizeInfo: nivel "ok" con catálogo por debajo de 40.000', () => {
+  const info = Sync.getCatalogSizeInfo(catalogoDeTamano(1000));
   assert.strictEqual(info.nivel, 'ok');
 });
 
-test('getPayloadSizeInfo: nivel "advertencia" entre 40.000 y 48.000', () => {
-  const info = Sync.getPayloadSizeInfo(estadoDeTamano(42000));
+test('getCatalogSizeInfo: nivel "advertencia" con catálogo entre 40.000 y 48.000', () => {
+  const info = Sync.getCatalogSizeInfo(catalogoDeTamano(42000));
   assert.strictEqual(info.nivel, 'advertencia');
 });
 
-test('getPayloadSizeInfo: nivel "bloqueado" sobre 48.000', () => {
-  const info = Sync.getPayloadSizeInfo(estadoDeTamano(49000));
+test('getCatalogSizeInfo: nivel "bloqueado" con catálogo sobre 48.000', () => {
+  const info = Sync.getCatalogSizeInfo(catalogoDeTamano(49000));
   assert.strictEqual(info.nivel, 'bloqueado');
-  assert.strictEqual(info.tam, 49000);
 });
 
-test('CRITERIO: push() sobre el tope de bloqueo se rechaza con error TIPADO, nunca en silencio y sin llegar a mandar la petición', async () => {
-  const f = mockFetch([{ body: { ok: true } }]); // si push() la llamara, esto respondería ok — la prueba es que NO la llama
-  const r = await Sync.push('https://x.com/exec', 'tok', estadoDeTamano(49000), f);
-  assert.strictEqual(r.ok, false);
-  assert.strictEqual(r.code, 'PAYLOAD_TOO_LARGE');
-  assert.strictEqual(r.sizeInfo.nivel, 'bloqueado');
-  assert.strictEqual(f.calls.length, 0, 'no debe haber intentado la petición HTTP');
+test('getCatalogSizeInfo ignora las colecciones append-only al medir', () => {
+  const conMuchasVentas = { config: { a: 1 }, ventas: Array.from({ length: 500 }, (_, i) => ({ id: 'v' + i, total: 20000, x: 'y'.repeat(200) })) };
+  const info = Sync.getCatalogSizeInfo(conMuchasVentas);
+  assert.ok(info.tam < 100, 'el catálogo es solo {config} — las 500 ventas no cuentan; dio ' + info.tam);
+  assert.strictEqual(info.nivel, 'ok');
 });
 
-test('push() por debajo del tope sigue funcionando normal y trae sizeInfo en la respuesta', async () => {
-  const f = mockFetch([{ body: { ok: true, ts: '2026-09-08T00:00:00Z' } }]);
-  const r = await Sync.push('https://x.com/exec', 'tok', estadoDeTamano(1000), f);
+test('CRITERIO U0: payload sobre 48.000 pero catálogo en ~20.000 → push() procede, sin advertencia ni bloqueo', async () => {
+  const estado = payloadGrandeCatalogoChico(60000, 20000);
+  assert.ok(Sync.getTransferSize(estado) > 48000, 'el payload total debe superar 48.000');
+  assert.ok(Sync.getCatalogSizeInfo(estado).tam < 22000 && Sync.getCatalogSizeInfo(estado).tam >= 19000, 'el catálogo debe rondar 20.000');
+  const f = mockFetch([{ body: { ok: true, ts: '2026-09-10T00:00:00Z' } }]);
+  const r = await Sync.push('https://x.com/exec', 'tok', estado, f);
   assert.strictEqual(r.ok, true);
-  assert.strictEqual(f.calls.length, 1);
+  assert.strictEqual(f.calls.length, 1, 'la petición SÍ se manda — el catálogo está sano');
   assert.strictEqual(r.sizeInfo.nivel, 'ok');
 });
 
-test('getPayloadBreakdown: desglosa por colección de nivel superior, descendente', () => {
-  const desglose = Sync.getPayloadBreakdown({ materia: 'x'.repeat(100), ventas: 'x'.repeat(500), config: 'x' });
-  assert.strictEqual(desglose[0].coleccion, 'ventas');
-  assert.strictEqual(desglose[1].coleccion, 'materia');
-  assert.strictEqual(desglose[2].coleccion, 'config');
+test('CRITERIO U0 inverso: catálogo sobre el tope con payload total chico → push() bloquea', async () => {
+  const estado = catalogoDeTamano(49000); // solo config, sin ventas — payload ≈ catálogo acá
+  const f = mockFetch([{ body: { ok: true } }]);
+  const r = await Sync.push('https://x.com/exec', 'tok', estado, f);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.code, 'PAYLOAD_TOO_LARGE');
+  assert.strictEqual(r.sizeInfo.nivel, 'bloqueado');
+  assert.strictEqual(f.calls.length, 0, 'no debe haber intentado la petición');
+});
+
+test('push() adjunta sizeInfo (catálogo) + sizeInfo.transferencia (payload total) en la respuesta', async () => {
+  const estado = payloadGrandeCatalogoChico(30000, 5000);
+  const f = mockFetch([{ body: { ok: true, ts: '2026-09-10T00:00:00Z' } }]);
+  const r = await Sync.push('https://x.com/exec', 'tok', estado, f);
+  assert.strictEqual(r.sizeInfo.nivel, 'ok');
+  assert.ok(r.sizeInfo.transferencia > r.sizeInfo.tam, 'la transferencia (payload) es mayor que el catálogo');
+});
+
+test('getStateBreakdown: marca enCelda=true para el catálogo y false para las append-only', () => {
+  const desglose = Sync.getStateBreakdown({ materia: 'x'.repeat(100), ventas: 'x'.repeat(500), config: 'x', lotes: [] });
+  const porNombre = Object.fromEntries(desglose.map(d => [d.coleccion, d.enCelda]));
+  assert.strictEqual(porNombre.materia, true);
+  assert.strictEqual(porNombre.config, true);
+  assert.strictEqual(porNombre.ventas, false);
+  assert.strictEqual(porNombre.lotes, false);
+  assert.strictEqual(desglose[0].coleccion, 'ventas', 'ordenado por tamaño descendente');
 });
 
 test('getSyncSizeHistory: sin localStorage (Node) devuelve un array vacío, nunca revienta', () => {

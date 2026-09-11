@@ -14,11 +14,11 @@
  */
 (function (root, factory) {
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = factory();
+    module.exports = factory(require('./rowsync.js'));
   } else {
-    root.CrumblySync = factory();
+    root.CrumblySync = factory(root.CrumblyRowSync);
   }
-})(typeof self !== 'undefined' ? self : this, function () {
+})(typeof self !== 'undefined' ? self : this, function (RowSync) {
   'use strict';
 
   function isConfigured(backendUrl, token) {
@@ -43,30 +43,61 @@
     return res.json();
   }
 
-  // ─── T0: alarma de tamaño de payload (auditoría Ronda 3) ───────────────
+  // ─── U0 (auditoría Ronda 4): la alarma mide el CATÁLOGO, no el payload ──
   //
   // El modo de falla real: `state_json!A1` tiene un tope de ~50.000
-  // caracteres (límite de una celda de Google Sheets). Antes de esta
-  // versión, superar el tope hacía que la escritura fallara EN SILENCIO
-  // — el usuario seguía operando creyendo que se guardaba. Esto mide el
-  // tamaño ANTES de intentar escribir, no después de que falle.
+  // caracteres (límite de una celda de Google Sheets). T0 (Ronda 3) medía
+  // `JSON.stringify(state)` completo — correcto ENTONCES, porque el
+  // payload y el contenido de la celda eran la misma cosa.
+  //
+  // Después de T1 dejan de serlo: el cliente sigue mandando el estado
+  // completo con todas las transacciones, pero el backend lo parte en
+  // catálogo (celda) + filas (hojas append-only). El payload crece con la
+  // operación para siempre; la celda solo guarda el catálogo y se queda
+  // estable. Medir el payload contra el tope de la celda bloqueaba la app
+  // por un límite que ya no existe (el día que el historial pasara de
+  // 48.000, con la celda sana en 30.000).
+  //
+  // Ahora la advertencia y el bloqueo miran SOLO el catálogo — la parte
+  // que de verdad va a la celda (`splitCatalogAndAppend`, la misma
+  // función que usa Code.gs). El tamaño de la transferencia se sigue
+  // mostrando en Ajustes, pero como información, sin tope.
   var TOPE_PAYLOAD_CHARS = 50000;
   var BLOQUEO_PAYLOAD_CHARS = 48000; // por debajo del tope real — margen de seguridad
   var ADVERTENCIA_PAYLOAD_CHARS = 40000;
 
-  function getPayloadSizeInfo(state) {
-    var tam = JSON.stringify(state).length;
+  function catalogoDe_(state) {
+    if (RowSync && RowSync.splitCatalogAndAppend) return RowSync.splitCatalogAndAppend(state).catalogo;
+    return state || {}; // sin RowSync (no debería pasar) — degradar a medir todo, más seguro que reventar
+  }
+
+  // Tamaño del CATÁLOGO (lo único que va a la celda) contra el tope real.
+  // Esto es lo que dispara advertencia/bloqueo en push().
+  function getCatalogSizeInfo(state) {
+    var tam = JSON.stringify(catalogoDe_(state)).length;
     var nivel = tam >= BLOQUEO_PAYLOAD_CHARS ? 'bloqueado' : (tam >= ADVERTENCIA_PAYLOAD_CHARS ? 'advertencia' : 'ok');
     return { tam: tam, tope: TOPE_PAYLOAD_CHARS, bloqueo: BLOQUEO_PAYLOAD_CHARS, advertencia: ADVERTENCIA_PAYLOAD_CHARS, pct: tam / TOPE_PAYLOAD_CHARS, nivel: nivel };
   }
 
-  // Desglose por colección de nivel superior — el mismo cálculo que
-  // produjo la tabla de la auditoría (`JSON.stringify(state[k]).length`
-  // por cada `k`), para que Ajustes pueda mostrarlo sin abrir la consola.
-  // Ordenado descendente: lo más pesado primero.
-  function getPayloadBreakdown(state) {
+  // Tamaño de lo que viaja en el POST (estado completo). Informativo —
+  // NO tiene tope de celda. Sigue siendo O(historial completo) en ambas
+  // direcciones (ver PROGRESO.md § "Fuera de alcance") — útil para
+  // vigilar la transferencia, no una condición de bloqueo.
+  function getTransferSize(state) {
+    return JSON.stringify(state || {}).length;
+  }
+
+  // Desglose por colección de nivel superior, marcando cuáles cuentan
+  // contra el tope de la celda (`enCelda: true` = parte del catálogo) y
+  // cuáles no (filas append-only). Después de T1 son dos grupos con
+  // límites distintos — mezclarlos en una sola tabla fue lo que produjo
+  // la confusión de U0. Ordenado descendente: lo más pesado primero.
+  function getStateBreakdown(state) {
+    var append = (RowSync && RowSync.COLECCIONES_APPEND) || [];
     return Object.keys(state || {})
-      .map(function (k) { return { coleccion: k, tam: JSON.stringify(state[k]).length }; })
+      .map(function (k) {
+        return { coleccion: k, tam: JSON.stringify(state[k]).length, enCelda: append.indexOf(k) === -1 };
+      })
       .sort(function (a, b) { return b.tam - a.tam; });
   }
 
@@ -105,12 +136,15 @@
   }
 
   function push(backendUrl, token, state, fetchImpl) {
-    // T0: se mide ANTES de mandar nada — sobre el tope de bloqueo, ni
-    // siquiera se hace la petición (ahorra el viaje Y evita que el
-    // backend tenga que ser la única línea de defensa). Es preferible
-    // que el usuario sepa que no se guardó a que crea que sí.
-    var sizeInfo = getPayloadSizeInfo(state);
+    // U0: se mide el CATÁLOGO ANTES de mandar nada — sobre el tope de
+    // bloqueo, ni siquiera se hace la petición. El payload completo puede
+    // ser enorme (crece con el historial) y eso ya NO es motivo de
+    // bloqueo — solo el catálogo, que es lo que va a la celda.
+    var sizeInfo = getCatalogSizeInfo(state);
+    sizeInfo.transferencia = getTransferSize(state); // informativo, sin tope
     if (sizeInfo.nivel === 'bloqueado') {
+      // Mismo `code` que usa el backend (writeState_) — index.html maneja
+      // los dos caminos igual. Ahora "PAYLOAD" = catálogo en ambos lados.
       return Promise.resolve({ ok: false, error: 'PAYLOAD_TOO_LARGE', code: 'PAYLOAD_TOO_LARGE', sizeInfo: sizeInfo });
     }
     var f = resolveFetch(fetchImpl);
@@ -146,8 +180,9 @@
     pull: pull,
     push: push,
     uploadFile: uploadFile,
-    getPayloadSizeInfo: getPayloadSizeInfo,
-    getPayloadBreakdown: getPayloadBreakdown,
+    getCatalogSizeInfo: getCatalogSizeInfo,
+    getTransferSize: getTransferSize,
+    getStateBreakdown: getStateBreakdown,
     getSyncSizeHistory: getSyncSizeHistory
   };
 });

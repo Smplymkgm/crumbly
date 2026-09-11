@@ -1113,10 +1113,12 @@ textarea.field{height:auto}
         <button class="btn-cancel" onclick="cerrarSesion()">Cerrar sesión en este dispositivo</button>
       </div>
       <div>
-        <!-- T0 (auditoría, Ronda 3): antes de esto, saber que el estado
-             se acercaba al tope de la celda de Sheets exigía abrir la
-             consola y correr JSON.stringify(state).length a mano. -->
-        <div class="card-title" style="margin-bottom:10px">Tamaño del estado sincronizado</div>
+        <!-- T0 (Ronda 3) / U0 (Ronda 4): lo que puede llenar la celda de
+             Sheets y bloquear la sincronización es el CATÁLOGO (menú:
+             productos, insumos, recetas, config), no el historial de
+             transacciones — eso vive en filas append-only y no tiene
+             tope. Mezclarlos en una sola cifra fue lo que confundió. -->
+        <div class="card-title" style="margin-bottom:10px">Tamaño del catálogo (cuenta contra el tope de la celda)</div>
         <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px">
           <strong id="payload-tamano" style="font-size:18px">0</strong>
           <span class="item-sub">de <span id="payload-tope">50.000</span> caracteres (<span id="payload-pct">0%</span>)</span>
@@ -1125,8 +1127,11 @@ textarea.field{height:auto}
           <div id="payload-barra" style="height:100%;width:0%;background:var(--ink);border-radius:999px"></div>
         </div>
         <p class="item-sub" id="payload-nivel-msg" style="margin-bottom:10px"></p>
-        <div class="card-title" style="font-size:12px;margin-bottom:8px">Desglose por colección</div>
-        <div id="payload-desglose" style="display:flex;flex-direction:column;gap:4px"></div>
+        <p class="item-sub" style="margin-bottom:10px">Transferencia por sincronización (estado completo, <b>sin tope</b>): <strong id="payload-transferencia">0</strong> caracteres</p>
+        <div class="card-title" style="font-size:12px;margin-bottom:6px">Catálogo — cuenta contra el tope</div>
+        <div id="payload-desglose-catalogo" style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px"></div>
+        <div class="card-title" style="font-size:12px;margin-bottom:6px">Filas append-only — no cuentan contra el tope</div>
+        <div id="payload-desglose-append" style="display:flex;flex-direction:column;gap:4px"></div>
       </div>
       <div>
         <!-- T2.1 (auditoría, Ronda 3): solo diagnóstico — ningún botón acá
@@ -1160,6 +1165,7 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
 <script src="js/core.js"></script>
+<script src="js/rowsync.js"></script>
 <script src="js/sync.js"></script>
 <script src="js/auth.js"></script>
 <script>
@@ -1284,22 +1290,22 @@ function pushInBackground() {
       // usuario siga operando creyendo que se está guardando.
       if (r.code === 'PAYLOAD_TOO_LARGE') {
         showPersistentError(
-          'No se pudo sincronizar: el estado (' + r.sizeInfo.tam.toLocaleString('es-CO') + ' de ' + r.sizeInfo.tope.toLocaleString('es-CO') + ' caracteres) supera el tope de una celda de Sheets. Los cambios quedan SOLO en este dispositivo hasta que se libere espacio.',
+          'No se pudo sincronizar: el catálogo (' + r.sizeInfo.tam.toLocaleString('es-CO') + ' de ' + r.sizeInfo.tope.toLocaleString('es-CO') + ' caracteres) supera el tope de una celda de Sheets. Los cambios quedan SOLO en este dispositivo hasta que se reduzca el catálogo (menos productos/insumos/recetas).',
           'Ver detalle en Ajustes',
           () => openModal('modal-ajustes')
         );
-        updateSyncStatus('Bloqueado por tamaño — ver Ajustes', true);
+        updateSyncStatus('Bloqueado por tamaño del catálogo — ver Ajustes', true);
         return;
       }
       if (!r.ok) { updateSyncStatus('Error al sincronizar: ' + (r.error || 'desconocido'), true); return; }
       state.config.lastSync = r.ts || new Date().toISOString();
       try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
       updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
-      // T0: por debajo del tope de bloqueo, pero ya en zona de
+      // U0: por debajo del tope de bloqueo, pero el CATÁLOGO ya en zona de
       // advertencia — persistente también (nunca un toast que se va solo).
       if (r.sizeInfo && r.sizeInfo.nivel === 'advertencia') {
         showPersistentError(
-          'El estado sincronizado va en ' + r.sizeInfo.tam.toLocaleString('es-CO') + ' de ' + r.sizeInfo.tope.toLocaleString('es-CO') + ' caracteres (' + Math.round(r.sizeInfo.pct * 100) + '%) — se acerca al tope de una celda de Sheets.',
+          'El catálogo va en ' + r.sizeInfo.tam.toLocaleString('es-CO') + ' de ' + r.sizeInfo.tope.toLocaleString('es-CO') + ' caracteres (' + Math.round(r.sizeInfo.pct * 100) + '%) — se acerca al tope de una celda de Sheets.',
           'Ver desglose en Ajustes',
           () => openModal('modal-ajustes')
         );
@@ -1412,24 +1418,28 @@ const COLECCION_LABEL = {
   schemaVersion: 'Versión de esquema'
 };
 function renderPayloadPanel() {
-  const info = CrumblySync.getPayloadSizeInfo(stateSinConteoEnProgreso()); // T0.1: el conteo en curso ya no viaja, no debe contar para el tamaño sincronizado
+  const snapshot = stateSinConteoEnProgreso(); // T0.1: el conteo en curso ya no viaja, no cuenta acá
+  const info = CrumblySync.getCatalogSizeInfo(snapshot); // U0: mide SOLO el catálogo
   document.getElementById('payload-tamano').textContent = info.tam.toLocaleString('es-CO');
   document.getElementById('payload-tope').textContent = info.tope.toLocaleString('es-CO');
   document.getElementById('payload-pct').textContent = Math.round(info.pct * 100) + '%';
+  document.getElementById('payload-transferencia').textContent = CrumblySync.getTransferSize(snapshot).toLocaleString('es-CO');
   const barra = document.getElementById('payload-barra');
   barra.style.width = Math.min(100, info.pct * 100) + '%';
   barra.style.background = info.nivel === 'bloqueado' ? 'var(--danger)' : (info.nivel === 'advertencia' ? '#c98a1f' : 'var(--ink)');
   const msg = document.getElementById('payload-nivel-msg');
-  if (info.nivel === 'bloqueado') { msg.textContent = 'Bloqueado: por encima de este tamaño, la sincronización se rechaza para no perder datos en silencio.'; msg.style.color = 'var(--danger)'; }
-  else if (info.nivel === 'advertencia') { msg.textContent = 'En zona de advertencia — se acerca al tope de una celda de Sheets.'; msg.style.color = '#c98a1f'; }
-  else { msg.textContent = 'Dentro de rango normal.'; msg.style.color = 'var(--muted)'; }
+  if (info.nivel === 'bloqueado') { msg.textContent = 'Bloqueado: el catálogo supera el tope de una celda de Sheets. La sincronización se rechaza para no perder datos en silencio.'; msg.style.color = 'var(--danger)'; }
+  else if (info.nivel === 'advertencia') { msg.textContent = 'El catálogo se acerca al tope de una celda de Sheets.'; msg.style.color = '#c98a1f'; }
+  else { msg.textContent = 'Catálogo dentro de rango normal.'; msg.style.color = 'var(--muted)'; }
 
-  const desglose = CrumblySync.getPayloadBreakdown(stateSinConteoEnProgreso());
-  document.getElementById('payload-desglose').innerHTML = desglose.map(d => `
+  const fila = d => `
     <div style="display:flex;justify-content:space-between;font-size:12px">
       <span style="color:var(--text)">${esc(COLECCION_LABEL[d.coleccion] || d.coleccion)}</span>
       <span style="color:var(--muted)">${d.tam.toLocaleString('es-CO')}</span>
-    </div>`).join('');
+    </div>`;
+  const desglose = CrumblySync.getStateBreakdown(snapshot);
+  document.getElementById('payload-desglose-catalogo').innerHTML = desglose.filter(d => d.enCelda).map(fila).join('');
+  document.getElementById('payload-desglose-append').innerHTML = desglose.filter(d => !d.enCelda).map(fila).join('');
 }
 // T2.1: cada entrada es {check, lista, aItem} — `aItem` arma la línea de
 // texto de un elemento marcado por ese check. Sin botones de corrección:
