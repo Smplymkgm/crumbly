@@ -357,10 +357,30 @@
     return (state.preparaciones || []).find(function (x) { return x.id === prepId; });
   }
 
+  // ─── Y0 (auditoría Ronda 7): factor 100 en modo porcentaje ─────────────
+  // Porcentaje panadero real: gramos(i) = baseGramos × porcentaje(i) / 100
+  // (100% de la base = baseGramos gramos, no baseGramos×100). Faltaba la
+  // división por 100 — factor exacto, medido contra producción: la
+  // preparación "Malteada frutos rojos" (baseGramos 200, porcentajes
+  // 200/110/50/60) daba gramosTotal 84.000 en vez de 840.
+  //
+  // Por qué sobrevivió a seis rondas de auditoría: el error infla los
+  // gramos de CADA componente Y el gramosTotal en el mismo factor. La
+  // composición por gramo (gramos del componente / gramosTotal, ver
+  // getPreparacionComposicionPorGramo) se calcula como un COCIENTE entre
+  // dos cantidades igualmente infladas — el 100 se cancela ahí, y el
+  // costo por gramo sale exacto de todas formas. Por eso el costo de
+  // producto, el margen y el food cost — todo lo auditado en rondas
+  // anteriores — nunca mostró el error: todos pasan por ese cociente, no
+  // por una cantidad absoluta. Solo se ve donde la cantidad absoluta
+  // importa por sí misma: producción de lotes (cuánta materia prima
+  // descontar de verdad) y el conteo de WIP (contra qué teórico se
+  // compara). Ver inventario completo de qué heredaba el bug en
+  // PROGRESO.md § Y0.
   function gramosDeComponentePreparacion(prep, c) {
     return prep.modo === 'directo'
       ? (Number(c.gramos) || 0)
-      : (Number(prep.baseGramos) || 0) * (Number(c.porcentaje) || 0);
+      : (Number(prep.baseGramos) || 0) * (Number(c.porcentaje) || 0) / 100;
   }
 
   // Gramos de materia CRUDA por cada gramo de la preparación `prepId`,

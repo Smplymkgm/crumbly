@@ -702,23 +702,31 @@ function stateMasaNewYork() {
     ],
     preparaciones: [{
       id: 'masa-ny', nombre: 'Masa de waffles (New York)', modo: 'porcentaje', baseGramos: 100,
+      // Y0 (auditoría Ronda 7): `porcentaje` se guarda en escala de
+      // PORCENTAJE real (100 = 100%), no como fracción (1.0 = 100%) —
+      // confirmado contra producción. Este fixture usaba fracciones
+      // porque así "cancelaba" el bug del factor 100 (100×0.15 = 15,
+      // el resultado correcto, por casualidad de escala). Con el bug
+      // corregido (÷100 real), hay que declarar el porcentaje como
+      // porcentaje — los valores de gramosTotal/costoTotal esperados
+      // abajo no cambian, son los mismos de siempre.
       componentes: [
-        { tipo: 'materia', refId: 'harina', porcentaje: 1.0 },
-        { tipo: 'materia', refId: 'almidon', porcentaje: 0.15 },
-        { tipo: 'materia', refId: 'azucar', porcentaje: 0.2 },
-        { tipo: 'materia', refId: 'huevo', porcentaje: 0.5 },   // claras
-        { tipo: 'materia', refId: 'huevo', porcentaje: 0.36 },  // yemas (mismo insumo, dos líneas — así está en la hoja)
-        { tipo: 'materia', refId: 'mantequilla', porcentaje: 0.4 },
-        { tipo: 'materia', refId: 'polvo', porcentaje: 0.0134 },
-        { tipo: 'materia', refId: 'leche', porcentaje: 1.21 },
-        { tipo: 'materia', refId: 'sal', porcentaje: 0.001 },
-        { tipo: 'materia', refId: 'quesocrema', porcentaje: 2.0 }
+        { tipo: 'materia', refId: 'harina', porcentaje: 100 },
+        { tipo: 'materia', refId: 'almidon', porcentaje: 15 },
+        { tipo: 'materia', refId: 'azucar', porcentaje: 20 },
+        { tipo: 'materia', refId: 'huevo', porcentaje: 50 },   // claras
+        { tipo: 'materia', refId: 'huevo', porcentaje: 36 },  // yemas (mismo insumo, dos líneas — así está en la hoja)
+        { tipo: 'materia', refId: 'mantequilla', porcentaje: 40 },
+        { tipo: 'materia', refId: 'polvo', porcentaje: 1.34 },
+        { tipo: 'materia', refId: 'leche', porcentaje: 121 },
+        { tipo: 'materia', refId: 'sal', porcentaje: 0.1 },
+        { tipo: 'materia', refId: 'quesocrema', porcentaje: 200 }
       ]
     }]
   });
 }
 
-test('masa New York: 583,44 g totales (suma de porcentajes 5,8344 × 100g base)', () => {
+test('masa New York: 583,44 g totales (porcentajes que suman 583,44% × 100g base / 100)', () => {
   const s = stateMasaNewYork();
   const c = C.getPreparacionCosto(s, 'masa-ny');
   assert.ok(Math.abs(c.gramosTotal - 583.44) < 0.01);
@@ -734,6 +742,84 @@ test('masa New York: costo por gramo $12,4591 (verificado contra la hoja real)',
   const s = stateMasaNewYork();
   const c = C.getPreparacionCosto(s, 'masa-ny');
   assert.ok(Math.abs(c.costoPorGramo - 12.4591) < 0.001);
+});
+
+console.log('\n== Y0 (auditoría Ronda 7): factor 100 en modo porcentaje ==');
+
+// Receta EXACTA de producción ("Malteada frutos rojos") citada en el
+// encargo — baseGramos 200, porcentajes 200/110/50/60 (suman 420%). El
+// bug (antes de esta ronda): gramosTotal salía 84.000 (200 × 420, sin
+// dividir por 100). Correcto: 200 × 420 / 100 = 840.
+function stateMalteadaFrutosRojos() {
+  return C.migrateState({
+    materia: [
+      { id: 'leche', nombre: 'Leche', cantidad: 100000, costo: 5, minimo: 0 },
+      { id: 'fresa', nombre: 'Fresa', cantidad: 100000, costo: 8, minimo: 0 },
+      { id: 'azucar', nombre: 'Azúcar', cantidad: 100000, costo: 4, minimo: 0 },
+      { id: 'hielo', nombre: 'Hielo', cantidad: 100000, costo: 1, minimo: 0 }
+    ],
+    preparaciones: [{
+      id: 'malteada', nombre: 'Malteada frutos rojos', modo: 'porcentaje', baseGramos: 200,
+      componentes: [
+        { tipo: 'materia', refId: 'leche', porcentaje: 200 },
+        { tipo: 'materia', refId: 'fresa', porcentaje: 110 },
+        { tipo: 'materia', refId: 'azucar', porcentaje: 50 },
+        { tipo: 'materia', refId: 'hielo', porcentaje: 60 }
+      ]
+    }]
+  });
+}
+
+test('CRITERIO Y0: receta exacta de producción (baseGramos 200, porcentajes 200/110/50/60) → gramosTotal 840, no 84.000', () => {
+  const s = stateMalteadaFrutosRojos();
+  const c = C.getPreparacionCosto(s, 'malteada');
+  assert.ok(Math.abs(c.gramosTotal - 840) < 0.001, 'gramosTotal debe ser 840; dio ' + c.gramosTotal);
+});
+
+test('CRITERIO Y0: el costo por gramo NO cambia con el arreglo — el factor 100 solo estaba en la escala absoluta', () => {
+  const s = stateMalteadaFrutosRojos();
+  const c = C.getPreparacionCosto(s, 'malteada');
+  // costoPorGramo = (200×5 + 110×8 + 50×4 + 60×1) / 420 = (1000+880+200+60)/420 = 2140/420
+  const esperado = (200 * 5 + 110 * 8 + 50 * 4 + 60 * 1) / 420;
+  assert.ok(Math.abs(c.costoPorGramo - esperado) < 0.0001);
+  // Y la composición por gramo (lo que de verdad usa el costeo de productos) suma 1 —
+  // el mismo cociente antes y después del arreglo, el 100 se cancela ahí.
+  const comp = C.getPreparacionComposicionPorGramo(s, 'malteada');
+  const suma = Object.values(comp).reduce(function (a, v) { return a + v; }, 0);
+  assert.ok(Math.abs(suma - 1) < 0.0001);
+});
+
+test('CRITERIO Y0: producir un lote (multiplicador 1) descuenta materia prima para 840g, no 84.000', () => {
+  const s = stateMalteadaFrutosRojos();
+  const antes = { leche: 100000, fresa: 100000, azucar: 100000, hielo: 100000 };
+  C.producirPreparacion(s, { preparacionId: 'malteada', multiplicador: 1, gramosObtenidos: 840 });
+  const leche = s.materia.find(function (m) { return m.id === 'leche'; });
+  const fresa = s.materia.find(function (m) { return m.id === 'fresa'; });
+  // 200% de 200g base = 400g de leche (no 40.000g)
+  assert.ok(Math.abs((antes.leche - leche.cantidad) - 400) < 0.001, 'debe descontar 400g de leche, descontó ' + (antes.leche - leche.cantidad));
+  // 110% de 200g base = 220g de fresa (no 22.000g)
+  assert.ok(Math.abs((antes.fresa - fresa.cantidad) - 220) < 0.001, 'debe descontar 220g de fresa, descontó ' + (antes.fresa - fresa.cantidad));
+});
+
+test('CRITERIO Y0: getConsumoTeoricoLote (la vista previa de producción) también da 840g, no 84.000', () => {
+  const s = stateMalteadaFrutosRojos();
+  const preview = C.getConsumoTeoricoLote(s, 'malteada', 1);
+  assert.ok(Math.abs(preview.gramosTeoricos - 840) < 0.001);
+});
+
+test('NO-REGRESIÓN Y0: una preparación en modo DIRECTO da el mismo resultado antes y después del arreglo', () => {
+  // El arreglo tocó SOLO la rama `porcentaje` de gramosDeComponentePreparacion
+  // — la rama `directo` (8 de las 9 preparaciones reales) no se tocó, pero
+  // este test lo prueba en vez de asumirlo.
+  const s = C.migrateState({
+    materia: [{ id: 'harina', nombre: 'Harina', cantidad: 100000, costo: 5, minimo: 0 }],
+    preparaciones: [{ id: 'masa', nombre: 'Masa directa', modo: 'directo', componentes: [{ tipo: 'materia', refId: 'harina', gramos: 300 }] }]
+  });
+  const c = C.getPreparacionCosto(s, 'masa');
+  assert.strictEqual(c.gramosTotal, 300);
+  assert.strictEqual(c.costoPorGramo, 5);
+  const preview = C.getConsumoTeoricoLote(s, 'masa', 2);
+  assert.strictEqual(preview.gramosTeoricos, 600); // multiplicador 2 × 300g, sin ninguna división de por medio
 });
 
 console.log('\n== B3: rendimiento de preparaciones (mermas de cocción/evaporación) ==');
@@ -827,9 +913,10 @@ function stateAnidada() {
     preparaciones: [
       {
         id: 'ganache', nombre: 'Ganache', modo: 'porcentaje', baseGramos: 200,
+        // Y0: porcentaje en escala real (100/20), no fracción — ver nota en stateMasaNewYork.
         componentes: [
-          { tipo: 'materia', refId: 'chocolate', porcentaje: 1.0 },
-          { tipo: 'materia', refId: 'crema', porcentaje: 0.2 }
+          { tipo: 'materia', refId: 'chocolate', porcentaje: 100 },
+          { tipo: 'materia', refId: 'crema', porcentaje: 20 }
         ]
       },
       {
