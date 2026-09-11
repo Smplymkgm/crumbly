@@ -1695,7 +1695,12 @@ function showPersistentError(msg, actionLabel, actionFn) {
 // vez de markup estático: no forma parte del flujo normal de ninguna
 // pantalla, solo aparece cuando de verdad hay algo que decidir.
 function resumenRegistroConflicto_(item) {
-  if (!item) return '(no existe / fue borrado)';
+  // V2: un conflicto de `config` trae un valor ESCALAR (número, string,
+  // objeto suelto), no un registro con `nombre`/`costo`/etc — `!item`
+  // trataría un 0/''/false legítimo como "no existe". Solo undefined/null
+  // son "no existe".
+  if (item === undefined || item === null) return '(no existe / fue borrado)';
+  if (typeof item !== 'object') return String(item);
   const campos = ['nombre', 'costo', 'precio', 'cantidad', 'unidad', 'categoria'].filter(k => item[k] !== undefined);
   return campos.map(k => k + ': ' + item[k]).join(' · ') || JSON.stringify(item);
 }
@@ -1737,10 +1742,17 @@ function resolverConflictoCatalogo(i, cual) {
   const c = conflictosCatalogoPendientes[i];
   if (!c) return;
   const elegido = cual === 'mio' ? c.mio : c.remoto;
-  const lista = state[c.coleccion] || [];
-  const idx = lista.findIndex(x => x.id === c.id);
-  if (elegido) { if (idx >= 0) lista[idx] = elegido; else lista.push(elegido); }
-  else if (idx >= 0) lista.splice(idx, 1); // la versión elegida no existe -> se había borrado en ese lado
+  if (c.coleccion === 'config') {
+    // V2: acá `c.id` es la CLAVE de config (ej. 'factorPrestacional'), no
+    // un id de registro — state.config es un objeto, no una lista.
+    if (elegido === undefined || elegido === null) delete state.config[c.id];
+    else state.config[c.id] = elegido;
+  } else {
+    const lista = state[c.coleccion] || [];
+    const idx = lista.findIndex(x => x.id === c.id);
+    if (elegido) { if (idx >= 0) lista[idx] = elegido; else lista.push(elegido); }
+    else if (idx >= 0) lista.splice(idx, 1); // la versión elegida no existe -> se había borrado en ese lado
+  }
   conflictosCatalogoPendientes.splice(i, 1);
   renderConflictosCatalogo_();
   refreshAll();

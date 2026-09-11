@@ -387,19 +387,77 @@ test('yo borré un insumo pero el remoto lo editó → conflicto (no se borra en
   assert.strictEqual(conflicts[0].remoto.costo, 4.5);
 });
 
-test('config (no es una lista con id): si el remoto cambió, gana el remoto; si no, gana lo mío', () => {
-  const base = catalogoBase();
+console.log('\n== V2 (Ronda 5): config y schemaVersion en la detección de conflicto ==');
+
+function catalogoBaseConConfig() {
+  const c = catalogoBase();
+  c.config = { email: 'negocio@crumbly.co', factorPrestacional: 1.38 };
+  return c;
+}
+
+test('CRITERIO: dos dispositivos cambiando CLAVES DISTINTAS de config → los dos cambios sobreviven (antes se perdía uno)', () => {
+  const base = catalogoBaseConConfig();
   const mine = JSON.parse(JSON.stringify(base));
-  mine.config.factorPrestacional = 1.4; // yo cambié algo que el remoto no tocó
+  mine.config.factorPrestacional = 1.4; // yo cambié una clave
   const remote = JSON.parse(JSON.stringify(base));
-  remote.config.email = 'nuevo@crumbly.co'; // el remoto cambió otra cosa
+  remote.config.email = 'nuevo@crumbly.co'; // el remoto cambió OTRA clave
 
-  const r1 = RowSync.mergeCatalogs(base, mine, remote);
-  assert.strictEqual(r1.merged.config.email, 'nuevo@crumbly.co', 'el remoto cambió config -> gana el remoto');
+  const { merged, conflicts } = RowSync.mergeCatalogs(base, mine, remote);
+  assert.strictEqual(conflicts.length, 0, 'no debería haber conflicto — son claves distintas');
+  assert.strictEqual(merged.config.email, 'nuevo@crumbly.co', 'el cambio remoto de email sobrevive');
+  assert.strictEqual(merged.config.factorPrestacional, 1.4, 'mi cambio de factorPrestacional TAMBIÉN sobrevive — antes se perdía en silencio');
+});
 
-  const remoteSinCambios = JSON.parse(JSON.stringify(base));
-  const r2 = RowSync.mergeCatalogs(base, mine, remoteSinCambios);
-  assert.strictEqual(r2.merged.config.factorPrestacional, 1.4, 'el remoto no tocó config -> gana lo mío');
+test('CRITERIO: la MISMA clave de config cambiada en los dos lados → conflicto detectado, nada perdido', () => {
+  const base = catalogoBaseConConfig();
+  const mine = JSON.parse(JSON.stringify(base));
+  mine.config.factorPrestacional = 1.4;
+  const remote = JSON.parse(JSON.stringify(base));
+  remote.config.factorPrestacional = 1.5; // la MISMA clave, valor distinto
+
+  const { merged, conflicts } = RowSync.mergeCatalogs(base, mine, remote);
+  assert.strictEqual(conflicts.length, 1);
+  assert.strictEqual(conflicts[0].coleccion, 'config');
+  assert.strictEqual(conflicts[0].id, 'factorPrestacional');
+  assert.strictEqual(conflicts[0].mio, 1.4);
+  assert.strictEqual(conflicts[0].remoto, 1.5);
+  assert.strictEqual(merged.config.factorPrestacional, 1.4, 'nada se pierde en silencio — mi versión queda activa hasta que se decida');
+});
+
+test('config: si nadie tocó una clave, sobrevive tal cual (caso común, sin cambios)', () => {
+  const base = catalogoBaseConConfig();
+  const mine = JSON.parse(JSON.stringify(base));
+  const remote = JSON.parse(JSON.stringify(base));
+  const { merged, conflicts } = RowSync.mergeCatalogs(base, mine, remote);
+  assert.strictEqual(conflicts.length, 0);
+  assert.deepStrictEqual(merged.config, base.config);
+});
+
+test('config: una clave nueva agregada solo en un lado (no estaba en la base) se conserva sin conflicto', () => {
+  const base = catalogoBaseConConfig();
+  const mine = JSON.parse(JSON.stringify(base));
+  mine.config.comportamientoCategorias = { Otros: 'variable' }; // clave nueva, el remoto nunca la tuvo
+  const remote = JSON.parse(JSON.stringify(base));
+  const { merged, conflicts } = RowSync.mergeCatalogs(base, mine, remote);
+  assert.strictEqual(conflicts.length, 0);
+  assert.deepStrictEqual(merged.config.comportamientoCategorias, { Otros: 'variable' });
+});
+
+test('CRITERIO: schemaVersion — gana el mayor de los dos lados, nunca retrocede', () => {
+  const base = catalogoBaseConConfig(); // schemaVersion: 10
+  const mine = JSON.parse(JSON.stringify(base));
+  mine.schemaVersion = 11; // mi dispositivo ya corrió una migración local
+  const remote = JSON.parse(JSON.stringify(base));
+  remote.schemaVersion = 10; // el remoto sigue en la anterior
+
+  const { merged, conflicts } = RowSync.mergeCatalogs(base, mine, remote);
+  assert.strictEqual(merged.schemaVersion, 11, 'gana el mayor — nunca se reporta como conflicto');
+  assert.strictEqual(conflicts.length, 0, 'schemaVersion nunca genera un conflicto de catálogo — la gestiona la migración, no una persona');
+
+  const remoteMasNueva = JSON.parse(JSON.stringify(base));
+  remoteMasNueva.schemaVersion = 12;
+  const r2 = RowSync.mergeCatalogs(base, mine, remoteMasNueva);
+  assert.strictEqual(r2.merged.schemaVersion, 12, 'si el remoto es mayor, gana el remoto');
 });
 
 console.log('\n== Resumen ==');

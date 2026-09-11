@@ -291,6 +291,48 @@
     Object.keys(base).concat(Object.keys(mine), Object.keys(remote)).forEach(function (k) { todasLasClaves[k] = true; });
 
     Object.keys(todasLasClaves).forEach(function (coleccion) {
+      // ─── V2 (auditoría Ronda 5): schemaVersion — la gestiona la
+      // migración, no una persona editando desde dos dispositivos. Gana
+      // el mayor de los dos (nunca retrocede), excepción documentada al
+      // criterio de conflicto por registro/clave de acá abajo.
+      if (coleccion === 'schemaVersion') {
+        merged.schemaVersion = Math.max(Number(base.schemaVersion) || 0, Number(mine.schemaVersion) || 0, Number(remote.schemaVersion) || 0);
+        return;
+      }
+      // ─── V2: config — ahí vive configuración contable real
+      // (factorPrestacional, la clasificación fijo/variable de gastos).
+      // Antes se resolvía entero por último-cambio-remoto-gana porque "no
+      // es una lista con id" — pero eso significa que si dos dispositivos
+      // tocan DOS CLAVES DISTINTAS de config, una se pierde en silencio
+      // sin que nadie se entere: el prime cost y el punto de equilibrio
+      // cambian sin rastro. Se aplica la MISMA comparación contra la base
+      // que ya usan las listas, pero por clave en vez de por id — dos
+      // claves distintas cambiadas sobreviven las dos; la MISMA clave
+      // cambiada en los dos lados es un conflicto real, reportado igual
+      // que un registro (nunca resuelto por reloj).
+      if (coleccion === 'config') {
+        var configBase = base.config || {};
+        var configMine = mine.config || {};
+        var configRemote = remote.config || {};
+        var claves = {};
+        Object.keys(configBase).concat(Object.keys(configMine), Object.keys(configRemote)).forEach(function (k) { claves[k] = true; });
+        var configMerged = {};
+        Object.keys(claves).forEach(function (k) {
+          var b = configBase[k], m = configMine[k], r = configRemote[k];
+          var mineChanged = !catalogRecordsIguales_(m, b);
+          var remoteChanged = !catalogRecordsIguales_(r, b);
+          if (mineChanged && remoteChanged && !catalogRecordsIguales_(m, r)) {
+            conflicts.push({ coleccion: 'config', id: k, base: b === undefined ? null : b, mio: m === undefined ? null : m, remoto: r === undefined ? null : r });
+            if (m !== undefined) configMerged[k] = m; // se conserva lo mío hasta que se decida — nunca se pierde en silencio
+            return;
+          }
+          if (remoteChanged) { if (r !== undefined) configMerged[k] = r; return; }
+          if (mineChanged) { if (m !== undefined) configMerged[k] = m; return; }
+          if (m !== undefined) configMerged[k] = m; // nadie cambió esta clave — cualquiera sirve
+        });
+        merged.config = configMerged;
+        return;
+      }
       if (COLECCIONES_CATALOGO_CON_ID.indexOf(coleccion) === -1) {
         var remotoCambio = !catalogRecordsIguales_(remote[coleccion], base[coleccion]);
         merged[coleccion] = remotoCambio ? remote[coleccion] : mine[coleccion];
