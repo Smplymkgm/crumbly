@@ -1748,7 +1748,12 @@ function renderReporteIntegridad() {
     // leyendo el viejo". Solo diagnóstico: cada caso lo resuelve una
     // persona con A1 (mover/corregir sin perder el id).
     { titulo: 'Insumos con nombre similar (posible duplicado)', lista: r.insumosDuplicados, aItem: d => (d.severidad === 'alta' ? '⚠ ' : '') + d.a.nombre + ' (' + fmt(d.a.costo) + ', ' + d.a.usos + ' uso(s)) ↔ ' + d.b.nombre + ' (' + fmt(d.b.costo) + ', ' + d.b.usos + ' uso(s))' },
-    { titulo: 'Insumos huérfanos (sin ninguna receta que los use)', lista: r.insumosHuerfanos, aItem: i => i.nombre + ' — ' + fmt(i.costo) }
+    { titulo: 'Insumos huérfanos (sin ninguna receta que los use)', lista: r.insumosHuerfanos, aItem: i => i.nombre + ' — ' + fmt(i.costo) },
+    // A3 (Ronda 8): ingrediente comestible cargado en el bucket de
+    // empaques — infla paper cost, subestima food cost (mismo costo
+    // TOTAL). Peso de impacto por producto afectado, para que se vea de
+    // una vez cuánto mueve la corrección (que es A1) antes de aplicarla.
+    { titulo: 'Ingredientes cargados como empaque (rompen food cost)', lista: r.ingredientesEnEmpaques, aItem: i => i.nombre + ' (' + fmt(i.costo) + ', señal: ' + (i.senal === 'esAdicion' ? 'se vende como adición' : 'categoría "' + i.categoria + '"') + ')' + (i.productosAfectados.length ? ' — ' + i.productosAfectados.map(p => p.productoNombre + ': ' + fmt(p.aporte) + (p.pctDelPrecio !== null ? ' (' + Math.round(p.pctDelPrecio * 100) + '% del precio)' : '')).join(', ') : '') }
   ];
   document.getElementById('reporte-integridad').innerHTML = checks.map(c => `
     <div>

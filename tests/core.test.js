@@ -3301,6 +3301,84 @@ test('getReporteIntegridad incluye insumosDuplicados/insumosHuerfanos (integrado
   assert.strictEqual(r.insumosDuplicados[0].severidad, 'alta');
 });
 
+console.log('\n== A3 (Ronda 8): ingredientes clasificados como empaque rompen el food cost ==');
+
+test('CRITERIO: señal esAdicion+precioAdicion detecta un ingrediente en empaques, con peso de impacto por producto', () => {
+  const s = C.emptyState();
+  // Caso real: Croissant a $3.600, cargado en empaques, se vende como adición.
+  s.empaques.push({ id: 'croissant', nombre: 'Croissant', unidad: 'unidad', costo: 3600, cantidad: 50, minimo: 5, esAdicion: true, precioAdicion: 5000, nombreAdicion: 'Croissant', porcion: 1 });
+  s.productos.push({ id: 'croffle-brasil', nombre: 'Croffle Brasil', precio: 7857, componentes: [{ tipo: 'empaques', refId: 'croissant', gramos: 1 }] });
+
+  const r = C.getIngredientesMalClasificadosComoEmpaque(s);
+  assert.strictEqual(r.length, 1);
+  assert.strictEqual(r[0].id, 'croissant');
+  assert.strictEqual(r[0].senal, 'esAdicion');
+  assert.strictEqual(r[0].productosAfectados.length, 1);
+  const impacto = r[0].productosAfectados[0];
+  assert.strictEqual(impacto.productoId, 'croffle-brasil');
+  assert.strictEqual(impacto.aporte, 3600, '1 unidad * $3600 — todo el costo del croissant en ese producto');
+  assert.ok(Math.abs(impacto.pctDelPrecio - 3600 / 7857) < 1e-9);
+});
+
+test('CRITERIO: señal de categoría de comida (sin esAdicion) también detecta el ingrediente', () => {
+  const s = C.emptyState();
+  s.empaques.push({ id: 'huevos', nombre: 'Huevos', unidad: 'unidad', costo: 300, cantidad: 100, minimo: 10, categoria: 'Lacteos' });
+  s.productos.push({ id: 'torta', nombre: 'Torta', precio: 20000, componentes: [{ tipo: 'empaques', refId: 'huevos', gramos: 3 }] });
+  const r = C.getIngredientesMalClasificadosComoEmpaque(s);
+  assert.strictEqual(r.length, 1);
+  assert.strictEqual(r[0].senal, 'categoria');
+  assert.strictEqual(r[0].productosAfectados[0].aporte, 900);
+});
+
+test('un empaque real (sin esAdicion, sin categoría de comida) no se marca', () => {
+  const s = C.emptyState();
+  s.empaques.push({ id: 'vaso', nombre: 'Vaso 12oz', unidad: 'unidad', costo: 250, cantidad: 200, minimo: 20, categoria: 'Empaque bebida' });
+  s.productos.push({ id: 'p1', nombre: 'Limonada', precio: 6000, empaquesUsados: [{ empaqueId: 'vaso', cantidad: 1 }] });
+  const r = C.getIngredientesMalClasificadosComoEmpaque(s);
+  assert.strictEqual(r.length, 0);
+});
+
+test('CRITERIO: mover el ingrediente a materia (A1) lo saca del diagnóstico — el bucket ya no está mal', () => {
+  const s = C.emptyState();
+  s.empaques.push({ id: 'banano', nombre: 'Banano', unidad: 'unidad', costo: 400, cantidad: 30, minimo: 5, categoria: 'Fruta fresca' });
+  s.productos.push({ id: 'p1', nombre: 'Malteada', precio: 9000, componentes: [{ tipo: 'empaques', refId: 'banano', gramos: 1 }] });
+
+  const antes = C.getIngredientesMalClasificadosComoEmpaque(s);
+  assert.strictEqual(antes.length, 1);
+  const desgloseAntes = C.getCostoProductoDesglosado(s.productos[0], s);
+  assert.strictEqual(desgloseAntes.costoEmpaque, 400);
+  assert.strictEqual(desgloseAntes.costoAlimento, 0);
+
+  C.moverInsumoDeTipo(s, 'banano', 'empaques', 'materia');
+
+  const despues = C.getIngredientesMalClasificadosComoEmpaque(s);
+  assert.strictEqual(despues.length, 0, 'ya no vive en empaques — el diagnóstico no tiene nada que marcar');
+  const desgloseDespues = C.getCostoProductoDesglosado(s.productos[0], s);
+  assert.strictEqual(desgloseDespues.costoTotal, desgloseAntes.costoTotal, 'el costo TOTAL del producto no cambia');
+  assert.strictEqual(desgloseDespues.costoEmpaque, 0, 'ya no cuenta como paper cost...');
+  assert.strictEqual(desgloseDespues.costoAlimento, 400, '...pasó a contar como food cost, que es lo que A3 pedía verificar');
+});
+
+test('getFoodCostPct/getPaperCostPct reflejan el mismo movimiento — sin criterio propio que diverja de getCostoProductoDesglosado', () => {
+  const s = C.emptyState();
+  s.empaques.push({ id: 'croissant', nombre: 'Croissant', unidad: 'unidad', costo: 1000, cantidad: 50, minimo: 5, categoria: 'Harinas preparadas' });
+  s.productos.push({ id: 'p1', nombre: 'Croffle', precio: 5000, componentes: [{ tipo: 'empaques', refId: 'croissant', gramos: 1 }] });
+  const hoy = new Date().toISOString();
+  s.ventas.push({ id: 'v1', fecha: hoy, total: 5000, items: [{ productoId: 'p1', qty: 1, costo: 1000, costoAlimento: 0, costoEmpaque: 1000 }] });
+
+  assert.strictEqual(C.getPaperCostPct(s, 'mes', hoy), 1000 / 5000);
+  assert.strictEqual(C.getFoodCostPct(s, 'mes', hoy), 0);
+
+  C.moverInsumoDeTipo(s, 'croissant', 'empaques', 'materia');
+  // Ventas ya registradas quedan con su desglose CONGELADO (P0.3, deuda
+  // histórica a propósito) — una venta NUEVA después del cambio sí
+  // reflejaría el bucket correcto. Se verifica acá con el desglose EN
+  // VIVO del producto, que es lo que alimentaría a la próxima venta.
+  const desgloseEnVivo = C.getCostoProductoDesglosado(s.productos[0], s);
+  assert.strictEqual(desgloseEnVivo.costoAlimento, 1000);
+  assert.strictEqual(desgloseEnVivo.costoEmpaque, 0);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);

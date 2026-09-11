@@ -1207,6 +1207,8 @@
     }).map(function (p) { return { id: p.id, nombre: p.nombre, costo: getCostoProducto(p, state), precio: Number(p.precio) || 0 }; });
     // A2 (Ronda 8): insumos duplicados/huérfanos — ver getInsumosDuplicadosYHuerfanos.
     var dyh = getInsumosDuplicadosYHuerfanos(state);
+    // A3 (Ronda 8): ingredientes cargados en empaques — ver getIngredientesMalClasificadosComoEmpaque.
+    var ingredientesEnEmpaques = getIngredientesMalClasificadosComoEmpaque(state);
     return {
       sinUnidad: sinUnidad,
       costoFueraDeRango: costoFueraDeRango,
@@ -1215,7 +1217,8 @@
       ventasCostoMayorATotal: ventasCostoMayorATotal,
       productosCostoMayorAPrecio: productosCostoMayorAPrecio,
       insumosDuplicados: dyh.duplicados,
-      insumosHuerfanos: dyh.huerfanos
+      insumosHuerfanos: dyh.huerfanos,
+      ingredientesEnEmpaques: ingredientesEnEmpaques
     };
   }
 
@@ -1288,6 +1291,83 @@
       .map(function (i) { return { tipo: i.tipo, id: i.id, nombre: i.nombre, costo: Number(i.costo) || 0, severidad: 'baja' }; });
 
     return { duplicados: duplicados, huerfanos: huerfanos };
+  }
+
+  // ─── A3 (auditoría Ronda 8): ingredientes clasificados como empaque
+  // rompen el food cost ────────────────────────────────────────────────
+  //
+  // C1 separó costoAlimento/costoEmpaque para poder compararse contra el
+  // reporte estándar de la industria (Toast/Restaurant365) — la auditoría
+  // de costeo midió una brecha de 4.28 puntos contra ese benchmark. Ese
+  // split YA sigue la clasificación real del insumo: getCostoProductoDesglosado
+  // decide alimento/empaque según el `tipo` de cada componente, que A1
+  // mantiene sincronizado con el bucket real. getFoodCostPct/getPaperCostPct
+  // (más arriba) derivan las dos del mismo desglose vía
+  // costosDesglosadosPeriodo — no hay un segundo criterio que unificar.
+  //
+  // El problema real es más de fondo: el BUCKET puede estar mal desde el
+  // principio — un ingrediente comestible cargado en empaques por error
+  // (caso real: Croissant a $3.600/unidad, contando como paper cost). La
+  // solución es A1 (mover el insumo al bucket correcto) — esto SOLO lo
+  // detecta. Sin lista de excepciones por nombre ("si se llama Croissant,
+  // contarlo como alimento") — eso es un parche que falla con el próximo
+  // insumo mal cargado; la regla tiene que mirar una señal real del
+  // insumo, no su nombre.
+  //
+  // Señal 1 (esAdicion + precioAdicion): algo que se le vende al cliente
+  // aparte, con precio propio, no es packaging por definición.
+  // Señal 2 (categoría de comida conocida): si alguien ya clasificó el
+  // insumo con una categoría como "Lácteos" o "Fruta fresca", eso
+  // contradice que viva en el bucket de empaques.
+  //
+  // Falsos positivos conocidos (documentados acá porque son del criterio,
+  // no del código — ver también PROGRESO.md § A3):
+  //  - Un empaque real cuya categoría coincide por accidente con la lista
+  //    (alguien categoriza mal una caja como "Fruta fresca" sin querer).
+  //  - Un insumo esAdicion+precioAdicion que SÍ es empaque real (ej. una
+  //    bolsa reutilizable que se cobra aparte al cliente) — borde
+  //    plausible, sin caso real encontrado en esta ronda.
+  //  - La lista de categorías es un punto de partida (las 3 categorías de
+  //    comida encontradas en el estado real), no exhaustiva — una
+  //    categoría de comida nueva que no esté en la lista no se detecta
+  //    por esta señal (sí podría detectarse igual por la señal de
+  //    esAdicion, si aplica).
+  var CATEGORIAS_ALIMENTO_ = ['Lacteos', 'Lácteos', 'Fruta fresca', 'Harinas preparadas'];
+  function getIngredientesMalClasificadosComoEmpaque(state) {
+    var candidatos = (state.empaques || []).filter(function (i) {
+      var senalAdicion = !!i.esAdicion && (Number(i.precioAdicion) || 0) > 0;
+      var senalCategoria = CATEGORIAS_ALIMENTO_.indexOf(i.categoria) !== -1;
+      return senalAdicion || senalCategoria;
+    });
+    return candidatos.map(function (i) {
+      // Uso DIRECTO nada más (no la cadena vía preparación de C10/V3.3):
+      // una preparación solo puede resolver componentes tipo 'materia'
+      // (ver getPreparacionComposicionPorGramo) — un insumo que hoy vive
+      // en empaques y ya cuenta bien como paper cost solo puede estar
+      // referenciado directo en un producto (componentes o
+      // empaquesUsados), nunca dentro de una preparación.
+      var usoDirecto = findProductosUsandoInsumo(state, i.id);
+      var productosAfectados = usoDirecto.productos.map(function (p) {
+        var aporte = 0;
+        (p.componentes || []).forEach(function (c) {
+          if (c.refId === i.id && c.tipo === 'empaques') aporte += (Number(c.gramos) || 0) * (Number(i.costo) || 0);
+        });
+        (p.empaquesUsados || []).forEach(function (e) {
+          if (e.empaqueId === i.id) aporte += (Number(e.cantidad) || 0) * (Number(i.costo) || 0);
+        });
+        var precio = Number(p.precio) || 0;
+        return { productoId: p.id, productoNombre: p.nombre, aporte: aporte, pctDelPrecio: precio > 0 ? aporte / precio : null };
+      });
+      var senalAdicion = !!i.esAdicion && (Number(i.precioAdicion) || 0) > 0;
+      return {
+        id: i.id,
+        nombre: i.nombre,
+        costo: Number(i.costo) || 0,
+        categoria: i.categoria || '',
+        senal: senalAdicion ? 'esAdicion' : 'categoria',
+        productosAfectados: productosAfectados
+      };
+    });
   }
 
   function getAdiciones(state) {
@@ -3022,6 +3102,7 @@
     findProductosAfectadosPorInsumo: findProductosAfectadosPorInsumo,
     moverInsumoDeTipo: moverInsumoDeTipo,
     getInsumosDuplicadosYHuerfanos: getInsumosDuplicadosYHuerfanos,
+    getIngredientesMalClasificadosComoEmpaque: getIngredientesMalClasificadosComoEmpaque,
     GASTO_CATEGORIAS: GASTO_CATEGORIAS,
     costoPromedioPonderado: costoPromedioPonderado,
     registrarGasto: registrarGasto,
