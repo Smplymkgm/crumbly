@@ -417,6 +417,64 @@ test('getSyncSizeHistory: sin localStorage (Node) devuelve un array vacío, nunc
 // js/auth.js — ver tests/auth.test.js. sync.js ya no sabe nada de cómo
 // se consigue un token, solo lo transporta (ping/pull/push/uploadFile).
 
+group('A0 (Ronda 8): el token del backend no puede viajar en el estado sincronizado');
+tests.push([null, () => { desinstalarLocalStorageFalso_(); instalarLocalStorageFalso_(); }]);
+
+test('CRITERIO: getBackendTokenGuardado/getBackendUrlGuardada leen de localStorage cuando hay algo ahí', () => {
+  Sync.setBackendCredenciales_('https://viejo.example/exec', 'tok-local');
+  assert.strictEqual(Sync.getBackendTokenGuardado({ config: { backendToken: 'tok-en-config' } }), 'tok-local');
+  assert.strictEqual(Sync.getBackendUrlGuardada({ config: { backendUrl: 'https://en-config.example' } }), 'https://viejo.example/exec');
+});
+
+test('CRITERIO: getBackendTokenGuardado/getBackendUrlGuardada caen a state.config cuando localStorage está vacío', () => {
+  desinstalarLocalStorageFalso_(); instalarLocalStorageFalso_(); // limpio, sin nada archivado
+  // Escenario del despliegue: un dispositivo con el cliente NUEVO recibe
+  // un pull de uno con el cliente VIEJO, que todavía escribía en config —
+  // sin la caída, este dispositivo se queda sin poder autenticarse.
+  const estadoDeClienteViejo = { config: { backendUrl: 'https://compat.example/exec', backendToken: 'tok-compat' } };
+  assert.strictEqual(Sync.getBackendTokenGuardado(estadoDeClienteViejo), 'tok-compat');
+  assert.strictEqual(Sync.getBackendUrlGuardada(estadoDeClienteViejo), 'https://compat.example/exec');
+  assert.strictEqual(Sync.getBackendTokenGuardado({ config: {} }), '', 'sin nada en ningún lado, cadena vacía — nunca undefined/throw');
+});
+
+test('CRITERIO: archivarCredencialesLegado es idempotente — no pisa un valor ya archivado', () => {
+  desinstalarLocalStorageFalso_(); instalarLocalStorageFalso_();
+  Sync.archivarCredencialesLegado({ config: { backendUrl: 'https://primero.example', backendToken: 'tok-primero' } });
+  Sync.archivarCredencialesLegado({ config: { backendUrl: 'https://segundo.example', backendToken: 'tok-segundo' } }); // no debe pisar lo ya archivado
+  assert.deepStrictEqual(Sync.getBackendCredenciales(), { backendUrl: 'https://primero.example', backendToken: 'tok-primero' });
+});
+
+test('archivarCredencialesLegado no hace nada si config no trae los campos (estado nuevo, o ya migrado)', () => {
+  desinstalarLocalStorageFalso_(); instalarLocalStorageFalso_();
+  Sync.archivarCredencialesLegado({ config: { email: 'x@x.com' } });
+  assert.deepStrictEqual(Sync.getBackendCredenciales(), {});
+  Sync.archivarCredencialesLegado(null); // no debe reventar
+  Sync.archivarCredencialesLegado({}); // tampoco
+});
+
+test('CRITERIO: después de migrar, un push posterior NO manda backendUrl/backendToken dentro de state.config', () => {
+  // Simula el flujo real: archivarCredencialesLegado (sync.js) ANTES,
+  // migrateState (core.js) borra los campos de config, y RECIÉN
+  // entonces se llama a push() — el mismo orden que migrarState_ en
+  // index.html.
+  desinstalarLocalStorageFalso_(); instalarLocalStorageFalso_();
+  const Core = require(path.join(__dirname, '..', 'js', 'core.js'));
+  const rawViejo = { config: { email: 'x@x.com', backendUrl: 'https://viejo.example/exec', backendToken: 'tok-secreto' } };
+  Sync.archivarCredencialesLegado(rawViejo);
+  const stateMigrado = Core.migrateState(rawViejo);
+  const f = mockFetch([{ body: { ok: true } }]);
+  return Sync.push('https://x.com/exec', 'tok-de-sesion', stateMigrado, f).then(() => {
+    const body = JSON.parse(f.calls[0].opts.body);
+    assert.strictEqual(JSON.stringify(body.state.config).includes('tok-secreto'), false, 'el token legado no puede viajar en el payload del push');
+    assert.strictEqual(body.state.config.hasOwnProperty('backendToken'), false);
+    assert.strictEqual(body.state.config.hasOwnProperty('backendUrl'), false);
+    // y el archivado en localStorage sobrevive — no se perdió el valor real
+    assert.strictEqual(Sync.getBackendCredenciales().backendToken, 'tok-secreto');
+  });
+});
+
+tests.push([null, desinstalarLocalStorageFalso_]);
+
 group('X1 (Ronda 6): guarda estructural — un solo lugar declara un borrado pendiente en index.html');
 
 test('GUARDA ESTRUCTURAL: marcarBorradoPendiente se llama UNA sola vez en index.html (dentro de borrarConSync_)', () => {

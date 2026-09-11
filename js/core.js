@@ -147,7 +147,13 @@
       // directo por el early-return de migrateState. Bug real encontrado
       // al verificar en el navegador: un usuario nuevo (sin estado
       // previo) quedaba con factorPrestacional undefined.
-      config: { email: '', backendUrl: '', backendToken: '', lastSync: null, factorPrestacional: 1.38, comportamientoCategorias: {} }
+      // A0 (auditoría Ronda 8): backendUrl/backendToken NUNCA van acá —
+      // config es catálogo, viaja en cada push/pull y queda en texto
+      // plano en la hoja. Eran campos legado de antes de que la sesión
+      // se moviera a auth.js/localStorage (`crumbly-session`) — ver
+      // migrateState más abajo, que los borra activamente si los
+      // encuentra en un estado cargado de antes de este cambio.
+      config: { email: '', lastSync: null, factorPrestacional: 1.38, comportamientoCategorias: {} }
     };
   }
 
@@ -245,11 +251,19 @@
       config: (raw.config && typeof raw.config === 'object') ? raw.config : {}
     };
     if (s.config.email === undefined) s.config.email = '';
-    // Fase E — backend en Google Sheets (HANDOFF.md §12): config de
-    // sincronización, vacía hasta que el usuario despliegue su propio
-    // Apps Script y pegue la URL + token (backend/SETUP.md).
-    if (s.config.backendUrl === undefined) s.config.backendUrl = '';
-    if (s.config.backendToken === undefined) s.config.backendToken = '';
+    // A0 (auditoría Ronda 8): backendUrl/backendToken son credenciales de
+    // ESTE dispositivo, no datos del negocio — no pueden vivir en
+    // `config` (catálogo, viaja en cada push/pull, texto plano en la
+    // hoja). Eran campos legado de antes de que la sesión se moviera a
+    // auth.js/localStorage; esta migración los BORRA activamente si un
+    // estado cargado todavía los trae (nunca los vuelve a agregar, a
+    // diferencia del resto de los defaults de acá abajo). Quien necesite
+    // preservar un valor real que estuviera ahí lo hace ANTES de llamar
+    // a migrateState — ver CrumblySync.archivarCredencialesLegado en
+    // js/sync.js, la mitad de esta migración que sí puede tocar
+    // localStorage (esta función no puede — sigue sin DOM/localStorage).
+    delete s.config.backendUrl;
+    delete s.config.backendToken;
     if (s.config.lastSync === undefined) s.config.lastSync = null;
     // C3 (auditoría de costeo): NO se hardcodea en 1.52 — con salarios
     // bajo 10 SMMLV aplica la exoneración del art. 114-1 del ET (sin

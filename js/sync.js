@@ -215,6 +215,66 @@
     } catch (e) { return []; }
   }
 
+  // ─── A0 (auditoría Ronda 8): el token del backend no puede viajar en el
+  // estado sincronizado ────────────────────────────────────────────────
+  //
+  // `state.config.backendUrl`/`backendToken` son campos legado de antes
+  // de que la sesión se moviera a auth.js/localStorage
+  // (`crumbly-session`, ver HANDOFF.md) — dejaron de escribirse y leerse
+  // por cualquier código activo hace tiempo, pero `migrateState` nunca
+  // los borraba (migración no destructiva), así que un valor real podía
+  // seguir viajando en cada push/pull y quedando en texto plano en
+  // `state_json` — confirmado abriendo el respaldo real de producción:
+  // el token estaba ahí, completo. Ahora viven acá, en localStorage, por
+  // dispositivo, nunca sincronizados — mismo patrón que
+  // crumbly-catalog-base/conteoEnProgreso/crumbly-borrados-pendientes/
+  // crumbly-fase-migracion-confirmada.
+  var BACKEND_CREDENCIALES_KEY = 'crumbly-backend-credenciales-legado';
+
+  function getBackendCredenciales() {
+    try {
+      var raw = localStorage.getItem(BACKEND_CREDENCIALES_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch (e) { return {}; }
+  }
+  function setBackendCredenciales_(url, token) {
+    try { localStorage.setItem(BACKEND_CREDENCIALES_KEY, JSON.stringify({ backendUrl: url || '', backendToken: token || '' })); } catch (e) { /* no crítico */ }
+  }
+
+  // Lee lo guardado en ESTE dispositivo — localStorage primero; si está
+  // vacío, cae a `state.config` como respaldo. La caída existe por
+  // compatibilidad cruzada durante el despliegue: un dispositivo con el
+  // cliente NUEVO que recibe un pull de uno con el cliente VIEJO (que
+  // todavía escribiera en config) no debe quedarse sin poder leer la
+  // credencial — `state` es opcional, sin él solo mira localStorage.
+  function getBackendTokenGuardado(state) {
+    var local = getBackendCredenciales();
+    if (local.backendToken) return local.backendToken;
+    return (state && state.config && state.config.backendToken) || '';
+  }
+  function getBackendUrlGuardada(state) {
+    var local = getBackendCredenciales();
+    if (local.backendUrl) return local.backendUrl;
+    return (state && state.config && state.config.backendUrl) || '';
+  }
+
+  // La mitad de la migración que SÍ puede tocar localStorage (la otra
+  // mitad — borrar los campos de `config` — vive en CrumblyCore.migrateState,
+  // que sigue sin DOM/localStorage a propósito). Se llama con el estado
+  // CRUDO, antes de migrateState, para alcanzar a archivar el valor
+  // antes de que se borre. Idempotente: si ya hay algo archivado, no lo
+  // pisa; si `config` ya no trae los campos (segunda vez que corre, o un
+  // estado que nunca los tuvo), no hace nada.
+  function archivarCredencialesLegado(rawState) {
+    if (!rawState || !rawState.config) return;
+    var url = rawState.config.backendUrl;
+    var token = rawState.config.backendToken;
+    if (!url && !token) return;
+    var local = getBackendCredenciales();
+    if (local.backendUrl || local.backendToken) return; // ya había algo archivado — no se pisa
+    setBackendCredenciales_(url, token);
+  }
+
   function ping(backendUrl, token, fetchImpl) {
     var f = resolveFetch(fetchImpl);
     return f(withQuery(backendUrl, { action: 'ping', token: token })).then(parseResponse);
@@ -367,6 +427,11 @@
     getStateBreakdown: getStateBreakdown,
     getSyncSizeHistory: getSyncSizeHistory,
     marcarBorradoPendiente: marcarBorradoPendiente,
-    getBorradosPendientes: getBorradosPendientes
+    getBorradosPendientes: getBorradosPendientes,
+    getBackendCredenciales: getBackendCredenciales,
+    setBackendCredenciales_: setBackendCredenciales_,
+    getBackendTokenGuardado: getBackendTokenGuardado,
+    getBackendUrlGuardada: getBackendUrlGuardada,
+    archivarCredencialesLegado: archivarCredencialesLegado
   };
 });

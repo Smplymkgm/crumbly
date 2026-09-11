@@ -1398,6 +1398,16 @@ function catalogoActualDeState() {
 // `resolverConflictoCatalogo` más abajo.
 let conflictosCatalogoPendientes = [];
 
+// A0 (auditoría Ronda 8): único punto de entrada a migrateState — primero
+// archiva backendUrl/backendToken (si un estado viejo todavía los trae en
+// config) a localStorage, y RECIÉN DESPUÉS corre la migración normal, que
+// los borra de config. Envolver acá, en vez de llamar migrateState directo
+// en los 4 lugares, es lo que garantiza que ningún camino se salte el
+// archivado.
+function migrarState_(raw) {
+  CrumblySync.archivarCredencialesLegado(raw);
+  return CrumblyCore.migrateState(raw);
+}
 function loadState() {
   let raw = null;
   try {
@@ -1410,7 +1420,7 @@ function loadState() {
     try { parsed = JSON.parse(raw); }
     catch (e) { showToast('Los datos guardados estaban corruptos — se abrió un estado nuevo'); }
   }
-  state = CrumblyCore.migrateState(parsed);
+  state = migrarState_(parsed);
   restaurarConteoEnProgresoLocal();
   const emailInput = document.getElementById('cfg-email');
   if (emailInput) emailInput.value = state.config.email;
@@ -1566,7 +1576,7 @@ async function afterLogin_(successMsg) {
   refreshAll();
   const r = await CrumblySync.pull(auth.getBackendUrl(), auth.getToken());
   if (!r.ok || !r.state) { showToast('No se pudo traer los datos: ' + (r.error || 'revisá tu conexión')); return; }
-  state = CrumblyCore.migrateState(r.state);
+  state = migrarState_(r.state);
   restaurarConteoEnProgresoLocal(); // T0.1: el pull no trae conteoEnProgreso — se restaura desde este dispositivo, nunca se pierde
   state.config.lastSync = new Date().toISOString();
   saveCatalogBase(r.catalogVersion, catalogoActualDeState()); // U4: primera sincronización real de este dispositivo = nueva base
@@ -1636,7 +1646,7 @@ function pullOnLoad() {
 
       if (sinEdicionLocal) {
         // Nada propio pendiente — seguro reemplazar tal cual (comportamiento de siempre).
-        state = CrumblyCore.migrateState(r.state);
+        state = migrarState_(r.state);
         restaurarConteoEnProgresoLocal(); // T0.1: un pull de OTRO dispositivo nunca pisa el conteo en curso de este
         state.config.lastSync = new Date().toISOString();
         saveCatalogBase(r.catalogVersion, catalogoActualDeState());
@@ -1653,7 +1663,7 @@ function pullOnLoad() {
       const remoteCatalogo = CrumblyRowSync.splitCatalogAndAppend(r.state).catalogo;
       const { merged, conflicts } = CrumblyRowSync.mergeCatalogs(base.catalogo, mineCatalogo, remoteCatalogo);
       const conteoActual = state.conteoEnProgreso;
-      state = CrumblyCore.migrateState(r.state);
+      state = migrarState_(r.state);
       state.conteoEnProgreso = conteoActual; // T0.1: tampoco se pisa por este camino
       Object.assign(state, merged); // el catálogo no es el remoto puro — es el fusionado por registro
       state.config.lastSync = new Date().toISOString();

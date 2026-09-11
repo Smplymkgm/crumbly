@@ -3108,6 +3108,36 @@ test('quitarRegistro_ (a través de eliminarLote/revertVenta/eliminarGasto/elimi
   assert.strictEqual(s.ventas.length, 0);
 });
 
+console.log('\n== A0 (Ronda 8): el token del backend no puede viajar en el estado sincronizado ==');
+
+test('emptyState: config nunca trae backendUrl/backendToken', () => {
+  const s = C.emptyState();
+  assert.strictEqual(s.config.backendUrl, undefined);
+  assert.strictEqual(s.config.backendToken, undefined);
+  assert.strictEqual(s.config.email, ''); // el resto de config sigue igual
+});
+
+test('CRITERIO: migrateState BORRA backendUrl/backendToken de un estado viejo que los traía en config', () => {
+  const s = C.migrateState({ config: { email: 'x@x.com', backendUrl: 'https://script.google.com/macros/x', backendToken: 'secreto123' } });
+  assert.strictEqual(s.config.hasOwnProperty('backendUrl'), false, 'backendUrl no puede quedar en config, ni siquiera vacío — un push posterior lo mandaría igual');
+  assert.strictEqual(s.config.hasOwnProperty('backendToken'), false);
+  assert.strictEqual(s.config.email, 'x@x.com', 'el resto de config, que sí es de negocio, no se toca');
+});
+
+test('CRITERIO: migrateState es idempotente — correrlo dos veces sobre un estado que ya no trae los campos no rompe nada', () => {
+  const s1 = C.migrateState({ config: { email: 'x@x.com', backendUrl: 'u', backendToken: 't' } });
+  const s2 = C.migrateState(s1);
+  assert.strictEqual(s2.config.hasOwnProperty('backendUrl'), false);
+  assert.strictEqual(s2.config.hasOwnProperty('backendToken'), false);
+  assert.strictEqual(s2.config.email, 'x@x.com');
+});
+
+test('migrateState de un estado que nunca tuvo los campos no los resucita', () => {
+  const s = C.migrateState({ config: { email: 'nuevo@x.com' } });
+  assert.strictEqual(s.config.hasOwnProperty('backendUrl'), false);
+  assert.strictEqual(s.config.hasOwnProperty('backendToken'), false);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);
