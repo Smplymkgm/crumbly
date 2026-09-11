@@ -1743,24 +1743,13 @@ function renderReporteIntegridad() {
     { titulo: 'Ventas cuyo costo superó lo vendido', lista: r.ventasCostoMayorATotal, aItem: v => (v.fecha ? new Date(v.fecha).toLocaleDateString('es-CO') : v.id) + ' — total ' + fmt(v.total) },
     { titulo: 'Productos cuyo costo actual supera su precio', lista: r.productosCostoMayorAPrecio, aItem: p => p.nombre + ' — costo ' + fmt(p.costo) + ' > precio ' + fmt(p.precio) },
     { titulo: 'Componentes que aportan más del 50% del precio de venta (Y1)', lista: aportesAnomalos, aItem: a => a.productoNombre + ': ' + a.componenteNombre + ' aporta ' + fmt(a.aporteAbsoluto) + ' (' + Math.round(a.pctDelPrecio * 100).toLocaleString('es-CO') + '% del precio)' },
-    // A2 (Ronda 8): pares de nombre similar (mismo bucket, ids distintos)
-    // — el patrón real de "se corrigió creando uno nuevo, el costeo sigue
-    // leyendo el viejo". Solo diagnóstico: cada caso lo resuelve una
-    // persona con A1 (mover/corregir sin perder el id).
-    { titulo: 'Insumos con nombre similar (posible duplicado)', lista: r.insumosDuplicados, aItem: d => (d.severidad === 'alta' ? '⚠ ' : '') + d.a.nombre + ' (' + fmt(d.a.costo) + ', ' + d.a.usos + ' uso(s)) ↔ ' + d.b.nombre + ' (' + fmt(d.b.costo) + ', ' + d.b.usos + ' uso(s))' },
-    { titulo: 'Insumos huérfanos (sin ninguna receta que los use)', lista: r.insumosHuerfanos, aItem: i => i.nombre + ' — ' + fmt(i.costo) },
-    // A3 (Ronda 8): ingrediente comestible cargado en el bucket de
-    // empaques — infla paper cost, subestima food cost (mismo costo
-    // TOTAL). Peso de impacto por producto afectado, para que se vea de
-    // una vez cuánto mueve la corrección (que es A1) antes de aplicarla.
-    { titulo: 'Ingredientes cargados como empaque (rompen food cost)', lista: r.ingredientesEnEmpaques, aItem: i => i.nombre + ' (' + fmt(i.costo) + ', señal: ' + (i.senal === 'esAdicion' ? 'se vende como adición' : 'categoría "' + i.categoria + '"') + ')' + (i.productosAfectados.length ? ' — ' + i.productosAfectados.map(p => p.productoNombre + ': ' + fmt(p.aporte) + (p.pctDelPrecio !== null ? ' (' + Math.round(p.pctDelPrecio * 100) + '% del precio)' : '')).join(', ') : '') },
     // B1 (Ronda 9): un componente cuyo refId no resuelve donde su `tipo`
     // dice que debería — el costo de ESE producto/preparación no
     // significa nada (sigue devolviendo el mismo número de siempre, un
     // 0 para ese componente, pero ahora se SABE que es un 0 falso).
     { titulo: 'Referencias rotas (costo de esa receta no es confiable)', lista: r.referenciasRotas, aItem: x => '"' + x.nombre + '" (' + (x.origen === 'producto' ? 'producto' : 'preparación') + '): ' + x.motivo }
   ];
-  document.getElementById('reporte-integridad').innerHTML = checks.map(c => `
+  const generico = checks.map(c => `
     <div>
       <div style="display:flex;justify-content:space-between;align-items:center">
         <span class="item-sub" style="color:${c.lista.length ? 'var(--danger)' : 'var(--muted)'}">${esc(c.titulo)}</span>
@@ -1768,6 +1757,212 @@ function renderReporteIntegridad() {
       </div>
       ${c.lista.length ? '<ul style="margin:4px 0 0 18px;padding:0;font-size:var(--fs-sm);color:var(--muted)">' + c.lista.map(x => '<li>' + esc(c.aItem(x)) + '</li>').join('') + '</ul>' : ''}
     </div>`).join('');
+  // A2 (Ronda 8) y A3 (Ronda 8) se renderizan aparte, con controles — B2
+  // (Ronda 9) las convierte de "diagnóstico que el dueño resuelve a
+  // mano" a "capacidad dentro de la app": resolver un par de duplicados
+  // (B2.2) y reclasificar un lote de ingredientes (B2.1), las dos con
+  // vista previa obligatoria del efecto en costo antes de aplicar nada.
+  document.getElementById('reporte-integridad').innerHTML = generico + renderSeccionDuplicados_(r.insumosDuplicados) +
+    `<div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span class="item-sub" style="color:${r.insumosHuerfanos.length ? 'var(--danger)' : 'var(--muted)'}">Insumos huérfanos (sin ninguna receta que los use)</span>
+        <span class="badge" style="background:${r.insumosHuerfanos.length ? 'var(--danger)' : 'var(--soft)'}">${r.insumosHuerfanos.length}</span>
+      </div>
+      ${r.insumosHuerfanos.length ? '<ul style="margin:4px 0 0 18px;padding:0;font-size:var(--fs-sm);color:var(--muted)">' + r.insumosHuerfanos.map(i => '<li>' + esc(i.nombre) + ' — ' + fmt(i.costo) + '</li>').join('') + '</ul>' : ''}
+    </div>` +
+    renderSeccionIngredientesEmpaque_(r.ingredientesEnEmpaques);
+}
+// B2.2 (Ronda 9): cada par de A2 puede resolverse desde acá — abre el
+// flujo de repunte (ver abrirResolverDuplicado_).
+function renderSeccionDuplicados_(duplicados) {
+  return `<div>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span class="item-sub" style="color:${duplicados.length ? 'var(--danger)' : 'var(--muted)'}">Insumos con nombre similar (posible duplicado)</span>
+      <span class="badge" style="background:${duplicados.length ? 'var(--danger)' : 'var(--soft)'}">${duplicados.length}</span>
+    </div>
+    ${duplicados.length ? '<div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">' + duplicados.map((d, i) => `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:var(--fs-sm);color:var(--muted)">
+        <span>${d.severidad === 'alta' ? '⚠ ' : ''}${esc(d.a.nombre)} (${fmt(d.a.costo)}, ${d.a.usos} uso(s)) ↔ ${esc(d.b.nombre)} (${fmt(d.b.costo)}, ${d.b.usos} uso(s))</span>
+        <button class="btn-secondary" style="flex-shrink:0;padding:4px 10px;font-size:var(--fs-xs)" onclick="abrirResolverDuplicado_('${d.tipo}','${d.a.id}','${d.b.id}')">Resolver</button>
+      </div>`).join('') + '</div>' : ''}
+  </div>`;
+}
+// B2.1 (Ronda 9): checkbox por insumo detectado + botón para reclasificar
+// el lote seleccionado en una sola operación, con vista previa obligatoria.
+function renderSeccionIngredientesEmpaque_(items) {
+  return `<div>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span class="item-sub" style="color:${items.length ? 'var(--danger)' : 'var(--muted)'}">Ingredientes cargados como empaque (rompen food cost)</span>
+      <span class="badge" style="background:${items.length ? 'var(--danger)' : 'var(--soft)'}">${items.length}</span>
+    </div>
+    ${items.length ? `
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
+        ${items.map(i => `
+          <label style="display:flex;gap:8px;align-items:flex-start;font-size:var(--fs-sm);color:var(--muted)">
+            <input type="checkbox" class="chk-reclasificar-empaque" value="${esc(i.id)}" checked style="margin-top:3px">
+            <span>${esc(i.nombre)} (${fmt(i.costo)}, señal: ${i.senal === 'esAdicion' ? 'se vende como adición' : 'categoría "' + esc(i.categoria) + '"'})${i.productosAfectados.length ? ' — ' + i.productosAfectados.map(p => esc(p.productoNombre) + ': ' + fmt(p.aporte) + (p.pctDelPrecio !== null ? ' (' + Math.round(p.pctDelPrecio * 100) + '% del precio)' : '')).join(', ') : ''}</span>
+          </label>`).join('')}
+      </div>
+      <button class="btn-primary" style="margin-top:8px" onclick="abrirPreviewLoteReclasificacion_()">Reclasificar seleccionados a materia prima</button>
+    ` : ''}
+  </div>`;
+}
+
+// ─── B2.1 (Ronda 9): reclasificación por lotes ──────────────────────────
+// Los ids "utilizables" del lote viven en esta variable de módulo, no en
+// el atributo onclick del botón de confirmar — un array de ids con
+// comillas propias (JSON.stringify) no se puede pasar de forma segura
+// dentro de un atributo HTML entre comillas dobles sin escapar a mano;
+// mismo patrón que insumoModalSnapshot_/alertasActivas_ ya usan en este
+// archivo para pasar datos complejos entre un render y su acción.
+let loteReclasificacionUtilizables_ = [];
+function abrirPreviewLoteReclasificacion_() {
+  const ids = Array.from(document.querySelectorAll('.chk-reclasificar-empaque:checked')).map(el => el.value);
+  if (!ids.length) { showToast('Marcá al menos un ingrediente para reclasificar'); return; }
+  const preview = CrumblyCore.previsualizarLoteReclasificacion(state, ids);
+  renderPreviewLoteReclasificacion_(preview);
+}
+function desgloseFila_(nombre, antes, despues) {
+  return `<div style="padding:8px 10px;border-radius:8px;background:var(--bg);font-size:var(--fs-xs)">
+    <div style="color:var(--ink);margin-bottom:4px">${esc(nombre)}</div>
+    <div style="color:var(--muted)">Alimento: ${fmt(antes.costoAlimento)} → <strong style="color:var(--ink)">${fmt(despues.costoAlimento)}</strong></div>
+    <div style="color:var(--muted)">Empaque: ${fmt(antes.costoEmpaque)} → <strong style="color:var(--ink)">${fmt(despues.costoEmpaque)}</strong></div>
+    <div style="color:var(--muted)">Total: ${fmt(antes.costoTotal)} → <strong style="color:var(--ink)">${fmt(despues.costoTotal)}</strong> ${antes.costoTotal === despues.costoTotal ? '✓ sin cambio' : '⚠'}</div>
+  </div>`;
+}
+function renderPreviewLoteReclasificacion_(preview) {
+  let overlay = document.getElementById('modal-preview-lote');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'modal-preview-lote';
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = '<div class="modal"><div class="modal-title-row"><span class="modal-title">Vista previa — reclasificar a materia prima</span><button class="modal-close" onclick="closeModal(\'modal-preview-lote\')"><i class="ph ph-x"></i></button></div><div id="preview-lote-contenido" style="display:flex;flex-direction:column;gap:12px"></div></div>';
+    document.body.appendChild(overlay);
+  }
+  const utilizables = preview.filter(p => !p.bloqueado);
+  const bloqueados = preview.filter(p => p.bloqueado);
+  loteReclasificacionUtilizables_ = utilizables.map(u => u.insumoId);
+  document.getElementById('preview-lote-contenido').innerHTML = `
+    ${bloqueados.length ? `<div style="padding:8px 10px;border-radius:8px;background:var(--bg)">
+      <div style="font-size:var(--fs-sm);color:var(--danger);margin-bottom:4px">Excluidos del lote (no se pueden mover con certeza)</div>
+      ${bloqueados.map(b => `<div style="font-size:var(--fs-xs);color:var(--muted)">"${esc(b.nombre)}": ${esc((b.bloqueos[0] || {}).motivo || 'bloqueado')}</div>`).join('')}
+    </div>` : ''}
+    ${utilizables.map(u => `
+      <div>
+        <div style="font-size:var(--fs-sm);color:var(--ink);margin-bottom:6px">${esc(u.nombre)} → Materia prima</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          ${u.productos.length ? u.productos.map(p => desgloseFila_(p.productoNombre, p.desgloseAntes, p.desgloseDespues)).join('') : '<div style="font-size:var(--fs-xs);color:var(--muted)">No lo usa ningún producto todavía.</div>'}
+        </div>
+      </div>`).join('')}
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn-secondary" onclick="closeModal('modal-preview-lote')">Cancelar</button>
+      <button class="btn-primary" ${utilizables.length ? '' : 'disabled'} onclick="confirmarLoteReclasificacion_()">Confirmar (${utilizables.length})</button>
+    </div>`;
+  openModal('modal-preview-lote');
+}
+// B2.3: después de aplicar, muestra qué cambió sin tener que ir a otra pantalla.
+function confirmarLoteReclasificacion_() {
+  const ids = loteReclasificacionUtilizables_;
+  const r = CrumblyCore.aplicarLoteReclasificacion(state, ids);
+  if (!r.ok) { alert('No se pudo aplicar el lote — algo cambió desde la vista previa. Volvé a abrirla.'); return; }
+  saveState();
+  closeModal('modal-preview-lote');
+  renderReporteIntegridad(); renderInventario(); renderReportes();
+  const totalProductos = new Set(r.resultados.flatMap(x => x.productos.map(p => p.productoId))).size;
+  let resumen = '<div style="display:flex;flex-direction:column;gap:12px">' +
+    r.resultados.map(x => `<div><div style="font-size:var(--fs-sm);color:var(--ink);margin-bottom:6px">${esc(x.nombre)} → Materia prima</div>` +
+      x.productos.map(p => desgloseFila_(p.productoNombre, p.desgloseAntes, p.desgloseDespues)).join('') + '</div>').join('') +
+    '</div>';
+  showModalResultado_('Reclasificación aplicada', r.resultados.length + ' insumo(s) movidos, ' + totalProductos + ' producto(s) con el reparto alimento/empaque corregido.', resumen);
+}
+// Modal genérico de resultado (B2.3) — reusado por el lote y por el repunte.
+function showModalResultado_(titulo, resumenTexto, htmlDetalle) {
+  let overlay = document.getElementById('modal-resultado-b2');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'modal-resultado-b2';
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = '<div class="modal"><div class="modal-title-row"><span class="modal-title" id="resultado-b2-titulo"></span><button class="modal-close" onclick="closeModal(\'modal-resultado-b2\')"><i class="ph ph-x"></i></button></div><div id="resultado-b2-resumen" style="font-size:var(--fs-sm);color:var(--muted);margin-bottom:10px"></div><div id="resultado-b2-detalle"></div></div>';
+    document.body.appendChild(overlay);
+  }
+  document.getElementById('resultado-b2-titulo').textContent = titulo;
+  document.getElementById('resultado-b2-resumen').textContent = resumenTexto;
+  document.getElementById('resultado-b2-detalle').innerHTML = htmlDetalle;
+  openModal('modal-resultado-b2');
+}
+
+// ─── B2.2 (Ronda 9): resolver un par de duplicados ──────────────────────
+// Nunca decide cuál conservar — muestra los dos con costo/usos/stock y
+// deja que la persona elija (el que tiene el dato correcto no es
+// deducible: en los casos reales es el huérfano, pero es coincidencia de
+// cómo se corrigió, no una regla).
+function abrirResolverDuplicado_(tipo, idA, idB) {
+  const a = state[tipo].find(x => x.id === idA), b = state[tipo].find(x => x.id === idB);
+  if (!a || !b) { showToast('Uno de los dos insumos ya no existe — el reporte puede estar desactualizado'); renderReporteIntegridad(); return; }
+  const usoA = CrumblyCore.findProductosUsandoInsumo(state, idA), usoB = CrumblyCore.findProductosUsandoInsumo(state, idB);
+  let overlay = document.getElementById('modal-resolver-duplicado');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'modal-resolver-duplicado';
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = '<div class="modal"><div class="modal-title-row"><span class="modal-title">¿Cuál insumo es el correcto?</span><button class="modal-close" onclick="closeModal(\'modal-resolver-duplicado\')"><i class="ph ph-x"></i></button></div><div id="resolver-duplicado-contenido" style="display:flex;flex-direction:column;gap:10px"></div></div>';
+    document.body.appendChild(overlay);
+  }
+  const tarjeta = (ins, uso, idConservar, idDescartar) => `
+    <div style="padding:10px 12px;border-radius:8px;background:var(--bg);flex:1">
+      <div style="font-size:var(--fs-sm);color:var(--ink);margin-bottom:4px">${esc(ins.nombre)}</div>
+      <div style="font-size:var(--fs-xs);color:var(--muted)">Costo: ${fmt(ins.costo)}/${esc(ins.unidad || '')}</div>
+      <div style="font-size:var(--fs-xs);color:var(--muted)">Stock: ${ins.cantidad}</div>
+      <div style="font-size:var(--fs-xs);color:var(--muted);margin-bottom:8px">Usos: ${uso.productos.length} producto(s), ${uso.preparaciones.length} preparación(es)</div>
+      <button class="btn-primary" style="width:100%" onclick="previewRepunte_('${tipo}','${idDescartar}','${idConservar}')">Conservar este</button>
+    </div>`;
+  document.getElementById('resolver-duplicado-contenido').innerHTML =
+    '<div style="display:flex;gap:10px">' + tarjeta(a, usoA, idA, idB) + tarjeta(b, usoB, idB, idA) + '</div>' +
+    '<div style="font-size:var(--fs-xs);color:var(--muted)">El que elijas se conserva; el otro pierde sus referencias (se repuntan al que elegiste) y queda disponible para borrar aparte.</div>';
+  openModal('modal-resolver-duplicado');
+}
+function previewRepunte_(tipo, idDescartado, idConservado) {
+  const preview = CrumblyCore.previsualizarRepunte(state, idDescartado, idConservado);
+  const conservado = state[tipo].find(x => x.id === idConservado);
+  let overlay = document.getElementById('modal-preview-repunte');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'modal-preview-repunte';
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = '<div class="modal"><div class="modal-title-row"><span class="modal-title">Vista previa — repuntar referencias</span><button class="modal-close" onclick="closeModal(\'modal-preview-repunte\')"><i class="ph ph-x"></i></button></div><div id="preview-repunte-contenido" style="display:flex;flex-direction:column;gap:10px"></div></div>';
+    document.body.appendChild(overlay);
+  }
+  document.getElementById('preview-repunte-contenido').innerHTML = `
+    <div style="font-size:var(--fs-sm);color:var(--muted)">Todas las recetas que usan el insumo descartado van a apuntar a "${esc(conservado.nombre)}" — el costo de cada producto SÍ cambia, es el punto de esta operación.</div>
+    ${preview.productos.length ? preview.productos.map(p => desgloseFila_(p.productoNombre, p.desgloseAntes, p.desgloseDespues)).join('') : '<div style="font-size:var(--fs-xs);color:var(--muted)">Ninguna receta usa el insumo descartado — no hay nada que repuntar, pero igual queda huérfano y se puede borrar.</div>'}
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn-secondary" onclick="closeModal('modal-preview-repunte')">Cancelar</button>
+      <button class="btn-primary" onclick="confirmarRepunte_('${tipo}','${idDescartado}','${idConservado}')">Confirmar repunte</button>
+    </div>`;
+  closeModal('modal-resolver-duplicado');
+  openModal('modal-preview-repunte');
+}
+function confirmarRepunte_(tipo, idDescartado, idConservado) {
+  const preview = CrumblyCore.previsualizarRepunte(state, idDescartado, idConservado);
+  const descartado = state[tipo].find(x => x.id === idDescartado);
+  const conservado = state[tipo].find(x => x.id === idConservado);
+  CrumblyCore.repuntarReferenciasInsumo(state, idDescartado, idConservado);
+  saveState();
+  closeModal('modal-preview-repunte');
+  renderReporteIntegridad(); renderInventario(); renderReportes();
+  const detalle = preview.productos.length
+    ? preview.productos.map(p => desgloseFila_(p.productoNombre, p.desgloseAntes, p.desgloseDespues)).join('')
+    : '<div style="font-size:var(--fs-xs);color:var(--muted)">Ninguna receta lo usaba.</div>';
+  showModalResultado_('Referencias repuntadas', preview.productos.length + ' producto(s) ahora usan "' + conservado.nombre + '".', detalle);
+  // Paso aparte y explícito (B2.2) — nunca automático: borrar el huérfano
+  // reusa exactamente la misma guarda que deleteInsumo (ahora pasa
+  // porque ya no lo usa nada, gracias al repunte de arriba).
+  if (confirm('"' + descartado.nombre + '" quedó sin ningún uso. ¿Eliminarlo?')) {
+    if (intentarEliminarInsumo_(idDescartado, { pedirConfirmacion: false })) {
+      saveState(); renderReporteIntegridad(); renderInventario();
+      showToast('"' + descartado.nombre + '" eliminado');
+    }
+  }
 }
 // ─── W3.2 (Ronda 6): Centro de alertas ──────────────────────────────────
 // La campana prometía algo que no cumplía — un punto siempre encendido,
@@ -2480,26 +2675,34 @@ function renderProductosAfectadosPorInsumo_(productos, margenAntesPorProducto) {
   }).join('');
   openModal('modal-productos-afectados');
 }
-function deleteInsumo() {
-  const id = document.getElementById('ins-edit-id').value;
-  if (!id) return;
+// C10 (auditoría): una sola puerta para los tres buckets — antes
+// "empaques" solo chequeaba `empaquesUsados` (no `componentes`, donde el
+// rediseño también permite usar un empaque/topping directo en la
+// receta) y "toppings" no chequeaba NADA, así que se podía borrar un
+// topping usado en una receta y dejarla con una referencia rota.
+// B2.2 (Ronda 9): factorizada de deleteInsumo() para poder ofrecer el
+// mismo borrado, con la misma guarda, después de repuntar un duplicado
+// (donde ya no hay un modal de insumo abierto del que leer `ins-edit-id`).
+// Devuelve true si borró, false si el guard lo bloqueó o el usuario canceló.
+function intentarEliminarInsumo_(id, { pedirConfirmacion = true } = {}) {
   const found = CrumblyCore.findInsumoConTipo(state, id);
-  if (!found) return;
-  // C10 (auditoría): una sola puerta para los tres buckets — antes
-  // "empaques" solo chequeaba `empaquesUsados` (no `componentes`, donde
-  // el rediseño también permite usar un empaque/topping directo en la
-  // receta) y "toppings" no chequeaba NADA, así que se podía borrar un
-  // topping usado en una receta y dejarla con una referencia rota.
+  if (!found) return false;
   const usado = CrumblyCore.findProductosUsandoInsumo(state, id);
   if (usado.productos.length || usado.preparaciones.length) {
     const partes = [];
     if (usado.productos.length) partes.push(usado.productos.length + ' producto(s) — ' + usado.productos.map(p => p.nombre).join(', '));
     if (usado.preparaciones.length) partes.push(usado.preparaciones.length + ' preparación(es) — ' + usado.preparaciones.map(p => p.nombre).join(', '));
     alert('No se puede eliminar: lo usan ' + partes.join(' y ') + '.\n\nQuítalo de esas recetas primero.');
-    return;
+    return false;
   }
-  if (!confirm('¿Eliminar este insumo?')) return;
+  if (pedirConfirmacion && !confirm('¿Eliminar "' + found.item.nombre + '"?')) return false;
   state[found.tipo] = state[found.tipo].filter(x => x.id !== id);
+  return true;
+}
+function deleteInsumo() {
+  const id = document.getElementById('ins-edit-id').value;
+  if (!id) return;
+  if (!intentarEliminarInsumo_(id)) return;
   saveState(); closeModal('modal-insumo'); renderInventario(); renderReportes();
   showToast('Insumo eliminado');
 }

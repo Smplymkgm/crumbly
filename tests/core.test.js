@@ -3519,6 +3519,127 @@ test('CRITERIO: el costo total que devuelven las funciones de costeo NO cambia e
   assert.strictEqual(C.getCostoProducto(s.productos[0], s), 50, 'detectar el problema no cambia el costo devuelto');
 });
 
+console.log('\n== B2 (Ronda 9): hacer el trabajo dentro de la app ==');
+
+console.log('\n-- B2.1: reclasificación por lotes --');
+
+test('CRITERIO: un lote de tres reclasificaciones se aplica completo y el costo total de todos los productos afectados es idéntico antes y después', () => {
+  const s = C.emptyState();
+  ['a', 'b', 'c'].forEach((k, i) => {
+    s.empaques.push({ id: 'ins-' + k, nombre: 'Ingrediente ' + k, unidad: 'unidad', costo: 100 * (i + 1), cantidad: 50, minimo: 5, categoria: 'Fruta fresca' });
+    s.productos.push({ id: 'prod-' + k, nombre: 'Producto ' + k, precio: 5000, componentes: [{ tipo: 'empaques', refId: 'ins-' + k, gramos: 1 }] });
+  });
+  const costosAntes = ['a', 'b', 'c'].map(k => C.getCostoProducto(s.productos.find(p => p.id === 'prod-' + k), s));
+
+  const preview = C.previsualizarLoteReclasificacion(s, ['ins-a', 'ins-b', 'ins-c']);
+  assert.strictEqual(preview.length, 3);
+  assert.ok(preview.every(p => !p.bloqueado));
+
+  const r = C.aplicarLoteReclasificacion(s, ['ins-a', 'ins-b', 'ins-c']);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.resultados.length, 3);
+
+  ['a', 'b', 'c'].forEach((k, i) => {
+    assert.strictEqual(s.empaques.find(x => x.id === 'ins-' + k), undefined);
+    assert.ok(s.materia.find(x => x.id === 'ins-' + k));
+    const costoDespues = C.getCostoProducto(s.productos.find(p => p.id === 'prod-' + k), s);
+    assert.strictEqual(costoDespues, costosAntes[i], 'costo total idéntico para ' + k);
+  });
+});
+
+test('CRITERIO: un lote con uno bloqueado no aplica NINGUNO hasta que se excluya el bloqueado', () => {
+  const s = C.emptyState();
+  s.empaques.push({ id: 'ins-libre', nombre: 'Libre', unidad: 'unidad', costo: 100, cantidad: 50, minimo: 5, categoria: 'Fruta fresca' });
+  // 'ins-fantasma' representa una selección desactualizada: ya no vive
+  // en empaques (por ejemplo, alguien ya lo movió por otro camino, o el
+  // reporte de integridad quedó abierto desde antes de un cambio) — es
+  // exactamente "una referencia que no se puede reescribir con
+  // certeza": no hay ningún registro que mover. aplicarLoteReclasificacion
+  // lo detecta ANTES de tocar 'ins-libre', y no aplica ninguno de los dos.
+  s.productos.push({ id: 'prod-libre', nombre: 'Producto libre', precio: 5000, componentes: [{ tipo: 'empaques', refId: 'ins-libre', gramos: 1 }] });
+
+  const preview = C.previsualizarLoteReclasificacion(s, ['ins-libre', 'ins-fantasma']);
+  const fantasmaEnPreview = preview.find(p => p.insumoId === 'ins-fantasma');
+  assert.strictEqual(fantasmaEnPreview.bloqueado, true, 'la preview debe marcarlo bloqueado ANTES de aplicar nada');
+
+  const rConAmbos = C.aplicarLoteReclasificacion(s, ['ins-libre', 'ins-fantasma']);
+  assert.strictEqual(rConAmbos.ok, false, 'con el bloqueado incluido, NINGUNO se mueve');
+  assert.strictEqual(rConAmbos.bloqueados.length, 1);
+  assert.strictEqual(rConAmbos.bloqueados[0].insumoId, 'ins-fantasma');
+  assert.ok(s.empaques.find(x => x.id === 'ins-libre'), '"libre" sigue en empaques — no se aplicó nada del lote');
+
+  const rExcluido = C.aplicarLoteReclasificacion(s, ['ins-libre']);
+  assert.strictEqual(rExcluido.ok, true, 'excluyendo el bloqueado, el resto sí se aplica');
+  assert.ok(s.materia.find(x => x.id === 'ins-libre'));
+});
+
+test('el bloqueo estructural de B0 (materia→empaques rompería una preparación) también deja el lote en ok:false', () => {
+  // Este es el bloqueo "de verdad" de B0 (detectarBloqueosMoverInsumo_) —
+  // solo alcanzable moviendo HACIA algo distinto de materia, no la
+  // dirección que usa A3/B2.1 (empaques→materia, siempre segura para
+  // preparaciones). Se prueba llamando moverInsumoDeTipo directo, no vía
+  // el lote (que solo mueve empaques→materia) — ver B0 para el criterio
+  // completo de esa guarda.
+  const s = C.emptyState();
+  s.materia.push({ id: 'harina', nombre: 'Harina', unidad: 'g', costo: 5, cantidad: 1000, minimo: 100 });
+  s.preparaciones.push({ id: 'prep1', nombre: 'Base', modo: 'directo', rendimientoPct: 100, componentes: [{ tipo: 'materia', refId: 'harina', gramos: 200 }] });
+  const r = C.moverInsumoDeTipo(s, 'harina', 'materia', 'empaques');
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.bloqueos[0].id, 'prep1');
+});
+
+console.log('\n-- B2.2: resolver un par de duplicados --');
+
+test('CRITERIO: repuntar un par de duplicados mueve las referencias de los dos caminos (componentes Y empaquesUsados) y el costo cambia al costo del insumo conservado', () => {
+  const s = C.emptyState();
+  s.materia.push({ id: 'mant-huerfano', nombre: 'Mantequilla D1', unidad: 'g', costo: 91, cantidad: 500, minimo: 50 });
+  s.materia.push({ id: 'mant-viejo', nombre: 'Mantequilla', unidad: 'g', costo: 52.5, cantidad: 500, minimo: 50 });
+  s.productos.push({
+    id: 'p1', nombre: 'Waffle', precio: 9000,
+    componentes: [{ tipo: 'materia', refId: 'mant-viejo', gramos: 20 }],
+    empaquesUsados: []
+  });
+  s.productos.push({ id: 'p2', nombre: 'Croffle', precio: 9000, componentes: [], empaquesUsados: [] });
+  // referencia por el otro camino también, para probar que repuntarReferenciasInsumo cubre los dos.
+  s.empaques.push({ id: 'caja', nombre: 'Caja', unidad: 'unidad', costo: 500, cantidad: 100, minimo: 10 });
+  s.productos[1].empaquesUsados.push({ empaqueId: 'caja', cantidad: 1 }); // control: no debe tocarse
+
+  const costoAntesP1 = C.getCostoProducto(s.productos[0], s); // 20 * 52.5 = 1050
+
+  const preview = C.previsualizarRepunte(s, 'mant-viejo', 'mant-huerfano');
+  assert.strictEqual(preview.productos.length, 1);
+  assert.strictEqual(preview.productos[0].productoId, 'p1');
+  assert.strictEqual(preview.productos[0].desgloseAntes.costoTotal, 1050);
+  assert.strictEqual(preview.productos[0].desgloseDespues.costoTotal, 20 * 91, 'la preview YA muestra el costo nuevo, antes de aplicar');
+  assert.strictEqual(C.getCostoProducto(s.productos[0], s), costoAntesP1, 'la preview no tocó el estado real');
+
+  C.repuntarReferenciasInsumo(s, 'mant-viejo', 'mant-huerfano');
+  assert.strictEqual(s.productos[0].componentes[0].refId, 'mant-huerfano');
+  assert.strictEqual(C.getCostoProducto(s.productos[0], s), 20 * 91, 'el costo SÍ cambió — es el punto de repuntar');
+  assert.strictEqual(s.productos[1].empaquesUsados[0].empaqueId, 'caja', 'la referencia de control no se tocó');
+});
+
+test('cancelar en la vista previa (no llamar a repuntarReferenciasInsumo) no modifica nada', () => {
+  const s = C.emptyState();
+  s.materia.push({ id: 'a', nombre: 'A', unidad: 'g', costo: 10, cantidad: 100, minimo: 10 });
+  s.materia.push({ id: 'b', nombre: 'B', unidad: 'g', costo: 20, cantidad: 100, minimo: 10 });
+  s.productos.push({ id: 'p1', nombre: 'P', precio: 5000, componentes: [{ tipo: 'materia', refId: 'a', gramos: 10 }] });
+  const antes = JSON.parse(JSON.stringify(s));
+  C.previsualizarRepunte(s, 'a', 'b'); // "cancelar" = solo llamar la preview, nunca el apply
+  assert.deepStrictEqual(s, antes);
+});
+
+test('después de repuntar, el insumo descartado queda sin ningún uso — borrarlo ya no está bloqueado (reusa el guard existente de deleteInsumo)', () => {
+  const s = C.emptyState();
+  s.materia.push({ id: 'viejo', nombre: 'Viejo', unidad: 'g', costo: 5, cantidad: 100, minimo: 10 });
+  s.materia.push({ id: 'nuevo', nombre: 'Nuevo', unidad: 'g', costo: 6, cantidad: 100, minimo: 10 });
+  s.productos.push({ id: 'p1', nombre: 'P', precio: 5000, componentes: [{ tipo: 'materia', refId: 'viejo', gramos: 10 }] });
+  C.repuntarReferenciasInsumo(s, 'viejo', 'nuevo');
+  const usado = C.findProductosUsandoInsumo(s, 'viejo');
+  assert.strictEqual(usado.productos.length, 0);
+  assert.strictEqual(usado.preparaciones.length, 0);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);

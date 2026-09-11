@@ -3142,11 +3142,11 @@
   //    transitorio: se detecta ANTES de mutar nada, y si aparece se
   //    rechaza el movimiento COMPLETO (nada se mueve a medias) devolviendo
   //    qué preparación lo bloquea.
-  function moverInsumoDeTipo(state, insumoId, tipoViejo, tipoNuevo) {
-    var origen = state[tipoViejo] || [];
-    var idx = origen.findIndex(function (x) { return x.id === insumoId; });
-    if (idx === -1) return { ok: false, bloqueos: [] };
-
+  // Extraído aparte (B2, Ronda 9) para poder previsualizar un bloqueo
+  // SIN mutar nada — moverInsumoDeTipo lo usa antes de mutar, y la
+  // previsualización de un lote (B2.1) lo usa para decidir qué excluir
+  // antes de aplicar nada.
+  function detectarBloqueosMoverInsumo_(state, insumoId, tipoViejo, tipoNuevo) {
     var bloqueos = [];
     if (tipoNuevo !== 'materia') {
       (state.preparaciones || []).forEach(function (prep) {
@@ -3162,6 +3162,14 @@
         });
       });
     }
+    return bloqueos;
+  }
+  function moverInsumoDeTipo(state, insumoId, tipoViejo, tipoNuevo) {
+    var origen = state[tipoViejo] || [];
+    var idx = origen.findIndex(function (x) { return x.id === insumoId; });
+    if (idx === -1) return { ok: false, bloqueos: [] };
+
+    var bloqueos = detectarBloqueosMoverInsumo_(state, insumoId, tipoViejo, tipoNuevo);
     if (bloqueos.length) return { ok: false, bloqueos: bloqueos };
 
     var registro = origen[idx];
@@ -3202,6 +3210,121 @@
     return { ok: true, bloqueos: [] };
   }
 
+  // ─── B2 (auditoría Ronda 9): hacer el trabajo dentro de la app ────────
+  //
+  // A2/A3 (Ronda 8) dejaron 4 pares de duplicados y 5 reclasificaciones
+  // como deber del dueño, una por una, desde un modal, sin ver el efecto
+  // hasta después de guardar — el tipo exacto de tarea repetitiva donde
+  // un error rompe un costeo en silencio. Esto lo resuelve por código:
+  // reclasificación por lotes (B2.1) y repunte de un par de duplicados
+  // (B2.2), las dos con vista previa obligatoria del efecto en costo
+  // ANTES de aplicar nada.
+
+  // B2.1 · Reclasificación por lotes ───────────────────────────────────
+  // Simula el movimiento sobre una COPIA del estado (nunca el real) para
+  // poder mostrar el "después" sin tocar nada — mismo principio que
+  // computeSaleConsumption (T5) o getCostoConVolatilidad: simular antes
+  // de aplicar. Reusa detectarBloqueosMoverInsumo_ (la misma guarda de
+  // B0) para decidir, insumo por insumo, si el lote lo puede mover.
+  function previsualizarLoteReclasificacion(state, insumoIds) {
+    return (insumoIds || []).map(function (insumoId) {
+      var insumo = (state.empaques || []).find(function (x) { return x.id === insumoId; });
+      if (!insumo) return { insumoId: insumoId, nombre: insumoId, encontrado: false, bloqueado: true, bloqueos: [{ motivo: 'ya no está en empaques — puede que otro cambio del lote ya lo haya movido' }], productos: [] };
+      var bloqueos = detectarBloqueosMoverInsumo_(state, insumoId, 'empaques', 'materia');
+      var afectados = findProductosAfectadosPorInsumo(state, insumoId);
+      var productos = afectados.map(function (p) {
+        return { productoId: p.id, productoNombre: p.nombre, desgloseAntes: getCostoProductoDesglosado(p, state), desgloseDespues: null };
+      });
+      if (!bloqueos.length) {
+        var copia = JSON.parse(JSON.stringify(state));
+        moverInsumoDeTipo(copia, insumoId, 'empaques', 'materia');
+        productos.forEach(function (info) {
+          var pCopia = (copia.productos || []).find(function (x) { return x.id === info.productoId; });
+          info.desgloseDespues = pCopia ? getCostoProductoDesglosado(pCopia, copia) : null;
+        });
+      }
+      return { insumoId: insumoId, nombre: insumo.nombre, encontrado: true, bloqueado: bloqueos.length > 0, bloqueos: bloqueos, productos: productos };
+    });
+  }
+  // Todo o nada: si CUALQUIERA de los ids pasados sigue bloqueado en este
+  // momento, no mueve NINGUNO — la exclusión de los bloqueados es
+  // responsabilidad del caller (mostrar la preview, dejar que la persona
+  // los saque del lote, volver a llamar con la lista ya filtrada). Esta
+  // función es la última guarda, no la única — nunca deja el estado a
+  // mitad de camino.
+  function aplicarLoteReclasificacion(state, insumoIds) {
+    var bloqueados = [];
+    (insumoIds || []).forEach(function (insumoId) {
+      // Existencia primero: un id que ya no está en empaques (selección
+      // vieja, o ya lo movió otra llamada) es tan "no se puede mover con
+      // certeza" como un bloqueo de B0 — si no se detecta ACÁ, antes de
+      // tocar nada, el lote podría mover los primeros ids y recién
+      // fallar a mitad de camino en este. Se trata igual: se excluye,
+      // nunca se aplica el lote a medias.
+      if (!(state.empaques || []).some(function (x) { return x.id === insumoId; })) {
+        bloqueados.push({ insumoId: insumoId, bloqueos: [{ motivo: 'ya no está en empaques — la selección quedó desactualizada' }] });
+        return;
+      }
+      var bloqueos = detectarBloqueosMoverInsumo_(state, insumoId, 'empaques', 'materia');
+      if (bloqueos.length) bloqueados.push({ insumoId: insumoId, bloqueos: bloqueos });
+    });
+    if (bloqueados.length) return { ok: false, bloqueados: bloqueados, resultados: [] };
+
+    var resultados = (insumoIds || []).map(function (insumoId) {
+      var insumo = (state.empaques || []).find(function (x) { return x.id === insumoId; });
+      var nombre = insumo ? insumo.nombre : insumoId;
+      var afectadosAntes = findProductosAfectadosPorInsumo(state, insumoId).map(function (p) {
+        return { productoId: p.id, productoNombre: p.nombre, desgloseAntes: getCostoProductoDesglosado(p, state) };
+      });
+      moverInsumoDeTipo(state, insumoId, 'empaques', 'materia');
+      var productos = afectadosAntes.map(function (a) {
+        var p = (state.productos || []).find(function (x) { return x.id === a.productoId; });
+        return { productoId: a.productoId, productoNombre: a.productoNombre, desgloseAntes: a.desgloseAntes, desgloseDespues: p ? getCostoProductoDesglosado(p, state) : null };
+      });
+      return { insumoId: insumoId, nombre: nombre, productos: productos };
+    });
+    return { ok: true, bloqueados: [], resultados: resultados };
+  }
+
+  // B2.2 · Repuntar un par de duplicados ───────────────────────────────
+  // A2 empareja duplicados SOLO dentro del mismo bucket (ver
+  // getInsumosDuplicadosYHuerfanos) — repuntar nunca cruza de materia a
+  // empaques ni nada parecido, así que no hace falta ninguna guarda de
+  // tipo acá: es un cambio de `refId` liso y llano, en el mismo bucket.
+  // A diferencia de B2.1, el costo SÍ puede cambiar — es el punto: el
+  // insumo conservado casi seguro tiene un costo distinto del
+  // descartado, y por eso la vista previa es obligatoria, no opcional.
+  function previsualizarRepunte(state, idDescartado, idConservado) {
+    var afectados = findProductosAfectadosPorInsumo(state, idDescartado);
+    var copia = JSON.parse(JSON.stringify(state));
+    repuntarReferenciasInsumo(copia, idDescartado, idConservado);
+    var productos = afectados.map(function (p) {
+      var pCopia = (copia.productos || []).find(function (x) { return x.id === p.id; });
+      return {
+        productoId: p.id, productoNombre: p.nombre,
+        desgloseAntes: getCostoProductoDesglosado(p, state),
+        desgloseDespues: pCopia ? getCostoProductoDesglosado(pCopia, copia) : null
+      };
+    });
+    return { productos: productos };
+  }
+  function repuntarReferenciasInsumo(state, idDescartado, idConservado) {
+    function repuntarComponentes(lista) {
+      (lista || []).forEach(function (item) {
+        (item.componentes || []).forEach(function (c) {
+          if (c.refId === idDescartado) c.refId = idConservado;
+        });
+      });
+    }
+    repuntarComponentes(state.productos);
+    repuntarComponentes(state.preparaciones);
+    (state.productos || []).forEach(function (p) {
+      (p.empaquesUsados || []).forEach(function (e) {
+        if (e.empaqueId === idDescartado) e.empaqueId = idConservado;
+      });
+    });
+  }
+
   return {
     SCHEMA_VERSION: SCHEMA_VERSION,
     formatCOP: formatCOP,
@@ -3240,6 +3363,10 @@
     getInsumosDuplicadosYHuerfanos: getInsumosDuplicadosYHuerfanos,
     getIngredientesMalClasificadosComoEmpaque: getIngredientesMalClasificadosComoEmpaque,
     getReferenciasRotas: getReferenciasRotas,
+    previsualizarLoteReclasificacion: previsualizarLoteReclasificacion,
+    aplicarLoteReclasificacion: aplicarLoteReclasificacion,
+    previsualizarRepunte: previsualizarRepunte,
+    repuntarReferenciasInsumo: repuntarReferenciasInsumo,
     GASTO_CATEGORIAS: GASTO_CATEGORIAS,
     costoPromedioPonderado: costoPromedioPonderado,
     registrarGasto: registrarGasto,
