@@ -21,7 +21,7 @@ Esta ronda tiene dos orígenes distintos: **Y0**, un bug de cálculo real encont
 | Tarea | Estado |
 |---|---|
 | Y0 · Factor 100 en el modo porcentaje | ✅ HECHA |
-| Y1 · Pantalla de aportes (qué componente rompe un producto) | pendiente |
+| Y1 · Pantalla de aportes (qué componente rompe un producto) | ✅ HECHA |
 | Z1 · Filtros colapsables | pendiente |
 | Z2 · Buscador en Inventario | pendiente |
 | Z3 · Preparaciones como cuarto botón de tipo | pendiente |
@@ -81,3 +81,21 @@ function gramosDeComponentePreparacion(prep, c) {
 - **No bloqueaba el despliegue de T1 y no corrompió ninguna venta registrada** — tal como adelantaba el propio encargo: el costeo de productos, el margen y el food cost pasan por el cociente que cancela el bug, nunca por la cantidad absoluta.
 
 Con esto, el conteo físico de preparaciones (WIP) queda habilitado para usarse con confianza — era la condición que ponía el encargo antes de dar por cerrado Y0.
+
+### Y1 · Pantalla de aportes: qué componente rompe un producto — HECHA
+
+**El problema real que originó esta tarea**: todo el diagnóstico que encontró los problemas reales de costeo de esta auditoría (Leche cargada a $3.550/g — el precio de la caja completa, no el costo por gramo; Crema de leche al doble; cuatro gramajes de dedo repetido) se hizo corriendo un script a mano en la consola del navegador, después de que ninguna de las guardas construidas en seis rondas lo hubiera detectado. Por qué: `checkCostoSospechoso` compara un insumo contra la mediana de los insumos de SU MISMA `unidad` — Leche, declarada en su propia unidad, nunca se comparó contra insumos en gramos, así que jamás pareció "fuera de rango". Y `getReporteIntegridad`/las insignias de V3.2 dicen que un producto cuesta más de lo que se vende, pero nunca dicen CUÁL componente es el culpable — hay que ir a mirar la receta a mano.
+
+**La señal que sí funciona**: el aporte del componente al costo, comparado contra el PRECIO DE VENTA del producto — no contra la mediana del inventario, no contra la unidad declarada. Es exactamente el criterio que el script de la consola aplicaba a mano.
+
+- **`getAportesComponentes(state, productoId)`** (`js/core.js`) — envuelve `getDesgloseCostoProducto` (V3.1), **reusando el mismo recorrido en vez de duplicarlo** (tal como exigía el encargo): agrega `aporteAbsoluto` (alias de `subtotal`) y `pctDelPrecio` (aporte ÷ precio de venta del producto, `null` si el producto no tiene precio — nunca división por cero). Para componentes de tipo preparación, el costo unitario ya salía de `getPreparacionCosto` dentro de `getDesgloseCostoProducto` — no hizo falta tocar nada ahí.
+- **`getProductosConAporteAnomalo(state, umbral=0.5)`** — recorre TODOS los productos y devuelve, por cada uno, los componentes cuyo `pctDelPrecio` supera el umbral (50% por defecto). Es el script de la consola, convertido en función — ordenado por el peor aporte primero, excluye productos sin precio de venta (el % no tiene contra qué compararse ahí).
+- **Integración con el desglose de V3.1** (`abrirDesgloseCosto`, `index.html`): la función ahora usa `getAportesComponentes` en vez de `getDesgloseCostoProducto` directamente (mismos datos, con el campo nuevo) — cada línea muestra su % del precio de venta además del % del costo total que ya mostraba, y las líneas que superan el umbral (50%) se resaltan igual que las de costo sospechoso.
+- **Integración con el centro de alertas (W3.2, Ronda 6)**: `textoAporteCulpable_(productoId, nombre, fallback)` — nueva función que busca el componente con mayor aporte (ya viene ordenado) y arma el texto de la alerta con su nombre y aporte, en vez de solo nombrar el producto. La alerta de "producto por debajo del costo" pasó de `"Waffle caramel" se vende BAJO COSTO — costo $710.500, precio $20.000` a `Waffle caramel: Leche aporta $710.000 (3550% del precio)` — verificado exacto contra el ejemplo del encargo. **Se agregó además una categoría de alerta que no existía**: "costo mayor al 60% del precio" (el mismo umbral que ya usaba la insignia ámbar de V3.2 en Productos, pero que hasta esta ronda solo era una insignia visual — no generaba ninguna alerta, había que ir a Productos a verla).
+- **Acceso desde el reporte de integridad de Ajustes**: nueva fila "Componentes que aportan más del 50% del precio de venta (Y1)" en `renderReporteIntegridad`, listando `getProductosConAporteAnomalo(state)` del menú completo de una sola vez — la versión de pantalla del script, tal como pedía el encargo.
+
+**Tests** (`tests/core.test.js`, grupo "Y1"): la suma de los aportes coincide EXACTAMENTE con `getCostoProducto` (mismo criterio que V3.1); `pctDelPrecio` es el aporte sobre el PRECIO, no sobre el costo total (a propósito distinto de `pctDelTotal` de V3.1 — test que compara los dos denominadores contra el mismo fixture); un componente que aporta más del 100% del precio de venta se señala y se nombra correctamente (`lineas[0].nombre`, heredado del orden descendente de V3.1); producto sin precio de venta da `pctDelPrecio: null` en todas las líneas, nunca `NaN`/`Infinity`; `getProductosConAporteAnomalo` encuentra el componente anómalo con el producto y el % correctos; respeta un umbral explícito y excluye productos sin precio.
+
+**Suite completa: 359 tests** (auth 10, core 269, rowsync 39, sync 41) — medido corriendo los cuatro archivos.
+
+**Verificado en el navegador** (mock backend local en `localhost:8802`, cero contacto con `script.google.com`): se creó "Waffle caramel" (precio $20.000) con Leche a $3.550/ml (200 unidades → $710.000) y Harina normal — el modal de desglose de V3.1 mostró la línea de Leche resaltada en rojo con **"3550% del precio ⚠"** (Harina, normal, "3% del precio" sin resaltar); el centro de alertas mostró exactamente **"Waffle caramel: Leche aporta $710.000 (3.550% del precio)"**, y hacer clic en la alerta navegó a Productos y abrió el modal de edición de ESE producto; Ajustes → Reporte de integridad mostró la nueva fila "Componentes que aportan más del 50% del precio de venta (Y1)" con la misma línea. Sin errores de consola.

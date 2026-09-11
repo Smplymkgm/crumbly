@@ -2948,6 +2948,61 @@ test('getDesgloseCostoProducto: producto inexistente devuelve vacío, no revient
   assert.deepStrictEqual(r, { lineas: [], costoTotal: 0 });
 });
 
+console.log('\n== Y1 (Ronda 7): aportes de cada componente al costo, % del precio de venta ==');
+
+test('CRITERIO: getAportesComponentes — la suma de los aportes coincide con getCostoProducto', () => {
+  const s = stateProductoConPreparacion(); // relleno 940 + azúcar 20 + empaque 500 = 1460, precio 15000
+  const costoTotal = C.getCostoProducto(s.productos[0], s);
+  const { lineas, costoTotal: costoDesglose, precio } = C.getAportesComponentes(s, 'p1');
+  assert.strictEqual(precio, 15000);
+  assert.ok(Math.abs(costoDesglose - costoTotal) < 0.0001);
+  const sumaAportes = lineas.reduce((a, l) => a + l.aporteAbsoluto, 0);
+  assert.ok(Math.abs(sumaAportes - costoTotal) < 0.0001);
+});
+
+test('getAportesComponentes: pctDelPrecio es el aporte sobre el PRECIO, no sobre el costo total (a diferencia de V3.1)', () => {
+  const s = stateProductoConPreparacion(); // empaque: 500 de 1460 costo, precio 15000
+  const { lineas } = C.getAportesComponentes(s, 'p1');
+  const empaque = lineas.find(l => l.grupo === 'empaque');
+  assert.ok(Math.abs(empaque.pctDelPrecio - (500 / 15000)) < 0.0001, 'debe ser % del precio (500/15000), no % del costo (500/1460)');
+});
+
+test('CRITERIO: un componente que aporta MÁS que el precio de venta se señala y se nombra', () => {
+  const s = stateIntegridadOk(); // p1: 100g de m1 (Harina, costo 5) -> costo normal 500, precio 20000
+  s.materia.push({ id: 'leche', nombre: 'Leche', unidad: 'ml', costo: 3550, cantidad: 100, minimo: 0 }); // dedo repetido / precio de caja completa
+  s.productos[0].componentes.push({ tipo: 'materia', refId: 'leche', gramos: 200 }); // 200 × 3550 = 710.000, muy por encima del precio 20.000
+  const { lineas } = C.getAportesComponentes(s, 'p1');
+  const culpable = lineas[0]; // ordenado por subtotal descendente (hereda de getDesgloseCostoProducto)
+  assert.strictEqual(culpable.nombre, 'Leche');
+  assert.ok(culpable.pctDelPrecio > 1, 'el aporte supera el 100% del precio de venta — dio ' + (culpable.pctDelPrecio * 100).toFixed(0) + '%');
+});
+
+test('getAportesComponentes: producto sin precio de venta -> pctDelPrecio null, nunca división por cero', () => {
+  const s = stateIntegridadOk();
+  s.productos[0].precio = 0;
+  const { lineas } = C.getAportesComponentes(s, 'p1');
+  lineas.forEach(l => assert.strictEqual(l.pctDelPrecio, null));
+});
+
+test('CRITERIO: getProductosConAporteAnomalo encuentra el componente anómalo, con el producto y el % correctos', () => {
+  const s = stateIntegridadOk();
+  s.materia.push({ id: 'leche', nombre: 'Leche', unidad: 'ml', costo: 3550, cantidad: 100, minimo: 0 });
+  s.productos[0].componentes.push({ tipo: 'materia', refId: 'leche', gramos: 200 });
+  const anomalos = C.getProductosConAporteAnomalo(s); // umbral default 50%
+  assert.strictEqual(anomalos.length, 1);
+  assert.strictEqual(anomalos[0].productoId, 'p1');
+  assert.strictEqual(anomalos[0].componenteNombre, 'Leche');
+  assert.ok(anomalos[0].pctDelPrecio > 1);
+});
+
+test('getProductosConAporteAnomalo: respeta el umbral explícito y excluye productos sin precio', () => {
+  const s = stateIntegridadOk();
+  s.productos[0].precio = 0; // sin precio -> se excluye aunque el costo sea alto
+  s.materia.push({ id: 'm9', nombre: 'Cara', unidad: 'g', costo: 9000, cantidad: 100, minimo: 0 });
+  s.productos[0].componentes.push({ tipo: 'materia', refId: 'm9', gramos: 1 });
+  assert.deepStrictEqual(C.getProductosConAporteAnomalo(s), []);
+});
+
 console.log('\n== V3.3 (Ronda 5): qué productos dependen de un insumo ==');
 
 test('findProductosAfectadosPorInsumo: uso DIRECTO en la receta del producto', () => {

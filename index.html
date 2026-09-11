@@ -1699,13 +1699,18 @@ function renderPayloadPanel() {
 // la pantalla para hacerlo (Inventario, Productos, Caja).
 function renderReporteIntegridad() {
   const r = CrumblyCore.getReporteIntegridad(state);
+  // Y1: la versión de pantalla del script que se corrió a mano en la
+  // consola — todos los componentes que aportan más del 50% del precio
+  // de venta de su producto, del menú entero, de una sola vez.
+  const aportesAnomalos = CrumblyCore.getProductosConAporteAnomalo(state);
   const checks = [
     { titulo: 'Insumos sin unidad definida', lista: r.sinUnidad, aItem: i => i.nombre },
     { titulo: 'Insumos con costo fuera de rango', lista: r.costoFueraDeRango, aItem: i => i.nombre + ' — ' + fmt(i.costo) + '/' + i.unidad },
     { titulo: 'Insumos con stock pero sin costo cargado', lista: r.stockConCostoCero, aItem: i => i.nombre },
     { titulo: 'Insumos con stock negativo o faltante pendiente', lista: r.stockNegativoOFaltante, aItem: i => i.nombre + ' (cant. ' + i.cantidad + (i.faltante ? ', faltante ' + i.faltante : '') + ')' },
     { titulo: 'Ventas cuyo costo superó lo vendido', lista: r.ventasCostoMayorATotal, aItem: v => (v.fecha ? new Date(v.fecha).toLocaleDateString('es-CO') : v.id) + ' — total ' + fmt(v.total) },
-    { titulo: 'Productos cuyo costo actual supera su precio', lista: r.productosCostoMayorAPrecio, aItem: p => p.nombre + ' — costo ' + fmt(p.costo) + ' > precio ' + fmt(p.precio) }
+    { titulo: 'Productos cuyo costo actual supera su precio', lista: r.productosCostoMayorAPrecio, aItem: p => p.nombre + ' — costo ' + fmt(p.costo) + ' > precio ' + fmt(p.precio) },
+    { titulo: 'Componentes que aportan más del 50% del precio de venta (Y1)', lista: aportesAnomalos, aItem: a => a.productoNombre + ': ' + a.componenteNombre + ' aporta ' + fmt(a.aporteAbsoluto) + ' (' + Math.round(a.pctDelPrecio * 100).toLocaleString('es-CO') + '% del precio)' }
   ];
   document.getElementById('reporte-integridad').innerHTML = checks.map(c => `
     <div>
@@ -1725,15 +1730,42 @@ function renderReporteIntegridad() {
 // nuevo. Ordenadas por gravedad real, no por de dónde salió cada una:
 // vender bajo costo importa más que una unidad sin definir.
 let alertasActivas_ = [];
+// Y1 (Ronda 7): nombra el componente CULPABLE de un producto roto, en vez
+// de solo señalar el producto — "Waffle caramel se vende bajo costo" pasa
+// a "Waffle caramel: Waffle de arroz aporta $3.417.227 (17.086% del
+// precio)". Reusa getAportesComponentes (ya ordenado por aporte
+// descendente) — el primero de la lista es el culpable.
+function textoAporteCulpable_(productoId, nombreProducto, fallback) {
+  const { lineas } = CrumblyCore.getAportesComponentes(state, productoId);
+  const peor = lineas[0];
+  if (!peor || peor.pctDelPrecio === null) return '"' + nombreProducto + '" ' + fallback;
+  return nombreProducto + ': ' + peor.nombre + ' aporta ' + fmt(peor.aporteAbsoluto) + ' (' + Math.round(peor.pctDelPrecio * 100).toLocaleString('es-CO') + '% del precio)';
+}
 function getAlertasCentro_() {
   const alertas = [];
   const r = CrumblyCore.getReporteIntegridad(state);
 
-  // 1 (más grave) — plata que se pierde en cada venta de este producto.
+  // 1 (más grave) — plata que se pierde en cada venta de este producto,
+  // con el componente culpable nombrado (Y1).
   r.productosCostoMayorAPrecio.forEach(p => alertas.push({
-    sev: 1, texto: '"' + p.nombre + '" se vende BAJO COSTO — costo ' + fmt(p.costo) + ', precio ' + fmt(p.precio),
+    sev: 1, texto: textoAporteCulpable_(p.id, p.nombre, 'se vende BAJO COSTO — costo ' + fmt(p.costo) + ', precio ' + fmt(p.precio)),
     accion: () => { closeModal('modal-alertas'); navTo('productos'); openModalProducto(p.id); }
   }));
+  // 1.5 — margen bajo (costo > 60% del precio, sin llegar a pérdida) —
+  // mismo umbral que la insignia de V3.2 en la lista de Productos. No
+  // existía como alerta hasta esta ronda (Y1) — solo como insignia visual,
+  // había que ir a Productos a verla.
+  const idsYaEnPerdida = new Set(r.productosCostoMayorAPrecio.map(p => p.id));
+  state.productos.forEach(p => {
+    if (idsYaEnPerdida.has(p.id)) return;
+    const precio = Number(p.precio) || 0;
+    if (precio <= 0) return;
+    const costo = CrumblyCore.getCostoProducto(p, state);
+    if (costo > precio * 0.6) alertas.push({
+      sev: 1.5, texto: textoAporteCulpable_(p.id, p.nombre, 'tiene margen bajo (costo ' + fmt(costo) + ' > 60% del precio ' + fmt(precio) + ')'),
+      accion: () => { closeModal('modal-alertas'); navTo('productos'); openModalProducto(p.id); }
+    });
+  });
   // 2 — plata que YA se perdió (venta con costo congelado inválido, V3.4).
   r.ventasCostoMayorATotal.forEach(v => alertas.push({
     sev: 2, texto: 'Una venta' + (v.fecha ? ' del ' + new Date(v.fecha).toLocaleDateString('es-CO') : '') + ' tiene costo congelado mayor a lo cobrado (total ' + fmt(v.total) + ')',
@@ -2939,10 +2971,19 @@ function renderProductos() {
 // Solo lectura — no cambia ninguna fórmula. Modal armado por JS (mismo
 // patrón que el de conflictos de catálogo, U4): no forma parte del markup
 // estático, solo existe cuando alguien pide ver de dónde sale un costo.
+// Y1 (Ronda 7): umbral de aporte anómalo — mismo default que
+// CrumblyCore.getProductosConAporteAnomalo (50% del precio de venta),
+// para que lo que se resalta acá sea lo mismo que lo que cuenta como
+// anómalo en el resto de la app (alertas, reporte de integridad).
+const APORTE_ANOMALO_UMBRAL = 0.5;
 function abrirDesgloseCosto(productoId) {
   const producto = state.productos.find(p => p.id === productoId);
   if (!producto) return;
-  const { lineas, costoTotal } = CrumblyCore.getDesgloseCostoProducto(state, productoId);
+  // Y1: getAportesComponentes envuelve getDesgloseCostoProducto (mismo
+  // recorrido, sin duplicarlo) y agrega pctDelPrecio — % del PRECIO DE
+  // VENTA, no del costo total, para ver qué componente por sí solo se
+  // come la ganancia o el producto entero.
+  const { lineas, costoTotal, precio } = CrumblyCore.getAportesComponentes(state, productoId);
   let overlay = document.getElementById('modal-desglose-costo');
   if (!overlay) {
     overlay = document.createElement('div');
@@ -2952,21 +2993,24 @@ function abrirDesgloseCosto(productoId) {
     document.body.appendChild(overlay);
   }
   document.getElementById('desglose-costo-titulo').textContent = 'Costo de ' + producto.nombre;
-  const precio = Number(producto.precio) || 0;
   document.getElementById('desglose-costo-resumen').textContent =
     'Costo total: ' + fmt(costoTotal) + ' · precio de venta: ' + fmt(precio) + (precio ? ' · margen ' + Math.round(((precio - costoTotal) / precio) * 100) + '%' : '');
   const grupoLabel = { alimento: 'Alimento', empaque: 'Empaque' };
-  document.getElementById('desglose-costo-lista').innerHTML = lineas.length ? lineas.map(l => `
-    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:8px 10px;border-radius:8px;background:${l.sospechoso ? 'rgba(200,60,60,0.1)' : 'var(--bg)'}">
+  document.getElementById('desglose-costo-lista').innerHTML = lineas.length ? lineas.map(l => {
+    const anomalo = l.pctDelPrecio !== null && l.pctDelPrecio > APORTE_ANOMALO_UMBRAL;
+    return `
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:8px 10px;border-radius:8px;background:${l.sospechoso || anomalo ? 'rgba(200,60,60,0.1)' : 'var(--bg)'}">
       <div>
         <div style="font-size:var(--fs-sm);color:var(--ink)">${esc(l.nombre)}${l.sospechoso ? ' <strong style="color:var(--danger)">⚠ costo sospechoso</strong>' : ''}</div>
         <div style="font-size:var(--fs-xs);color:var(--muted)">${grupoLabel[l.grupo] || l.grupo} · ${l.tipo === 'manual' ? 'monto fijo' : (l.cantidad + 'g × ' + fmt(l.costoUnitario) + '/g')}</div>
       </div>
       <div style="text-align:right;white-space:nowrap">
         <div style="font-size:var(--fs-sm);color:var(--ink)">${fmt(l.subtotal)}</div>
-        <div style="font-size:var(--fs-xs);color:var(--muted)">${Math.round(l.pctDelTotal * 100)}%</div>
+        <div style="font-size:var(--fs-xs);color:var(--muted)">${Math.round(l.pctDelTotal * 100)}% del costo</div>
+        <div style="font-size:var(--fs-xs);color:${anomalo ? 'var(--danger)' : 'var(--muted)'};font-weight:${anomalo ? 'var(--fw-bold)' : 'var(--fw-regular)'}">${l.pctDelPrecio === null ? '—' : Math.round(l.pctDelPrecio * 100) + '% del precio'}${anomalo ? ' ⚠' : ''}</div>
       </div>
-    </div>`).join('') : '<p class="empty">Este producto no tiene componentes en su receta.</p>';
+    </div>`;
+  }).join('') : '<p class="empty">Este producto no tiene componentes en su receta.</p>';
   openModal('modal-desglose-costo');
 }
 /* ─── VENTA (modal, rediseño) ───

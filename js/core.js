@@ -924,6 +924,65 @@
     return { lineas: lineas, costoTotal: costoTotal };
   }
 
+  // ─── Y1 (auditoría Ronda 7): aportes de cada componente, como % del
+  // PRECIO DE VENTA ────────────────────────────────────────────────────
+  // Todo el diagnóstico que encontró los problemas reales del costeo
+  // (Leche a $3.550/g — el precio de la caja completa, no el costo por
+  // gramo; Crema de leche al doble; gramajes de dedo repetido:
+  // 190.190g, 1.111 unidades, 5.050g, 3.520g) se hizo con un script a
+  // mano en la consola. Ninguna guarda construida en seis rondas lo
+  // detectó: `checkCostoSospechoso` compara un insumo contra la mediana
+  // de los insumos de SU MISMA unidad — Leche, declarada en `unidad`
+  // propia, nunca se comparó contra insumos en gramos. Y
+  // `getReporteIntegridad` dice que un producto cuesta más de lo que se
+  // vende, pero no dice CUÁL componente es el culpable.
+  //
+  // La señal que sí funciona: el aporte del componente al costo,
+  // comparado contra el PRECIO DE VENTA del producto — independiente de
+  // la unidad declarada del insumo y de la mediana del inventario. Reusa
+  // el mismo recorrido de getDesgloseCostoProducto (arriba) — no se
+  // duplica la expansión de componentes ni el costo de preparaciones
+  // (getPreparacionCosto ya lo resuelve ahí). La diferencia es solo el
+  // denominador: V3.1 reporta % del COSTO TOTAL (qué domina el costo);
+  // esto reporta % del PRECIO DE VENTA (qué componente por sí solo se
+  // come la ganancia, o el producto entero).
+  function getAportesComponentes(state, productoId) {
+    var producto = (state.productos || []).find(function (p) { return p.id === productoId; });
+    var precio = producto ? (Number(producto.precio) || 0) : 0;
+    var desglose = getDesgloseCostoProducto(state, productoId);
+    var lineas = desglose.lineas.map(function (l) {
+      return Object.assign({}, l, {
+        aporteAbsoluto: l.subtotal,
+        pctDelPrecio: precio > 0 ? l.subtotal / precio : null // sin precio de venta, el % no significa nada
+      });
+    });
+    return { lineas: lineas, costoTotal: desglose.costoTotal, precio: precio };
+  }
+
+  // Recorre TODOS los productos y devuelve los componentes cuyo aporte
+  // supera `umbral` (por defecto 50% del precio de venta) — la versión
+  // función del script que se corrió a mano en la consola. Productos sin
+  // precio de venta se excluyen (el % no tiene contra qué compararse).
+  function getProductosConAporteAnomalo(state, umbral) {
+    umbral = umbral === undefined ? 0.5 : umbral;
+    var out = [];
+    (state.productos || []).forEach(function (p) {
+      var precio = Number(p.precio) || 0;
+      if (precio <= 0) return;
+      var aportes = getAportesComponentes(state, p.id);
+      aportes.lineas.forEach(function (l) {
+        if (l.pctDelPrecio !== null && l.pctDelPrecio > umbral) {
+          out.push({
+            productoId: p.id, productoNombre: p.nombre, precio: precio,
+            componenteNombre: l.nombre, aporteAbsoluto: l.aporteAbsoluto, pctDelPrecio: l.pctDelPrecio
+          });
+        }
+      });
+    });
+    out.sort(function (a, b) { return b.pctDelPrecio - a.pctDelPrecio; }); // el peor primero
+    return out;
+  }
+
   // Desglosa el costo YA CONGELADO de una línea de venta (item.costo,
   // fijado en applyVenta al momento de vender — mismo dato que ya usa
   // computeCascada para el COGS del período) en alimento/empaque,
@@ -2810,6 +2869,8 @@
     getCostoConVolatilidad: getCostoConVolatilidad,
     getCostoProductoDesglosado: getCostoProductoDesglosado,
     getDesgloseCostoProducto: getDesgloseCostoProducto,
+    getAportesComponentes: getAportesComponentes,
+    getProductosConAporteAnomalo: getProductosConAporteAnomalo,
     getFoodCostPct: getFoodCostPct,
     getPaperCostPct: getPaperCostPct,
     getFoodCostPctRango: getFoodCostPctRango,
