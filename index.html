@@ -1133,7 +1133,11 @@ textarea.field{height:auto}
         <!-- V1 (Ronda 5): qué mide esta alarma depende de si el backend ya
              migró (fase 'post', U3) — hasta que se sepa con certeza, mide
              el estado completo, no solo el catálogo, para no quedarse
-             ciega en la ventana entre desplegar el cliente y el backend. -->
+             ciega en la ventana entre desplegar el cliente y el backend.
+             X0 (Ronda 6): tres estados, no dos — confirmada post,
+             confirmada pre, y SIN confirmar (esta última nunca bloquea,
+             solo advierte — antes se presentaba igual que "pre"). -->
+        <p class="item-sub" id="payload-fase-estado" style="margin-bottom:4px;font-weight:600">Consultando…</p>
         <p class="item-sub" id="payload-alarma-motivo" style="margin-bottom:6px">Calculando…</p>
         <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px">
           <strong id="payload-tamano" style="font-size:18px">0</strong>
@@ -1556,11 +1560,16 @@ const COLECCION_LABEL = {
 };
 function renderPayloadPanel() {
   const snapshot = stateSinConteoEnProgreso(); // T0.1: el conteo en curso ya no viaja, no cuenta acá
-  // V1: la misma alarma que usa push() para decidir advertencia/bloqueo —
-  // mide catálogo o estado completo según la fase de la migración que ya
-  // se pudo confirmar con el backend esta sesión (null hasta entonces,
-  // tratado igual que 'pre': la opción segura).
+  // V1/X0: la misma alarma que usa push() para decidir advertencia/
+  // bloqueo — mide catálogo o estado completo según la fase de la
+  // migración CONFIRMADA y persistida en localStorage (getFaseConocida).
+  // Sin confirmar, mide de más igual (conservador) pero el nivel nunca
+  // llega a bloqueado — el bloqueo real solo procede con fase confirmada.
   const info = CrumblySync.getAlarmSizeInfo(snapshot, CrumblySync.getFaseConocida());
+  const faseEl = document.getElementById('payload-fase-estado');
+  if (info.fase === 'post') { faseEl.textContent = '🟢 Fase confirmada: POST-migración'; faseEl.style.color = 'var(--muted)'; }
+  else if (info.fase === 'pre') { faseEl.textContent = '🟡 Fase confirmada: PRE-migración'; faseEl.style.color = 'var(--muted)'; }
+  else { faseEl.textContent = '⚪ Fase SIN CONFIRMAR — advierte, nunca bloquea'; faseEl.style.color = '#c98a1f'; }
   document.getElementById('payload-alarma-motivo').textContent =
     'Midiendo: ' + info.motivo + '.';
   document.getElementById('payload-tamano').textContent = info.tam.toLocaleString('es-CO');
@@ -1573,7 +1582,7 @@ function renderPayloadPanel() {
   const msg = document.getElementById('payload-nivel-msg');
   const queMide = info.fase === 'post' ? 'el catálogo' : 'el estado completo';
   if (info.nivel === 'bloqueado') { msg.textContent = 'Bloqueado: ' + queMide + ' supera el tope de una celda de Sheets. La sincronización se rechaza para no perder datos en silencio.'; msg.style.color = 'var(--danger)'; }
-  else if (info.nivel === 'advertencia') { msg.textContent = queMide.charAt(0).toUpperCase() + queMide.slice(1) + ' se acerca al tope de una celda de Sheets.'; msg.style.color = '#c98a1f'; }
+  else if (info.nivel === 'advertencia') { msg.textContent = queMide.charAt(0).toUpperCase() + queMide.slice(1) + ' se acerca al tope de una celda de Sheets' + (info.fase === 'sin_confirmar' ? ' (sin confirmar todavía — no bloquearía aunque lo superara)' : '') + '.'; msg.style.color = '#c98a1f'; }
   else { msg.textContent = 'Dentro de rango normal.'; msg.style.color = 'var(--muted)'; }
 
   const fila = d => `

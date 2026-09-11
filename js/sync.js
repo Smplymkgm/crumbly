@@ -81,8 +81,9 @@
     return { tam: tam, tope: TOPE_PAYLOAD_CHARS, bloqueo: BLOQUEO_PAYLOAD_CHARS, advertencia: ADVERTENCIA_PAYLOAD_CHARS, pct: tam / TOPE_PAYLOAD_CHARS, nivel: nivel };
   }
 
-  // ─── V1 (auditoría Ronda 5): la alarma no puede quedar ciega entre
-  // despliegues ────────────────────────────────────────────────────────
+  // ─── V1 (auditoría Ronda 5) / X0 (auditoría Ronda 6): la alarma no puede
+  // quedar ciega entre despliegues — pero tampoco puede bloquear sobre una
+  // adivinanza ─────────────────────────────────────────────────────────
   //
   // U0 hizo que la alarma mida el catálogo en vez del payload completo —
   // correcto DESPUÉS de que el backend ya migró. El frontend (GitHub
@@ -91,42 +92,82 @@
   // esa ventana la celda real TODAVÍA contiene el estado completo (el
   // backend viejo no sabe de catálogo/filas), pero un cliente que mide
   // solo el catálogo vería un número chico y no avisaría — se pierde la
-  // protección de T0 justo cuando más hace falta, sin ningún síntoma.
+  // protección de T0 justo cuando más hace falta, sin ningún síntoma. V1
+  // resolvió esto midiendo el estado completo mientras la fase no se
+  // supiera con certeza.
   //
-  // La alarma ahora mide según la FASE de la migración, reportada por el
-  // propio backend (`migrationStatus`, U3): fase 'post' → catálogo
-  // (comportamiento de U0). Fase 'pre', o CUALQUIER fase que no se pudo
-  // determinar (backend viejo que no reconoce la acción, sin sesión,
-  // error de red) → estado completo, el mismo criterio de T0. Elegido a
-  // propósito: medir de más avisa sin razón (falso positivo, molesto);
-  // medir de menos deja la app fallando en silencio (el modo de falla
-  // real que esta ronda existe para cerrar). Ante la duda, la opción
-  // segura es medir de más.
+  // X0: V1 trataba "fase sin confirmar" IGUAL que "fase pre confirmada" —
+  // medir de más, para bloquear igual que si el backend de verdad no
+  // hubiera migrado. Pero `afterLogin_` consulta la fase SIN bloquear el
+  // login, así que hay una ventana en CADA carga de página (no solo entre
+  // despliegues) en la que la fase todavía no se sabe. En esa ventana,
+  // con un catálogo real de ~27.000 caracteres y ~761 por venta
+  // hidratada, ya con 28 ventas el estado completo supera el tope de
+  // bloqueo (27.000 + 761×28 ≈ 48.308) — así que CADA carga de página
+  // bloqueaba el push hasta que la fase se confirmara, y empeora con el
+  // historial (justo lo que T1 desacopló). Medir de más para ADVERTIR
+  // está bien — es información útil y no cuesta nada. Bloquear sobre una
+  // fase que no se sabe es un falso positivo que impide operar, y acá el
+  // falso positivo no es molesto: es una app que no guarda.
+  //
+  // La regla ahora: el bloqueo SOLO procede con fase CONFIRMADA (pre o
+  // post, ver `getFaseConocida`/`setFaseConocida_` más abajo — persistida
+  // en localStorage, no en memoria). Sin confirmar, se sigue midiendo el
+  // estado completo (conservador para el NÚMERO que se muestra) pero el
+  // nivel nunca pasa de 'advertencia'. La defensa real contra una celda
+  // que no entra sigue siendo el backend (`writeState_` valida el
+  // catálogo SIEMPRE, sin importar qué mida el cliente) — el bloqueo del
+  // cliente es una comodidad para no gastar una petición en vano, nunca
+  // la última línea, y por lo tanto no puede ser más estricto que la
+  // verdad que todavía no se confirmó.
   function getAlarmSizeInfo(state, fase) {
     if (fase === 'post') {
       var info = getCatalogSizeInfo(state);
       info.fase = 'post';
-      info.motivo = 'catálogo — la migración ya corrió, la celda solo guarda el catálogo';
+      info.motivo = 'catálogo — la migración ya corrió (confirmado), la celda solo guarda el catálogo';
       return info;
     }
     var tam = getTransferSize(state);
-    var nivel = tam >= BLOQUEO_PAYLOAD_CHARS ? 'bloqueado' : (tam >= ADVERTENCIA_PAYLOAD_CHARS ? 'advertencia' : 'ok');
+    if (fase === 'pre') {
+      var nivelPre = tam >= BLOQUEO_PAYLOAD_CHARS ? 'bloqueado' : (tam >= ADVERTENCIA_PAYLOAD_CHARS ? 'advertencia' : 'ok');
+      return {
+        tam: tam, tope: TOPE_PAYLOAD_CHARS, bloqueo: BLOQUEO_PAYLOAD_CHARS, advertencia: ADVERTENCIA_PAYLOAD_CHARS,
+        pct: tam / TOPE_PAYLOAD_CHARS, nivel: nivelPre, fase: 'pre',
+        motivo: 'estado completo — la migración todavía no corrió (confirmado), la celda guarda todo'
+      };
+    }
+    // Fase SIN CONFIRMAR (nunca se llamó getMigrationStatus con éxito
+    // todavía, backend viejo que no reconoce la acción, sin sesión, error
+    // de red) — nunca bloquea, sin importar cuánto mida el estado
+    // completo. El nivel tope en 'advertencia'.
+    var nivelSinConfirmar = tam >= ADVERTENCIA_PAYLOAD_CHARS ? 'advertencia' : 'ok';
     return {
       tam: tam, tope: TOPE_PAYLOAD_CHARS, bloqueo: BLOQUEO_PAYLOAD_CHARS, advertencia: ADVERTENCIA_PAYLOAD_CHARS,
-      pct: tam / TOPE_PAYLOAD_CHARS, nivel: nivel, fase: 'pre',
-      motivo: fase === 'pre'
-        ? 'estado completo — la migración todavía no corrió, la celda guarda todo'
-        : 'estado completo — no se pudo determinar la fase de la migración, se asume la opción más segura'
+      pct: tam / TOPE_PAYLOAD_CHARS, nivel: nivelSinConfirmar, fase: 'sin_confirmar',
+      motivo: 'estado completo (estimado) — todavía no se confirmó la fase de la migración con el backend; advierte, nunca bloquea'
     };
   }
 
-  // Fase de la migración, cacheada en memoria (por carga de página, nunca
-  // persistida) — se actualiza cada vez que `getMigrationStatus` recibe
-  // una respuesta válida del backend (afterLogin_, pullOnLoad, o al abrir
-  // Ajustes). Arranca en `null` = "todavía no se sabe", que
-  // `getAlarmSizeInfo` trata igual que 'pre'.
-  var faseMigracionConocida_ = null;
-  function getFaseConocida() { return faseMigracionConocida_; }
+  // X0: la fase CONFIRMADA se persiste en localStorage — por dispositivo,
+  // nunca en el estado sincronizado (mismo patrón que
+  // crumbly-catalog-base/conteoEnProgreso/crumbly-borrados-pendientes).
+  // Se lee directo de localStorage en cada llamada (sin caché en memoria
+  // aparte) — así un reload real la encuentra tal cual quedó, sin ningún
+  // paso de inicialización, y sin la ventana de "vuelve a null" que tenía
+  // V1. Una vez que el backend confirmó 'post' (o 'pre'), no hay razón
+  // para volver a la incertidumbre en cada carga de página.
+  var FASE_MIGRACION_KEY = 'crumbly-fase-migracion-confirmada';
+  function getFaseConocida() {
+    try {
+      var raw = localStorage.getItem(FASE_MIGRACION_KEY);
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      return (parsed && (parsed.fase === 'pre' || parsed.fase === 'post')) ? parsed.fase : null;
+    } catch (e) { return null; }
+  }
+  function setFaseConocida_(fase) {
+    try { localStorage.setItem(FASE_MIGRACION_KEY, JSON.stringify({ fase: fase, ts: new Date().toISOString() })); } catch (e) { /* no crítico */ }
+  }
 
   // Tamaño de lo que viaja en el POST (estado completo). Informativo —
   // NO tiene tope de celda. Sigue siendo O(historial completo) en ambas
@@ -189,15 +230,15 @@
   // migración. Antes esto solo vivía en Logger.log() del editor de Apps
   // Script; ahora el panel de Ajustes lo puede mostrar.
   //
-  // V1: cada respuesta válida (`ok:true`) actualiza la fase cacheada que
-  // `push()` usa para decidir qué medir — esta es la única vía por la que
-  // ese caché se llena; si nunca se llama (backend viejo que ni siquiera
-  // tiene esta acción, sin sesión, sin red), el caché se queda en `null`
-  // y `getAlarmSizeInfo` mide como si la fase fuera 'pre'.
+  // X0: cada respuesta válida (`ok:true`, `fase` 'pre' o 'post') PERSISTE
+  // la fase confirmada (`setFaseConocida_`) — esta es la única vía por la
+  // que se confirma; si nunca se llama con éxito (backend viejo sin esta
+  // acción, sin sesión, sin red), queda sin confirmar y `getAlarmSizeInfo`
+  // mide de más pero nunca bloquea (ver arriba).
   function getMigrationStatus(backendUrl, token, fetchImpl) {
     var f = resolveFetch(fetchImpl);
     return f(withQuery(backendUrl, { action: 'migrationStatus', token: token })).then(parseResponse).then(function (res) {
-      if (res && res.ok && res.fase) faseMigracionConocida_ = res.fase;
+      if (res && res.ok && (res.fase === 'pre' || res.fase === 'post')) setFaseConocida_(res.fase);
       return res;
     });
   }
@@ -257,14 +298,12 @@
   }
 
   function push(backendUrl, token, state, fetchImpl, usuario, baseCatalogVersion, fase) {
-    // U0/V1: se mide ANTES de mandar nada — sobre el tope de bloqueo, ni
-    // siquiera se hace la petición. Qué se mide depende de la fase de la
-    // migración: catálogo si ya se sabe que el backend migró, estado
-    // completo si no se sabe o todavía no migró. `fase` es un override
-    // explícito (para pruebas, o un caller que ya la tiene a mano) — el
-    // caller real (index.html) no lo manda nunca y usa la fase cacheada
-    // por el último `getMigrationStatus()` exitoso de esta sesión.
-    var sizeInfo = getAlarmSizeInfo(state, fase !== undefined ? fase : faseMigracionConocida_);
+    // U0/V1/X0: se mide ANTES de mandar nada — sobre el tope de bloqueo
+    // (solo con fase CONFIRMADA), ni siquiera se hace la petición. `fase`
+    // es un override explícito (para pruebas, o un caller que ya la tenga
+    // a mano) — el caller real (index.html) no lo manda nunca y usa la
+    // fase confirmada y persistida en localStorage (`getFaseConocida`).
+    var sizeInfo = getAlarmSizeInfo(state, fase !== undefined ? fase : getFaseConocida());
     sizeInfo.transferencia = getTransferSize(state); // informativo, sin tope
     if (sizeInfo.nivel === 'bloqueado') {
       // Mismo `code` que usa el backend (writeState_) — index.html maneja
