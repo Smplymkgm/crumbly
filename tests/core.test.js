@@ -3138,6 +3138,85 @@ test('migrateState de un estado que nunca tuvo los campos no los resucita', () =
   assert.strictEqual(s.config.hasOwnProperty('backendToken'), false);
 });
 
+console.log('\n== A1 (Ronda 8): cambiar el tipo de un insumo sin romper las recetas ==');
+
+test('CRITERIO: mover un insumo de empaques a materia preserva su id, lo mueve de colección, y el costo total de dos productos que lo usan no cambia', () => {
+  const s = C.emptyState();
+  s.empaques.push({ id: 'ins-x', nombre: 'Croissant', cantidad: 100, costo: 3600, minimo: 5, unidad: 'unidad' });
+  s.productos.push({ id: 'p1', nombre: 'Croffle A', precio: 10000, componentes: [{ tipo: 'empaques', refId: 'ins-x', gramos: 1 }] });
+  s.productos.push({ id: 'p2', nombre: 'Croffle B', precio: 12000, componentes: [{ tipo: 'empaques', refId: 'ins-x', gramos: 2 }] });
+
+  const costoAntesP1 = C.getCostoProducto(s.productos[0], s);
+  const costoAntesP2 = C.getCostoProducto(s.productos[1], s);
+  const desgloseAntesP1 = C.getCostoProductoDesglosado(s.productos[0], s);
+
+  const ok = C.moverInsumoDeTipo(s, 'ins-x', 'empaques', 'materia');
+  assert.strictEqual(ok, true);
+
+  assert.strictEqual(s.empaques.find(x => x.id === 'ins-x'), undefined, 'ya no está en empaques');
+  const movido = s.materia.find(x => x.id === 'ins-x');
+  assert.ok(movido, 'ahora está en materia');
+  assert.strictEqual(movido.id, 'ins-x', 'el id se preserva exacto');
+  assert.strictEqual(movido.nombre, 'Croissant');
+
+  assert.strictEqual(s.productos[0].componentes[0].tipo, 'materia', 'el componente se reclasifica junto con el insumo');
+  assert.strictEqual(s.productos[1].componentes[0].tipo, 'materia');
+
+  assert.strictEqual(C.getCostoProducto(s.productos[0], s), costoAntesP1, 'el costo total de p1 no cambia');
+  assert.strictEqual(C.getCostoProducto(s.productos[1], s), costoAntesP2, 'el costo total de p2 no cambia');
+
+  // A3: el costo TOTAL no cambia, pero el reparto alimento/empaque sí —
+  // es justo lo que este cambio de bucket debe mover.
+  const desgloseDespuesP1 = C.getCostoProductoDesglosado(s.productos[0], s);
+  assert.strictEqual(desgloseDespuesP1.costoTotal, desgloseAntesP1.costoTotal);
+  assert.strictEqual(desgloseAntesP1.costoEmpaque > 0, true, 'antes: contaba como empaque');
+  assert.strictEqual(desgloseDespuesP1.costoAlimento > 0, true, 'después: cuenta como alimento');
+  assert.strictEqual(desgloseDespuesP1.costoEmpaque, 0);
+});
+
+test('CRITERIO: una referencia anidada dentro de una preparación también sobrevive al cambio de tipo', () => {
+  const s = C.emptyState();
+  // Insumo mal clasificado en empaques (A3: el caso real, Croissant) —
+  // referenciado DENTRO de una preparación, que a su vez usa un producto.
+  s.empaques.push({ id: 'ins-y', nombre: 'Croissant', cantidad: 100, costo: 3600, minimo: 5, unidad: 'unidad' });
+  s.materia.push({ id: 'ins-harina', nombre: 'Harina', cantidad: 1000, costo: 5, minimo: 100, unidad: 'g' });
+  // Nota: mientras 'ins-y' vive en empaques, esta referencia con
+  // tipo:'materia' NO resolvería (getPreparacionComposicionPorGramo solo
+  // mira state.materia para tipo:'materia') — se arma directo con
+  // tipo:'materia' porque eso es lo que A1 debe dejar correcto DESPUÉS
+  // del cambio de bucket, que es lo que este test verifica.
+  s.preparaciones.push({
+    id: 'prep1', nombre: 'Base croffle', modo: 'directo', rendimientoPct: 100,
+    componentes: [{ tipo: 'materia', refId: 'ins-harina', gramos: 100 }, { tipo: 'materia', refId: 'ins-y', gramos: 50 }]
+  });
+  s.productos.push({ id: 'p3', nombre: 'Croffle con prep', precio: 15000, componentes: [{ tipo: 'preparacion', refId: 'prep1', gramos: 150 }] });
+
+  // Antes del cambio, 'ins-y' vive en empaques — la preparación no lo
+  // encuentra (mismatch bucket real vs tipo declarado), así que su costo
+  // hoy YA es incorrecto (subcosteado) — exactamente el bug de fondo que
+  // A1/A3 exponen. Moverlo a materia corrige el mismatch.
+  const antesDeMover = C.getPreparacionCosto(s, 'prep1');
+  // gramosObtenidos = 150 (100 harina + 50 ins-y, aunque ins-y todavía no
+  // resuelva); solo la harina contribuye costo: (100/150) * 5
+  assert.ok(Math.abs(antesDeMover.costoPorGramo - (100 / 150) * 5) < 1e-9, 'antes de mover, ins-y no resuelve — solo cuenta la harina');
+
+  const ok = C.moverInsumoDeTipo(s, 'ins-y', 'empaques', 'materia');
+  assert.strictEqual(ok, true);
+
+  const despuesDeMover = C.getPreparacionCosto(s, 'prep1');
+  // (100g*5 + 50g*3600) / gramosObtenidos(150) = (500+180000)/150 = 1203.333...
+  assert.ok(Math.abs(despuesDeMover.costoPorGramo - (100 * 5 + 50 * 3600) / 150) < 1e-9, 'después de mover, ins-y sí resuelve dentro de la preparación');
+
+  const costoP3 = C.getCostoProducto(s.productos.find(p => p.id === 'p3'), s);
+  assert.ok(costoP3 > 0 && Number.isFinite(costoP3), 'el producto que usa la preparación anidada también ve el costo correcto');
+});
+
+test('moverInsumoDeTipo: id inexistente en el bucket viejo no rompe nada (false, sin efecto)', () => {
+  const s = C.emptyState();
+  const ok = C.moverInsumoDeTipo(s, 'no-existe', 'empaques', 'materia');
+  assert.strictEqual(ok, false);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);

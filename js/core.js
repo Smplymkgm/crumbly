@@ -2866,6 +2866,51 @@
     return Object.keys(productosPorId).map(function (id) { return productosPorId[id]; });
   }
 
+  // ─── A1 (auditoría Ronda 8): cambiar el tipo de un insumo sin romper
+  // las recetas ──────────────────────────────────────────────────────
+  //
+  // Antes de esto, la única forma de corregir un insumo cargado en la
+  // categoría equivocada (materia prima vs empaque) era borrarlo y
+  // volver a crearlo — eso genera un `id` nuevo y deja huérfanas las
+  // recetas que apuntaban al viejo (`refId`). Pasó 4 veces en
+  // producción real (ver PROGRESO.md § A1).
+  //
+  // No alcanza con mover el registro entre `state.materia`/
+  // `state.empaques` — cada componente de receta (de un producto O de
+  // una preparación) guarda su PROPIO `tipo` ('materia'/'empaques'/
+  // 'toppings'), y getCostoProducto/getCostoProductoDesglosado/
+  // aplicarComponentes deciden en qué colección buscar el insumo según
+  // ESE campo, no según dónde vive realmente el registro. Si solo se
+  // moviera el registro, cada receta que lo usa seguiría buscando en la
+  // colección vieja, no lo encontraría, y su costo cae a $0 en
+  // silencio. Por eso el `tipo` de cada componente que referencia este
+  // insumo se reescribe acá también — es la otra mitad de "mover" el
+  // insumo, no un efecto secundario aparte.
+  //
+  // Fuera de alcance a propósito: `producto.empaquesUsados[]` (packaging
+  // real — cajas, vasos — sin campo `tipo` propio porque la colección
+  // ya implica "esto es empaque"; ningún caso real de esta ronda
+  // necesita convertir uno de esos a materia, ver PROGRESO.md § A1).
+  function moverInsumoDeTipo(state, insumoId, tipoViejo, tipoNuevo) {
+    var origen = state[tipoViejo] || [];
+    var idx = origen.findIndex(function (x) { return x.id === insumoId; });
+    if (idx === -1) return false;
+    var registro = origen[idx];
+    origen.splice(idx, 1);
+    state[tipoNuevo] = state[tipoNuevo] || [];
+    state[tipoNuevo].push(registro);
+    function reclasificar(lista) {
+      (lista || []).forEach(function (item) {
+        (item.componentes || []).forEach(function (c) {
+          if (c.refId === insumoId && c.tipo === tipoViejo) c.tipo = tipoNuevo;
+        });
+      });
+    }
+    reclasificar(state.productos);
+    reclasificar(state.preparaciones);
+    return true;
+  }
+
   return {
     SCHEMA_VERSION: SCHEMA_VERSION,
     formatCOP: formatCOP,
@@ -2900,6 +2945,7 @@
     findProductosUsandoEmpaque: findProductosUsandoEmpaque,
     findProductosUsandoInsumo: findProductosUsandoInsumo,
     findProductosAfectadosPorInsumo: findProductosAfectadosPorInsumo,
+    moverInsumoDeTipo: moverInsumoDeTipo,
     GASTO_CATEGORIAS: GASTO_CATEGORIAS,
     costoPromedioPonderado: costoPromedioPonderado,
     registrarGasto: registrarGasto,

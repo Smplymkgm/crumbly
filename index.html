@@ -630,7 +630,7 @@ textarea.field{height:auto}
         <option value="empaques">Empaque (cajas, vasos, tapas, etc.)</option>
         <option value="toppings" disabled>Topping (solo lectura acá — se crean desde el menú)</option>
       </select>
-      <p class="item-sub" id="ins-tipo-insumo-nota" style="display:none;margin-top:4px">No se puede cambiar después de creado — si lo cargaste en la categoría equivocada, borralo y volvé a crearlo.</p>
+      <p class="item-sub" id="ins-tipo-insumo-nota" style="display:none;margin-top:4px">Cambiarlo mueve el insumo de categoría sin perder las recetas que lo usan (el id no cambia). Si es empaque ↔ materia prima, también cambia cómo se reparte su costo entre comida y empaque en los reportes — el costo total del producto no cambia.</p>
     </div>
     <div style="display:flex;gap:10px">
       <div class="modal-field" style="flex:1">
@@ -2163,7 +2163,15 @@ function openInsumoModal(id) {
     const item = found.item;
     document.getElementById('ins-edit-tipo').value = found.tipo;
     document.getElementById('ins-tipo-insumo').value = found.tipo;
-    document.getElementById('ins-tipo-insumo').disabled = true;
+    // A1 (auditoría Ronda 8): materia ↔ empaques ahora se puede cambiar
+    // sin perder las recetas (ver saveInsumo) — antes esto obligaba a
+    // borrar y recrear, lo que generaba un id nuevo y dejaba huérfanas las
+    // recetas que apuntaban al viejo (pasó 4 veces en producción real, ver
+    // PROGRESO.md § A1). Toppings sigue sin poder elegirse desde acá (la
+    // opción ya estaba deshabilitada antes de A1 — se crean desde el menú,
+    // fuera de este modal) así que un insumo que YA es topping se queda
+    // con el selector bloqueado, sin cambios respecto a antes.
+    document.getElementById('ins-tipo-insumo').disabled = (found.tipo === 'toppings');
     document.getElementById('ins-tipo-insumo-nota').style.display = 'block';
     document.getElementById('ins-modal-title').textContent = 'Editar insumo';
     document.getElementById('ins-nombre').value = item.nombre;
@@ -2330,15 +2338,46 @@ function saveInsumo() {
     }
   }
   if (editId) {
-    // Edición: nunca cambia de colección — solo actualiza sus campos +
-    // reetiqueta la unidad (no convierte cantidades entre medidas).
-    // B2: `cantidad` NUNCA se toca acá (el campo está deshabilitado en el
-    // modal) — se corrige con Inventario → Conteo físico, que sí deja
-    // rastro (motivo, usuario, ajuste). Editarla a mano era la única vía
-    // de ajuste y no dejaba ninguno.
+    // Edición: actualiza sus campos + reetiqueta la unidad (no convierte
+    // cantidades entre medidas). B2: `cantidad` NUNCA se toca acá (el
+    // campo está deshabilitado en el modal) — se corrige con Inventario →
+    // Conteo físico, que sí deja rastro (motivo, usuario, ajuste). Editarla
+    // a mano era la única vía de ajuste y no dejaba ninguno.
+    //
+    // A1 (auditoría Ronda 8): el tipo (materia/empaques) SÍ puede cambiar
+    // ahora — antes de esto la única forma de corregir un insumo cargado
+    // en la categoría equivocada era borrarlo y volver a crearlo, lo que
+    // genera un `id` nuevo y deja huérfanas las recetas que apuntaban al
+    // viejo (`refId`/`empaqueId`) — pasó 4 veces en producción real (ver
+    // PROGRESO.md § A1). Acá el registro se MUEVE de colección
+    // preservando su `id` intacto — las recetas que lo referencian no
+    // notan la diferencia, `getCostoProducto` las sigue encontrando.
+    const bucketNuevo = document.getElementById('ins-tipo-insumo').value;
+    const cambiaTipo = bucketNuevo !== editTipo;
+    if (cambiaTipo) {
+      // C10/V3.3: reusa el mismo recorrido de recetas que ya usa el resto
+      // de la auditoría — no se duplica acá. Empaque↔materia además
+      // cambia food cost vs paper cost (A3): el costo TOTAL del producto
+      // no cambia, solo cómo se reparte en el reporte.
+      const afectados = CrumblyCore.findProductosAfectadosPorInsumo(state, editId);
+      let msg = 'Cambiar "' + nombre + '" de ' + TIPO_INSUMO_LABEL[editTipo] + ' a ' + TIPO_INSUMO_LABEL[bucketNuevo] + '.\n\n';
+      if (afectados.length) {
+        msg += 'Usado (directo o vía preparación) por ' + afectados.length + ' producto(s): ' + afectados.map(p => p.nombre).join(', ') + '.\n' +
+          'Van a seguir funcionando igual — el id no cambia.\n\n';
+      }
+      if ((editTipo === 'empaques') !== (bucketNuevo === 'empaques')) {
+        msg += 'Empaque ↔ materia prima también cambia cómo se reparte su costo entre comida y empaque en los reportes (el costo TOTAL del producto no cambia).\n\n';
+      }
+      if (!confirm(msg + '¿Continuar?')) return;
+    }
     const list = state[editTipo];
     const idx = list.findIndex(x => x.id === editId);
     list[idx] = { ...list[idx], ...datos, unidad: TIPO_MEDICION_UNIDAD[tipoMedicion] };
+    // moverInsumoDeTipo (A1, js/core.js) hace la otra mitad: mueve el
+    // registro de colección Y reescribe el `tipo` de cada componente de
+    // receta que lo referencia — sin eso, las recetas seguirían
+    // buscando en la colección vieja y su costo caería a $0 en silencio.
+    if (cambiaTipo) CrumblyCore.moverInsumoDeTipo(state, editId, editTipo, bucketNuevo);
   } else {
     // Bucket = qué es (materia prima vs empaque), elegido a propósito en
     // "Tipo de insumo" — independiente de "Tipo de medición" (cómo se
