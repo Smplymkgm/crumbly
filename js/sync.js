@@ -135,7 +135,24 @@
     return f(withQuery(backendUrl, { action: 'pull', token: token })).then(parseResponse);
   }
 
-  function push(backendUrl, token, state, fetchImpl) {
+  // U1: el cliente declara, por colección append-only, el conjunto
+  // COMPLETO de ids que tiene ahora mismo. El backend usa eso para
+  // detectar ausencias (borrados) y escribir lápidas. Solo se manda si el
+  // estado local es una copia real ya sincronizada (`config.lastSync`) —
+  // un estado fresco/vacío (sesión nueva, error de carga) NO declara
+  // nada, así que el backend no puede confundir "no tengo nada" con
+  // "borré todo".
+  function knownRecordIdsDe_(state) {
+    if (!state || !state.config || !state.config.lastSync) return null;
+    var append = (RowSync && RowSync.COLECCIONES_APPEND) || [];
+    var out = {};
+    append.forEach(function (nombre) {
+      out[nombre] = (state[nombre] || []).map(function (r) { return r && r.id; }).filter(function (id) { return id != null; });
+    });
+    return out;
+  }
+
+  function push(backendUrl, token, state, fetchImpl, usuario) {
     // U0: se mide el CATÁLOGO ANTES de mandar nada — sobre el tope de
     // bloqueo, ni siquiera se hace la petición. El payload completo puede
     // ser enorme (crece con el historial) y eso ya NO es motivo de
@@ -148,7 +165,11 @@
       return Promise.resolve({ ok: false, error: 'PAYLOAD_TOO_LARGE', code: 'PAYLOAD_TOO_LARGE', sizeInfo: sizeInfo });
     }
     var f = resolveFetch(fetchImpl);
-    var body = JSON.stringify({ token: token, action: 'push', state: state });
+    var payload = { token: token, action: 'push', state: state };
+    var knownIds = knownRecordIdsDe_(state);
+    if (knownIds) payload.knownRecordIds = knownIds; // U1
+    if (usuario) payload.usuario = usuario;
+    var body = JSON.stringify(payload);
     return f(backendUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },

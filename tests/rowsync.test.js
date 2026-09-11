@@ -158,6 +158,68 @@ test('CRITERIO DE ESCALA: 500 ventas + 100 gastos + 10 snapshots de conteo — e
   assert.strictEqual(catalogo.snapshots, undefined);
 });
 
+console.log('\n== U1 (Ronda 4): filas de lápida (los borrados persisten) ==');
+
+test('pickTombstones: un id vivo que ya no está en el conjunto declarado → se lapida', () => {
+  const r = RowSync.pickTombstones(['g1', 'g2', 'g3'], ['g1', 'g3'], []);
+  assert.deepStrictEqual(r, ['g2']);
+});
+
+test('CRITERIO: doble push con el registro ya ausente → NO se lapida dos veces (ya tiene lápida)', () => {
+  const r = RowSync.pickTombstones(['g1', 'g2', 'g3'], ['g1', 'g3'], ['g2']);
+  assert.deepStrictEqual(r, [], 'g2 ya está lapidado — no vuelve a aparecer como candidato');
+});
+
+test('CRITERIO: guarda de falso positivo — conjunto declarado VACÍO no lapida nada', () => {
+  assert.deepStrictEqual(RowSync.pickTombstones(['g1', 'g2', 'g3'], [], []), []);
+});
+
+test('guarda de falso positivo — sin conjunto declarado (undefined/no-array) no lapida nada', () => {
+  assert.deepStrictEqual(RowSync.pickTombstones(['g1', 'g2'], undefined, []), []);
+  assert.deepStrictEqual(RowSync.pickTombstones(['g1', 'g2'], null, []), []);
+  assert.deepStrictEqual(RowSync.pickTombstones(['g1', 'g2'], 'g1', []), []);
+});
+
+test('esBorradoMasivoSospechoso: seis borrados de ~50 vivos NO es sospechoso; 40 de 50 SÍ', () => {
+  assert.strictEqual(RowSync.esBorradoMasivoSospechoso(6, 50), false);
+  assert.strictEqual(RowSync.esBorradoMasivoSospechoso(40, 50), true);
+  assert.strictEqual(RowSync.esBorradoMasivoSospechoso(10, 12), false, 'hasta 10 nunca es sospechoso');
+  assert.strictEqual(RowSync.esBorradoMasivoSospechoso(11, 15), true);
+});
+
+test('hydrateRecords: excluye las lápidas y los ids lapidados, conserva el resto', () => {
+  const rows = [
+    { id: 'g1', monto: 100 },
+    { id: 'g2', monto: 200 },
+    { id: 'g3', monto: 300 },
+    RowSync.makeTombstone('g2', '2026-09-10T00:00:00Z', 'a@b.co')
+  ];
+  const vivos = RowSync.hydrateRecords(rows);
+  assert.deepStrictEqual(vivos.map(r => r.id), ['g1', 'g3']);
+});
+
+test('hydrateRecords: deduplica por id (append raro / reintento) quedándose con la primera', () => {
+  const rows = [{ id: 'v1', total: 100 }, { id: 'v1', total: 100 }, { id: 'v2', total: 50 }];
+  assert.deepStrictEqual(RowSync.hydrateRecords(rows).map(r => r.id), ['v1', 'v2']);
+});
+
+test('CRITERIO (ciclo completo): registrar 3, borrar el del medio, re-hidratar → quedan 2 y el borrado no vuelve', () => {
+  // Simula la hoja: 3 filas + el push que declara [g1, g3]
+  let sheetRecords = [{ id: 'g1', m: 1 }, { id: 'g2', m: 2 }, { id: 'g3', m: 3 }];
+  const liveIds = sheetRecords.map(r => r.id);
+  const tomb = RowSync.pickTombstones(liveIds, ['g1', 'g3'], []);
+  assert.deepStrictEqual(tomb, ['g2']);
+  // el backend agrega la fila de lápida
+  tomb.forEach(id => sheetRecords.push(RowSync.makeTombstone(id, '2026-09-10T00:00:00Z', 'a@b.co')));
+  // el siguiente pull hidrata
+  const trasPull = RowSync.hydrateRecords(sheetRecords);
+  assert.deepStrictEqual(trasPull.map(r => r.id), ['g1', 'g3']);
+  // y un segundo push idéntico no agrega otra lápida
+  const liveIds2 = sheetRecords.filter(r => !RowSync.isTombstone(r)).map(r => r.id);
+  const tombstonedIds = sheetRecords.filter(r => RowSync.isTombstone(r)).map(r => r.id);
+  assert.deepStrictEqual(RowSync.pickTombstones(liveIds2, ['g1', 'g3'], tombstonedIds), []);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);

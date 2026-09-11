@@ -213,6 +213,32 @@ test('getStateBreakdown: marca enCelda=true para el catálogo y false para las a
   assert.strictEqual(desglose[0].coleccion, 'ventas', 'ordenado por tamaño descendente');
 });
 
+group('U1 (Ronda 4): el push declara el conjunto completo de ids (knownRecordIds)');
+
+test('push() incluye knownRecordIds por colección cuando el estado ya se sincronizó (config.lastSync)', async () => {
+  const estado = {
+    config: { lastSync: '2026-09-10T00:00:00Z' },
+    ventas: [{ id: 'v1' }, { id: 'v2' }],
+    gastos: [{ id: 'g1' }],
+    mermas: [], snapshots: [], ajustes: [], lotes: []
+  };
+  const f = mockFetch([{ body: { ok: true } }]);
+  await Sync.push('https://x.com/exec', 'tok', estado, f, 'dueno@crumbly.co');
+  const body = JSON.parse(f.calls[0].opts.body);
+  assert.deepStrictEqual(body.knownRecordIds.ventas, ['v1', 'v2']);
+  assert.deepStrictEqual(body.knownRecordIds.gastos, ['g1']);
+  assert.deepStrictEqual(body.knownRecordIds.mermas, []);
+  assert.strictEqual(body.usuario, 'dueno@crumbly.co');
+});
+
+test('CRITERIO: push() NO declara knownRecordIds si el estado nunca se sincronizó (evita lápida masiva por estado fresco)', async () => {
+  const estadoFresco = { config: { lastSync: null }, ventas: [], gastos: [] };
+  const f = mockFetch([{ body: { ok: true } }]);
+  await Sync.push('https://x.com/exec', 'tok', estadoFresco, f);
+  const body = JSON.parse(f.calls[0].opts.body);
+  assert.strictEqual(body.knownRecordIds, undefined, 'sin lastSync no se declara nada — el backend no puede confundir "vacío" con "borré todo"');
+});
+
 test('getSyncSizeHistory: sin localStorage (Node) devuelve un array vacío, nunca revienta', () => {
   assert.deepStrictEqual(Sync.getSyncSizeHistory(), []);
 });

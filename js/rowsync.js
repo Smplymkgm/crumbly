@@ -95,11 +95,84 @@
     return { ok: ok, reporte: reporte };
   }
 
+  // ─── U1 (auditoría Ronda 4): filas de lápida ──────────────────────────
+  //
+  // `pickNewRecords` solo agrega, nunca quita. Así que borrar un gasto en
+  // memoria y sincronizar dejaba la fila en la hoja, y el siguiente pull
+  // la traía de vuelta. El arreglo mínimo (sin UI de anulación): cuando un
+  // id existe en la hoja pero NO en el conjunto que el cliente declara
+  // tener, se escribe una fila de LÁPIDA — mismo id, timestamp, usuario.
+  // Fila nueva, nunca se muta ni se borra la original (el punto de
+  // append-only es que nada se pierde). La hidratación excluye los ids
+  // con lápida.
+
+  function isTombstone(rec) {
+    return !!(rec && rec._tombstone === true);
+  }
+
+  function makeTombstone(id, fecha, usuario) {
+    return { id: id, _tombstone: true, fecha: fecha || new Date().toISOString(), usuario: usuario || '' };
+  }
+
+  // De los ids que están como registro VIVO en la hoja, cuáles ya no
+  // aparecen en `knownIds` (el conjunto que el cliente declara tener
+  // completo) y todavía no tienen lápida.
+  //
+  // GUARDA CONTRA FALSO POSITIVO: si `knownIds` no es un array, o es un
+  // array vacío, NO se lapida nada. Un cliente que manda un estado
+  // parcial/recortado/vacío (sesión nueva, error de carga, pull fallido
+  // antes del push) no debe producir una lápida masiva del historial. Un
+  // registro que sobrevive de más se corrige después; un historial
+  // borrado en masa por una lápida espuria, no. (La guarda contra el
+  // borrado masivo NO-vacío vive aparte, en `esBorradoMasivoSospechoso`.)
+  function pickTombstones(sheetLiveIds, knownIds, tombstonedIds) {
+    if (!Array.isArray(knownIds) || knownIds.length === 0) return [];
+    var known = {};
+    knownIds.forEach(function (id) { known[id] = true; });
+    var tomb = {};
+    (tombstonedIds || []).forEach(function (id) { tomb[id] = true; });
+    return (sheetLiveIds || []).filter(function (id) {
+      return id !== undefined && id !== null && !known[id] && !tomb[id];
+    });
+  }
+
+  // Segunda guarda: aunque el cliente declare un conjunto completo no
+  // vacío, si un solo push quisiera lapidar MUCHOS registros a la vez,
+  // es casi seguro un error (no seis borrados manuales). Ante la duda, no
+  // se escribe ninguna lápida — se corrige en el siguiente sync real.
+  // Umbral: más de 10 y más de la mitad de los registros vivos.
+  function esBorradoMasivoSospechoso(candidatos, totalVivos) {
+    return candidatos > 10 && candidatos > totalVivos * 0.5;
+  }
+
+  // De todas las filas parseadas de una hoja (vivas + lápidas), devuelve
+  // solo los registros vivos: sin las lápidas y sin los ids lapidados,
+  // deduplicado por id. Es lo que `readAppendCollection_` de Code.gs
+  // aplica antes de devolver una colección en el pull.
+  function hydrateRecords(records) {
+    var tombstoned = {};
+    (records || []).forEach(function (r) { if (isTombstone(r) && r.id != null) tombstoned[r.id] = true; });
+    var out = [];
+    var seen = {};
+    (records || []).forEach(function (r) {
+      if (!r || isTombstone(r) || r.id === undefined || r.id === null) return;
+      if (tombstoned[r.id] || seen[r.id]) return;
+      seen[r.id] = true;
+      out.push(r);
+    });
+    return out;
+  }
+
   return {
     COLECCIONES_APPEND: COLECCIONES_APPEND,
     splitCatalogAndAppend: splitCatalogAndAppend,
     mergeState: mergeState,
     pickNewRecords: pickNewRecords,
-    verifyMigrationCounts: verifyMigrationCounts
+    verifyMigrationCounts: verifyMigrationCounts,
+    isTombstone: isTombstone,
+    makeTombstone: makeTombstone,
+    pickTombstones: pickTombstones,
+    esBorradoMasivoSospechoso: esBorradoMasivoSospechoso,
+    hydrateRecords: hydrateRecords
   };
 });

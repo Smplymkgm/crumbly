@@ -118,9 +118,12 @@ function doPost(e) {
       return json_({ ok: false, error: 'ocupado, otro dispositivo está sincronizando — reintenta en unos segundos' });
     }
     try {
-      var resultado = writeState_(body.state);
+      // U1: knownRecordIds (conjunto completo declarado por colección) y
+      // usuario (para el rastro de la lápida) — ambos opcionales; un
+      // cliente viejo que no los mande simplemente no genera lápidas.
+      var resultado = writeState_(body.state, body.knownRecordIds, body.usuario);
       if (!resultado.ok) return json_(resultado); // T0: error tipado (ej. PAYLOAD_TOO_LARGE), nunca ok:true en silencio
-      return json_({ ok: true, ts: new Date().toISOString() });
+      return json_({ ok: true, ts: new Date().toISOString(), lapidas: resultado.lapidas });
     } finally {
       lock.releaseLock();
     }
@@ -350,8 +353,9 @@ function getAppendSheet_(name) {
 // Lee todas las filas de una hoja append-only y devuelve los objetos ya
 // parseados (una fila corrupta se ignora en vez de romper la carga
 // completa — más seguro que dejar toda la sincronización caída por un
-// registro raro).
-function readAppendCollection_(name) {
+// registro raro). Incluye las filas de lápida SIN filtrar — quien
+// necesita solo los registros vivos usa `hydrateAppendCollection_`.
+function readAppendCollectionRaw_(name) {
   var sh = getAppendSheet_(name);
   var lastRow = sh.getLastRow();
   if (lastRow < 2) return [];
@@ -361,6 +365,34 @@ function readAppendCollection_(name) {
     try { out.push(JSON.parse(data[i][3])); } catch (err) { /* fila corrupta — se ignora, no tumba el pull */ }
   }
   return out;
+}
+
+// U1: registro de lápida — mismo criterio que `isTombstone` en
+// js/rowsync.js (mantener en sync a mano).
+function esLapida_(rec) {
+  return !!(rec && rec._tombstone === true);
+}
+
+// U1: los registros VIVOS de una hoja — sin lápidas, sin ids lapidados,
+// deduplicado por id. Port a mano de `hydrateRecords` (js/rowsync.js).
+function hydrateAppendCollection_(name) {
+  var records = readAppendCollectionRaw_(name);
+  var tombstoned = {};
+  records.forEach(function (r) { if (esLapida_(r) && r.id != null) tombstoned[r.id] = true; });
+  var out = [];
+  var seen = {};
+  records.forEach(function (r) {
+    if (!r || esLapida_(r) || r.id === undefined || r.id === null) return;
+    if (tombstoned[r.id] || seen[r.id]) return;
+    seen[r.id] = true;
+    out.push(r);
+  });
+  return out;
+}
+
+// Compat: el resto del backend pide "la colección" y espera los vivos.
+function readAppendCollection_(name) {
+  return hydrateAppendCollection_(name);
 }
 
 // ESCRITURA POR APPEND — el punto entero de T1. Nunca reescribe la hoja:
@@ -388,6 +420,52 @@ function appendNewRecords_(name, records) {
   return nuevas.length;
 }
 
+// U1: escribe filas de lápida para los registros que el cliente ya no
+// tiene. Port a mano de `pickTombstones` + `esBorradoMasivoSospechoso`
+// (js/rowsync.js — mantener en sync). Nunca muta ni borra filas
+// existentes. Devuelve { escritas, omitidas, motivo }.
+//
+//   knownIds: array de ids que el cliente declara tener para esta
+//             colección (conjunto completo). Si no es un array, o está
+//             vacío, no se escribe ninguna lápida (ver guarda en
+//             rowsync.js). `undefined` = el cliente no declaró nada.
+function appendTombstones_(name, knownIds, usuario) {
+  if (!Array.isArray(knownIds) || knownIds.length === 0) return { escritas: 0, omitidas: 0, motivo: 'sin conjunto completo declarado' };
+
+  var sh = getAppendSheet_(name);
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return { escritas: 0, omitidas: 0 };
+
+  var data = sh.getRange(2, 1, lastRow - 1, 4).getValues();
+  var liveIds = [];
+  var tombstoned = {};
+  for (var i = 0; i < data.length; i++) {
+    var rec = null;
+    try { rec = JSON.parse(data[i][3]); } catch (err) { continue; }
+    if (rec && rec._tombstone === true) { if (rec.id != null) tombstoned[rec.id] = true; }
+    else if (rec && rec.id != null) liveIds.push(rec.id);
+  }
+
+  var known = {};
+  knownIds.forEach(function (id) { known[id] = true; });
+  var candidatos = liveIds.filter(function (id) { return !known[id] && !tombstoned[id]; });
+  if (!candidatos.length) return { escritas: 0, omitidas: 0 };
+
+  // Guarda contra el borrado masivo (aunque el conjunto declarado no esté vacío).
+  if (candidatos.length > 10 && candidatos.length > liveIds.length * 0.5) {
+    Logger.log('U1 — lápidas OMITIDAS en "' + name + '": el push quería lapidar ' + candidatos.length + ' de ' + liveIds.length + ' registros vivos (posible error). No se tocó nada.');
+    return { escritas: 0, omitidas: candidatos.length, motivo: 'borrado masivo sospechoso' };
+  }
+
+  var ahora = new Date().toISOString();
+  var filas = candidatos.map(function (id) {
+    var lapida = { id: id, _tombstone: true, fecha: ahora, usuario: usuario || '' };
+    return [id, ahora, id, JSON.stringify(lapida)]; // col C = id (self-supersede) marca visualmente que es lápida
+  });
+  sh.getRange(sh.getLastRow() + 1, 1, filas.length, 4).setValues(filas);
+  return { escritas: filas.length, omitidas: 0 };
+}
+
 function readState_() {
   var sh = ss_().getSheetByName(STATE_SHEET);
   var raw = sh ? sh.getRange(1, 1).getValue() : null;
@@ -413,7 +491,7 @@ function readState_() {
 var PAYLOAD_TOPE_CHARS = 50000;
 var PAYLOAD_BLOQUEO_CHARS = 48000;
 
-function writeState_(state) {
+function writeState_(state, knownRecordIds, usuario) {
   var catalogo = {};
   Object.keys(state || {}).forEach(function (k) {
     if (APPEND_COLLECTIONS.indexOf(k) === -1) catalogo[k] = state[k];
@@ -427,11 +505,16 @@ function writeState_(state) {
   sh.getRange(1, 2).setValue(new Date().toISOString());
 
   var agregados = {};
+  var lapidas = {};
   APPEND_COLLECTIONS.forEach(function (nombre) {
     agregados[nombre] = appendNewRecords_(nombre, state[nombre]);
+    // U1: si el cliente declaró el conjunto completo de esta colección,
+    // escribir lápidas para los ids que ya no están.
+    var kr = knownRecordIds && knownRecordIds[nombre];
+    lapidas[nombre] = appendTombstones_(nombre, kr, usuario).escritas;
   });
   mirrorCollections_(state); // catálogo únicamente ahora — ver nota en mirrorCollections_
-  return { ok: true, agregados: agregados };
+  return { ok: true, agregados: agregados, lapidas: lapidas };
 }
 
 // ─── Migración (T1) — correr UNA VEZ a mano desde el editor de Apps ────
