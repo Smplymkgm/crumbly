@@ -3021,14 +3021,14 @@
     return Object.keys(productosPorId).map(function (id) { return productosPorId[id]; });
   }
 
-  // ─── A1 (auditoría Ronda 8): cambiar el tipo de un insumo sin romper
-  // las recetas ──────────────────────────────────────────────────────
+  // ─── A1 (auditoría Ronda 8) / B0 (auditoría Ronda 9): cambiar el tipo
+  // de un insumo sin romper las recetas ───────────────────────────────
   //
   // Antes de esto, la única forma de corregir un insumo cargado en la
   // categoría equivocada (materia prima vs empaque) era borrarlo y
   // volver a crearlo — eso genera un `id` nuevo y deja huérfanas las
   // recetas que apuntaban al viejo (`refId`). Pasó 4 veces en
-  // producción real (ver PROGRESO.md § A1).
+  // producción real (ver PROGRESO_R8.md § A1).
   //
   // No alcanza con mover el registro entre `state.materia`/
   // `state.empaques` — cada componente de receta (de un producto O de
@@ -3042,28 +3042,89 @@
   // insumo se reescribe acá también — es la otra mitad de "mover" el
   // insumo, no un efecto secundario aparte.
   //
-  // Fuera de alcance a propósito: `producto.empaquesUsados[]` (packaging
-  // real — cajas, vasos — sin campo `tipo` propio porque la colección
-  // ya implica "esto es empaque"; ningún caso real de esta ronda
-  // necesita convertir uno de esos a materia, ver PROGRESO.md § A1).
+  // B0 (Ronda 9) corrige dos huecos de A1, encontrados inspeccionando el
+  // Sheet real:
+  //
+  // 1) `producto.empaquesUsados[]` es el OTRO camino por el que un
+  //    empaque entra a una receta (junto con `producto.componentes[]`
+  //    con `tipo:'empaques'`) — A1 lo dejó fuera del recorrido a
+  //    propósito, pero eso significa que un insumo con una entrada ahí
+  //    quedaba con una referencia rota tras moverse (mismo modo de
+  //    falla: costo $0 en silencio). Esa entrada NO tiene campo `tipo`
+  //    propio — la colección misma implica "esto es empaque" — así que
+  //    moverla no es "reescribir un campo", es CONVERTIRLA en un
+  //    componente equivalente ({empaqueId, cantidad} → {tipo:tipoNuevo,
+  //    refId, gramos:cantidad}) y sacarla de `empaquesUsados`.
+  //
+  // 2) Una preparación SOLO puede resolver componentes con
+  //    `tipo:'materia'`/`'preparacion'` (ver
+  //    getPreparacionComposicionPorGramo — no tiene ninguna rama para
+  //    'empaques'/'toppings'). Si el insumo que se mueve está
+  //    referenciado dentro de una preparación y `tipoNuevo` no es
+  //    'materia', esa referencia no se puede reescribir con ninguna
+  //    certeza — quedaría con un `tipo` que la preparación nunca sabe
+  //    resolver. Es una restricción ESTRUCTURAL, no un desajuste
+  //    transitorio: se detecta ANTES de mutar nada, y si aparece se
+  //    rechaza el movimiento COMPLETO (nada se mueve a medias) devolviendo
+  //    qué preparación lo bloquea.
   function moverInsumoDeTipo(state, insumoId, tipoViejo, tipoNuevo) {
     var origen = state[tipoViejo] || [];
     var idx = origen.findIndex(function (x) { return x.id === insumoId; });
-    if (idx === -1) return false;
+    if (idx === -1) return { ok: false, bloqueos: [] };
+
+    var bloqueos = [];
+    if (tipoNuevo !== 'materia') {
+      (state.preparaciones || []).forEach(function (prep) {
+        (prep.componentes || []).some(function (c) {
+          if (c.refId === insumoId && c.tipo === tipoViejo) {
+            bloqueos.push({
+              tipo: 'preparacion', id: prep.id, nombre: prep.nombre,
+              motivo: 'una preparación solo puede referenciar materia prima — no puede pasar a "' + tipoNuevo + '"'
+            });
+            return true; // un bloqueo por preparación alcanza, no hace falta contar cada componente repetido
+          }
+          return false;
+        });
+      });
+    }
+    if (bloqueos.length) return { ok: false, bloqueos: bloqueos };
+
     var registro = origen[idx];
     origen.splice(idx, 1);
     state[tipoNuevo] = state[tipoNuevo] || [];
     state[tipoNuevo].push(registro);
-    function reclasificar(lista) {
+
+    function reclasificarComponentes(lista) {
       (lista || []).forEach(function (item) {
         (item.componentes || []).forEach(function (c) {
           if (c.refId === insumoId && c.tipo === tipoViejo) c.tipo = tipoNuevo;
         });
       });
     }
-    reclasificar(state.productos);
-    reclasificar(state.preparaciones);
-    return true;
+    reclasificarComponentes(state.productos);
+    reclasificarComponentes(state.preparaciones);
+
+    // B0: empaquesUsados[] solo existe en `state.empaques` — convertir
+    // hacia otro bucket, nunca desde otro bucket hacia empaques (esa
+    // dirección no tiene una estructura "empaquesUsados" equivalente en
+    // materia/toppings que convertir hacia).
+    if (tipoViejo === 'empaques') {
+      (state.productos || []).forEach(function (p) {
+        if (!(p.empaquesUsados || []).length) return;
+        var quedan = [];
+        (p.empaquesUsados || []).forEach(function (e) {
+          if (e.empaqueId === insumoId) {
+            p.componentes = p.componentes || [];
+            p.componentes.push({ tipo: tipoNuevo, refId: insumoId, gramos: Number(e.cantidad) || 0 });
+          } else {
+            quedan.push(e);
+          }
+        });
+        p.empaquesUsados = quedan;
+      });
+    }
+
+    return { ok: true, bloqueos: [] };
   }
 
   return {

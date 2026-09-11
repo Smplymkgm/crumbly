@@ -2400,7 +2400,18 @@ function saveInsumo() {
     // registro de colección Y reescribe el `tipo` de cada componente de
     // receta que lo referencia — sin eso, las recetas seguirían
     // buscando en la colección vieja y su costo caería a $0 en silencio.
-    if (cambiaTipo) CrumblyCore.moverInsumoDeTipo(state, editId, editTipo, bucketNuevo);
+    // B0 (Ronda 9): puede rehusarse (una preparación no puede resolver
+    // 'empaques'/'toppings') — en ese caso NO mueve nada y avisa qué lo
+    // bloquea; el resto de los campos (nombre, costo...) ya se guardaron
+    // arriba, así que no se pierden por el bloqueo.
+    if (cambiaTipo) {
+      const resultado = CrumblyCore.moverInsumoDeTipo(state, editId, editTipo, bucketNuevo);
+      if (!resultado.ok) {
+        alert('No se pudo cambiar el tipo de "' + nombre + '":\n\n' +
+          resultado.bloqueos.map(b => '· "' + b.nombre + '": ' + b.motivo).join('\n') +
+          '\n\nEl insumo se quedó en ' + TIPO_INSUMO_LABEL[editTipo] + '. El resto de los cambios sí se guardó.');
+      }
+    }
   } else {
     // Bucket = qué es (materia prima vs empaque), elegido a propósito en
     // "Tipo de insumo" — independiente de "Tipo de medición" (cómo se

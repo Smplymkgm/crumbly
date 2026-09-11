@@ -3161,8 +3161,8 @@ test('CRITERIO: mover un insumo de empaques a materia preserva su id, lo mueve d
   const costoAntesP2 = C.getCostoProducto(s.productos[1], s);
   const desgloseAntesP1 = C.getCostoProductoDesglosado(s.productos[0], s);
 
-  const ok = C.moverInsumoDeTipo(s, 'ins-x', 'empaques', 'materia');
-  assert.strictEqual(ok, true);
+  const r = C.moverInsumoDeTipo(s, 'ins-x', 'empaques', 'materia');
+  assert.strictEqual(r.ok, true);
 
   assert.strictEqual(s.empaques.find(x => x.id === 'ins-x'), undefined, 'ya no está en empaques');
   const movido = s.materia.find(x => x.id === 'ins-x');
@@ -3211,8 +3211,8 @@ test('CRITERIO: una referencia anidada dentro de una preparación también sobre
   // resuelva); solo la harina contribuye costo: (100/150) * 5
   assert.ok(Math.abs(antesDeMover.costoPorGramo - (100 / 150) * 5) < 1e-9, 'antes de mover, ins-y no resuelve — solo cuenta la harina');
 
-  const ok = C.moverInsumoDeTipo(s, 'ins-y', 'empaques', 'materia');
-  assert.strictEqual(ok, true);
+  const r = C.moverInsumoDeTipo(s, 'ins-y', 'empaques', 'materia');
+  assert.strictEqual(r.ok, true);
 
   const despuesDeMover = C.getPreparacionCosto(s, 'prep1');
   // (100g*5 + 50g*3600) / gramosObtenidos(150) = (500+180000)/150 = 1203.333...
@@ -3222,10 +3222,11 @@ test('CRITERIO: una referencia anidada dentro de una preparación también sobre
   assert.ok(costoP3 > 0 && Number.isFinite(costoP3), 'el producto que usa la preparación anidada también ve el costo correcto');
 });
 
-test('moverInsumoDeTipo: id inexistente en el bucket viejo no rompe nada (false, sin efecto)', () => {
+test('moverInsumoDeTipo: id inexistente en el bucket viejo no rompe nada (ok:false, sin efecto)', () => {
   const s = C.emptyState();
-  const ok = C.moverInsumoDeTipo(s, 'no-existe', 'empaques', 'materia');
-  assert.strictEqual(ok, false);
+  const r = C.moverInsumoDeTipo(s, 'no-existe', 'empaques', 'materia');
+  assert.strictEqual(r.ok, false);
+  assert.deepStrictEqual(r.bloqueos, []);
 });
 
 console.log('\n== A2 (Ronda 8): insumos duplicados y huérfanos ==');
@@ -3377,6 +3378,85 @@ test('getFoodCostPct/getPaperCostPct reflejan el mismo movimiento — sin criter
   const desgloseEnVivo = C.getCostoProductoDesglosado(s.productos[0], s);
   assert.strictEqual(desgloseEnVivo.costoAlimento, 1000);
   assert.strictEqual(desgloseEnVivo.costoEmpaque, 0);
+});
+
+console.log('\n== B0 (Ronda 9): los empaques entran a las recetas por dos caminos ==');
+
+test('CRITERIO: un insumo en empaquesUsados de dos productos, movido a materia, conserva el id, sale de empaquesUsados, aparece como componente, y el costo total no cambia', () => {
+  const s = C.emptyState();
+  s.empaques.push({ id: 'caja-x', nombre: 'Caja', unidad: 'unidad', costo: 500, cantidad: 100, minimo: 10 });
+  s.productos.push({ id: 'p1', nombre: 'Waffle Brasil', precio: 15000, componentes: [], empaquesUsados: [{ empaqueId: 'caja-x', cantidad: 1 }] });
+  s.productos.push({ id: 'p2', nombre: 'Waffle NY', precio: 16000, componentes: [], empaquesUsados: [{ empaqueId: 'caja-x', cantidad: 2 }] });
+
+  const costoAntesP1 = C.getCostoProducto(s.productos[0], s);
+  const costoAntesP2 = C.getCostoProducto(s.productos[1], s);
+  assert.strictEqual(costoAntesP1, 500);
+  assert.strictEqual(costoAntesP2, 1000);
+
+  const r = C.moverInsumoDeTipo(s, 'caja-x', 'empaques', 'materia');
+  assert.strictEqual(r.ok, true);
+
+  assert.strictEqual(s.materia.find(x => x.id === 'caja-x').id, 'caja-x', 'id preservado');
+  assert.strictEqual(s.empaques.find(x => x.id === 'caja-x'), undefined);
+
+  assert.deepStrictEqual(s.productos[0].empaquesUsados, [], 'la entrada salió de empaquesUsados');
+  assert.deepStrictEqual(s.productos[1].empaquesUsados, []);
+  assert.deepStrictEqual(s.productos[0].componentes, [{ tipo: 'materia', refId: 'caja-x', gramos: 1 }], 'y apareció como componente equivalente');
+  assert.deepStrictEqual(s.productos[1].componentes, [{ tipo: 'materia', refId: 'caja-x', gramos: 2 }]);
+
+  assert.strictEqual(C.getCostoProducto(s.productos[0], s), costoAntesP1, 'costo total de p1 IDÉNTICO');
+  assert.strictEqual(C.getCostoProducto(s.productos[1], s), costoAntesP2, 'costo total de p2 IDÉNTICO');
+});
+
+test('CRITERIO: un insumo que aparece por los dos caminos a la vez (componentes Y empaquesUsados) también conserva el costo total', () => {
+  const s = C.emptyState();
+  s.empaques.push({ id: 'sticker', nombre: 'Sticker', unidad: 'unidad', costo: 100, cantidad: 500, minimo: 50 });
+  s.productos.push({
+    id: 'p1', nombre: 'Croffle Brasil', precio: 9000,
+    componentes: [{ tipo: 'empaques', refId: 'sticker', gramos: 1 }],
+    empaquesUsados: [{ empaqueId: 'sticker', cantidad: 2 }]
+  });
+  const costoAntes = C.getCostoProducto(s.productos[0], s); // 1*100 + 2*100 = 300
+  assert.strictEqual(costoAntes, 300);
+
+  const r = C.moverInsumoDeTipo(s, 'sticker', 'empaques', 'materia');
+  assert.strictEqual(r.ok, true);
+
+  assert.strictEqual(s.productos[0].empaquesUsados.length, 0);
+  // el componente original se reclasificó (tipo:'materia'), y se agregó
+  // uno nuevo por la conversión de empaquesUsados — dos líneas, mismo total.
+  assert.strictEqual(s.productos[0].componentes.length, 2);
+  assert.ok(s.productos[0].componentes.every(c => c.tipo === 'materia' && c.refId === 'sticker'));
+  assert.strictEqual(C.getCostoProducto(s.productos[0], s), costoAntes);
+});
+
+test('CRITERIO: mover un insumo referenciado dentro de una preparación HACIA empaques/toppings se bloquea (una preparación no puede resolverlo)', () => {
+  const s = C.emptyState();
+  s.materia.push({ id: 'harina', nombre: 'Harina', unidad: 'g', costo: 5, cantidad: 1000, minimo: 100 });
+  s.preparaciones.push({
+    id: 'prep1', nombre: 'Base', modo: 'directo', rendimientoPct: 100,
+    componentes: [{ tipo: 'materia', refId: 'harina', gramos: 200 }]
+  });
+  s.productos.push({ id: 'p1', nombre: 'Waffle', precio: 10000, componentes: [{ tipo: 'preparacion', refId: 'prep1', gramos: 200 }] });
+
+  const antes = JSON.parse(JSON.stringify(s));
+  const r = C.moverInsumoDeTipo(s, 'harina', 'materia', 'empaques');
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.bloqueos.length, 1);
+  assert.strictEqual(r.bloqueos[0].tipo, 'preparacion');
+  assert.strictEqual(r.bloqueos[0].id, 'prep1');
+  assert.deepStrictEqual(s, antes, 'nada se movió — ni el registro, ni ningún componente');
+});
+
+test('mover hacia materia SIEMPRE es seguro para preparaciones (nunca se bloquea en esa dirección)', () => {
+  const s = C.emptyState();
+  s.empaques.push({ id: 'croissant', nombre: 'Croissant', unidad: 'unidad', costo: 3600, cantidad: 50, minimo: 5 });
+  s.preparaciones.push({
+    id: 'prep1', nombre: 'Base', modo: 'directo', rendimientoPct: 100,
+    componentes: [{ tipo: 'materia', refId: 'croissant', gramos: 1 }]
+  });
+  const r = C.moverInsumoDeTipo(s, 'croissant', 'empaques', 'materia');
+  assert.strictEqual(r.ok, true);
 });
 
 console.log('\n== Resumen ==');
