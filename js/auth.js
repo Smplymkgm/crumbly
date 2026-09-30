@@ -226,9 +226,13 @@
     });
   }
 
+  // scope 'local': cierra SOLO la sesión de este dispositivo. El default de
+  // supabase-js ('global') revoca las sesiones de esa cuenta en TODOS los
+  // dispositivos — con caja y cocina usando la misma cuenta, cerrar sesión
+  // (o un login fallido) en uno echaba al otro a mitad del turno.
   function signOutSupabase_() {
     try {
-      return Promise.resolve(getSupabase().auth.signOut()).catch(function () {});
+      return Promise.resolve(getSupabase().auth.signOut({ scope: 'local' })).catch(function () {});
     } catch (e) {
       return Promise.resolve(); // sin cliente de Supabase no hay nada que cerrar
     }

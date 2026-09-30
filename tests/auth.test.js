@@ -81,8 +81,9 @@ function fakeSupabase(opts) {
         sesionAbierta = true;
         return Promise.resolve({ data: { user: { email: email.toUpperCase() }, session: {} }, error: null });
       },
-      signOut() {
+      signOut(opts) {
         calls.signOut++;
+        calls.signOutScope = opts && opts.scope;
         sesionAbierta = false;
         return Promise.resolve({ error: null });
       }
@@ -311,6 +312,8 @@ test('logout también cierra la sesión de Supabase', async () => {
   auth.logout(mockFetch([{ body: { ok: true } }]));
   assert.strictEqual(sb.calls.signOut, 1);
   assert.strictEqual(sb.sesionAbierta, false);
+  // 'local': no revoca la sesión de la misma cuenta en otros dispositivos
+  assert.strictEqual(sb.calls.signOutScope, 'local');
 });
 
 test('logout sin supabase-js cargado no revienta', () => {
