@@ -1312,6 +1312,7 @@ textarea.field{height:auto}
 <script src="js/rowsync.js"></script>
 <script src="js/sync.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/supabaseSync.js"></script>
 <script src="js/auth.js"></script>
 <script>
 let state = CrumblyCore.emptyState();
@@ -1460,10 +1461,100 @@ let syncPushTimer = null;
 function schedulePush() {
   if (!state.config.lastSync) return;
   if (!auth.isAuthenticated()) return;
+  // Sin base de Supabase (este dispositivo nunca hizo un pull de Supabase
+  // con éxito) un push subiría TODO el state local, pisando lo del
+  // servidor con una copia posiblemente vieja — se espera al primer pull.
+  if (usaSupabase && !loadSupabaseBase()) return;
   clearTimeout(syncPushTimer);
   syncPushTimer = setTimeout(pushInBackground, 900);
 }
+
+/* ─── Backend Supabase (migración, ver supabase/migrations y js/supabaseSync.js) ───
+   Se elige POR DISPOSITIVO con localStorage 'crumbly-backend' = 'supabase'
+   para probar antes del corte; el resto sigue contra Sheets. */
+// ponytail: al corte, el default pasa a 'supabase'; el interruptor se borra cuando se apague Sheets.
+const usaSupabase = (() => { try { return localStorage.getItem('crumbly-backend') === 'supabase'; } catch (e) { return false; } })();
+
+// La "base" de Supabase: copia PROFUNDA del state tal cual quedó en la
+// última sincronización exitosa de este dispositivo — contra ella
+// CrumblySupabaseSync.push decide qué filas cambiaron (solo esas se
+// suben). Mismo espíritu que `crumbly-catalog-base`, pero con las 12
+// colecciones + config.
+const SUPABASE_BASE_KEY = 'crumbly-supabase-base';
+function loadSupabaseBase() {
+  try { const raw = localStorage.getItem(SUPABASE_BASE_KEY); return raw ? JSON.parse(raw) : null; }
+  catch (e) { return null; }
+}
+function saveSupabaseBase(s) {
+  try { localStorage.setItem(SUPABASE_BASE_KEY, JSON.stringify(s)); }
+  catch (e) { /* sin base, schedulePush no empuja hasta el próximo pull — nunca un push completo a ciegas */ }
+}
+function copiaParaSync_() {
+  return JSON.parse(JSON.stringify(stateSinConteoEnProgreso()));
+}
+
+// Sube lo que cambió desde la base. Lo enviado se copia ANTES de mandar:
+// si el usuario edita mientras el push está en vuelo, esa edición no
+// queda marcada como sincronizada por accidente (la base nueva es lo que
+// realmente se envió, no el state de ese momento).
+async function pushSupabase_() {
+  const enviado = copiaParaSync_();
+  const idsABorrar = CrumblySync.getBorradosPendientes();
+  const r = await CrumblySupabaseSync.push(auth.getSupabase(), enviado, idsABorrar, loadSupabaseBase());
+  if (!r.ok) return r;
+  CrumblySync.limpiarBorradosPendientes(idsABorrar);
+  state.config.lastSync = r.ts;
+  enviado.config.lastSync = r.ts; // si no, el próximo push vería config "cambiado" solo por lastSync
+  saveSupabaseBase(enviado);
+  try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
+  return r;
+}
+
+// Pull de Supabase. Si ya hay base, primero sube lo local pendiente: así
+// el pull que viene después no pisa ediciones propias sin sincronizar
+// (cada fila la gana el último que escribió — lo que reemplaza a
+// mergeCatalogs en este backend).
+async function pullSupabase_() {
+  if (loadSupabaseBase()) {
+    const p = await pushSupabase_();
+    if (!p.ok) return p;
+  }
+  const r = await CrumblySupabaseSync.pull(auth.getSupabase());
+  if (!r.ok) return r;
+  // Sin fila de config = Supabase todavía vacío (falta migrarASupabase).
+  // Aplicarlo vaciaría los datos locales de este dispositivo.
+  if (r.state.schemaVersion === undefined) return { ok: false, error: 'Supabase todavía no tiene datos (falta la migración)' };
+  return r;
+}
+function aplicarPullSupabase_(remoto) {
+  state = migrarState_(remoto);
+  restaurarConteoEnProgresoLocal();
+  state.config.lastSync = new Date().toISOString();
+  saveSupabaseBase(copiaParaSync_());
+  try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
+}
+
+// Corte único Sheets → Supabase. Se corre A MANO desde la consola, una
+// sola vez, con sesión iniciada: `await migrarASupabase()`. Lee el
+// Sheet con el camino de hoy y lo sube entero; migrarDesdeState se niega
+// si Supabase ya tiene datos (salvo { forzar: true }) y verifica conteos.
+async function migrarASupabase(opciones) {
+  const r = await CrumblySync.pull(auth.getBackendUrl(), auth.getToken());
+  if (!r.ok || !r.state) throw new Error('No se pudo leer el Sheet: ' + (r.error || 'sin datos'));
+  const { conteoEnProgreso, ...limpio } = migrarState_(r.state);
+  return CrumblySupabaseSync.migrarDesdeState(auth.getSupabase(), limpio, opciones);
+}
+
 function pushInBackground() {
+  if (usaSupabase) {
+    pushSupabase_()
+      .then(r => {
+        if (!r.ok) { updateSyncStatus('Error al sincronizar: ' + (r.error || 'desconocido'), true); return; }
+        updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
+      })
+      .catch(() => updateSyncStatus('Sin conexión con el backend — los cambios quedan solo en este navegador por ahora', true));
+    return;
+  }
   const usuario = (auth.getCurrentUser() && auth.getCurrentUser().email) || '';
   const base = loadCatalogBase();
   CrumblySync.push(auth.getBackendUrl(), auth.getToken(), stateSinConteoEnProgreso(), undefined, usuario, base.version)
@@ -1589,6 +1680,16 @@ async function afterLogin_(successMsg) {
   hideLoginGate();
   applyUsuarioHeader_(auth.getCurrentUser());
   refreshAll();
+  if (usaSupabase) {
+    let r;
+    try { r = await pullSupabase_(); } catch (e) { r = { ok: false, error: e.message }; }
+    if (!r.ok) { showToast('No se pudo traer los datos: ' + (r.error || 'revisá tu conexión')); return; }
+    aplicarPullSupabase_(r.state);
+    refreshAll();
+    updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
+    if (successMsg) showToast(successMsg);
+    return;
+  }
   const r = await CrumblySync.pull(auth.getBackendUrl(), auth.getToken());
   if (!r.ok || !r.state) { showToast('No se pudo traer los datos: ' + (r.error || 'revisá tu conexión')); return; }
   state = migrarState_(r.state);
@@ -1646,6 +1747,17 @@ function cerrarSesion() {
 function pullOnLoad() {
   if (!state.config.lastSync) return;
   if (!auth.isAuthenticated()) return;
+  if (usaSupabase) {
+    pullSupabase_()
+      .then(r => {
+        if (!r.ok) { updateSyncStatus('Error al sincronizar: ' + (r.error || 'desconocido'), true); return; }
+        aplicarPullSupabase_(r.state);
+        updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
+        refreshAll();
+      })
+      .catch(() => updateSyncStatus('Trabajando sin conexión con el backend — se sincronizará cuando vuelva la red', true));
+    return;
+  }
   CrumblySync.pull(auth.getBackendUrl(), auth.getToken())
     .then(r => {
       if (!r.ok || !r.state) return;
@@ -5229,7 +5341,21 @@ if (auth.isAuthenticated()) {
   // Ya hay sesión guardada en este dispositivo — arranca directo.
   applyUsuarioHeader_(auth.getCurrentUser());
   refreshAll();
-  pullOnLoad();
+  if (usaSupabase) {
+    // Un dispositivo que entró antes de Supabase tiene la sesión de Apps
+    // Script pero no la de Supabase (o se le venció el refresh token) —
+    // hay que volver a entrar con Google. Sin red / sin supabase-js no se
+    // echa a nadie: se sigue offline con los datos locales.
+    Promise.resolve()
+      .then(() => auth.getSupabase().auth.getSession())
+      .then(({ data }) => {
+        if (data && data.session) pullOnLoad();
+        else { auth.logout(); showLoginGate(); }
+      })
+      .catch(() => pullOnLoad());
+  } else {
+    pullOnLoad();
+  }
 } else {
   // Sin sesión: pedir login antes de mostrar la app.
   showLoginGate();

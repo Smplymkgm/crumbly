@@ -428,6 +428,7 @@
     getSyncSizeHistory: getSyncSizeHistory,
     marcarBorradoPendiente: marcarBorradoPendiente,
     getBorradosPendientes: getBorradosPendientes,
+    limpiarBorradosPendientes: limpiarBorradosPendientes_,
     getBackendCredenciales: getBackendCredenciales,
     setBackendCredenciales_: setBackendCredenciales_,
     getBackendTokenGuardado: getBackendTokenGuardado,
