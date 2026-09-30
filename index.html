@@ -1470,10 +1470,11 @@ function schedulePush() {
 }
 
 /* ─── Backend Supabase (migración, ver supabase/migrations y js/supabaseSync.js) ───
-   Se elige POR DISPOSITIVO con localStorage 'crumbly-backend' = 'supabase'
-   para probar antes del corte; el resto sigue contra Sheets. */
-// ponytail: al corte, el default pasa a 'supabase'; el interruptor se borra cuando se apague Sheets.
-const usaSupabase = (() => { try { return localStorage.getItem('crumbly-backend') === 'supabase'; } catch (e) { return false; } })();
+   Corte hecho el 2026-09-30: Supabase es el default. localStorage
+   'crumbly-backend' = 'sheets' vuelve un dispositivo a Sheets (salida de
+   emergencia — lo que se cargue ahí NO llega a Supabase). */
+// ponytail: el interruptor se borra cuando se apague Sheets del todo.
+const usaSupabase = (() => { try { return localStorage.getItem('crumbly-backend') !== 'sheets'; } catch (e) { return true; } })();
 
 // La "base" de Supabase: copia PROFUNDA del state tal cual quedó en la
 // última sincronización exitosa de este dispositivo — contra ella
