@@ -46,13 +46,17 @@
   var PAGINA = 1000;
   // `filtrar(query)` agrega los filtros de cada caso (filas vivas, o
   // cambios desde una fecha); devuelve las filas crudas de PostgREST.
-  function leerPaginado(client, coleccion, columnas, filtrar, desde, acumuladas) {
-    return filtrar(client.from(coleccion).select(columnas)).order('id').range(desde, desde + PAGINA - 1)
+  // Por id (keyset: "id > el último que llegó"), no por offset: con offset,
+  // un borrado entre dos páginas corría las filas y una se salteaba.
+  function leerPaginado(client, coleccion, columnas, filtrar, ultimoId, acumuladas) {
+    var q = filtrar(client.from(coleccion).select(columnas));
+    if (ultimoId != null) q = q.gt('id', ultimoId);
+    return q.order('id').limit(PAGINA)
       .then(function (res) {
         if (res.error) throw new Error(coleccion + ': ' + res.error.message);
         var filas = res.data || [];
         if (!filas.length) return acumuladas;
-        return leerPaginado(client, coleccion, columnas, filtrar, desde + filas.length, acumuladas.concat(filas));
+        return leerPaginado(client, coleccion, columnas, filtrar, filas[filas.length - 1].id, acumuladas.concat(filas));
       });
   }
   function soloVivas(q) { return q.is('deleted_at', null); }
@@ -79,7 +83,7 @@
   // resuelve solo.
   function pull(client) {
     var lecturas = COLECCIONES.map(function (coleccion) {
-      return leerPaginado(client, coleccion, 'data,updated_at', soloVivas, 0, []).then(function (filas) {
+      return leerPaginado(client, coleccion, 'id,data,updated_at', soloVivas, null, []).then(function (filas) {
         return { coleccion: coleccion, filas: filas };
       });
     });
@@ -112,7 +116,7 @@
     var corte = new Date(Date.parse(desde) - MARGEN_MS).toISOString();
     var desdeCorte = function (q) { return q.gte('updated_at', corte); };
     var lecturas = COLECCIONES.map(function (coleccion) {
-      return leerPaginado(client, coleccion, 'id,data,deleted_at,updated_at', desdeCorte, 0, []);
+      return leerPaginado(client, coleccion, 'id,data,deleted_at,updated_at', desdeCorte, null, []);
     });
     return Promise.all(lecturas.concat([leerConfig(client)])).then(function (res) {
       var cambios = {}, hasta = desde;
@@ -184,6 +188,10 @@
   // [id,...]}` de lo que ESTE dispositivo borró de verdad. Se traduce a un
   // soft-delete real (`deleted_at = now()`), no a una fila de lápida
   // sintética.
+  // ponytail: cada fila la gana el último que escribe (fila entera). El stock vive dentro de cada
+  // insumo, así que dos dispositivos moviendo stock del MISMO insumo en el mismo segundo se pisan.
+  // Regla de uso: ventas/mermas/lotes desde un solo dispositivo. Upgrade si hace falta: update
+  // condicionado por updated_at (compare-and-swap) o una RPC que aplique el stock como deltas.
   function push(client, state, idsABorrar, base) {
     var ahora = new Date().toISOString();
     var borrados = {};
@@ -203,16 +211,22 @@
       var union = explicitos.concat(ausentes.filter(function (id) { return explicitos.indexOf(id) === -1; }));
       if (union.length) borrados[col] = union;
     }
+    var enviados = {};
     var escrituras = COLECCIONES.map(function (coleccion) {
       var enBase = null;
       if (base) {
         enBase = {};
         (base[coleccion] || []).forEach(function (r) { if (r && r.id != null) enBase[r.id] = jsonEstable(r); });
       }
-      var filas = (state[coleccion] || []).filter(function (registro) {
+      var cambiados = (state[coleccion] || []).filter(function (registro) {
         return !enBase || enBase[registro.id] !== jsonEstable(registro);
-      }).map(function (registro) {
-        return { id: registro.id, data: registro, updated_at: ahora };
+      });
+      if (cambiados.length) enviados[coleccion] = cambiados;
+      // deleted_at: null — un id que vuelve (ej. insumo reclasificado a
+      // empaques y de vuelta a materia) revive su fila; si no, quedaba
+      // borrado para siempre.
+      var filas = cambiados.map(function (registro) {
+        return { id: registro.id, data: registro, deleted_at: null, updated_at: ahora };
       });
       var p = filas.length
         ? client.from(coleccion).upsert(filas).then(function (res) {
@@ -230,17 +244,33 @@
       }
       return p;
     });
+    // Config se sube CLAVE POR CLAVE: solo las claves que cambiaron respecto
+    // de la base, encima de lo que el servidor tiene ahora. Subir el objeto
+    // entero revertía en silencio lo que otro dispositivo cambió en otra
+    // clave (ej. factorPrestacional). schema_version nunca baja.
     var configPayload = configDeState(state);
-    var configCambio = !base ||
-      jsonEstable(configPayload) !== jsonEstable(configDeState(base)) ||
-      state.schemaVersion !== base.schemaVersion;
-    var escrituraConfig = !configCambio ? Promise.resolve() : client.from('config').upsert({
-      id: 'singleton', data: configPayload, schema_version: state.schemaVersion, updated_at: ahora
+    var configBase = base ? configDeState(base) : null;
+    var clavesCambiadas = Object.keys(configPayload).concat(configBase ? Object.keys(configBase) : [])
+      .filter(function (k, i, arr) { return arr.indexOf(k) === i; })
+      .filter(function (k) { return !configBase || jsonEstable(configPayload[k]) !== jsonEstable(configBase[k]); });
+    var configCambio = !base || clavesCambiadas.length > 0 || state.schemaVersion !== base.schemaVersion;
+    var configFinal = null;
+    var escrituraConfig = !configCambio ? Promise.resolve() : (base ? leerConfig(client) : Promise.resolve(null)).then(function (actual) {
+      var data = base && actual ? Object.assign({}, actual.data) : {};
+      clavesCambiadas.forEach(function (k) {
+        if (configPayload[k] === undefined) delete data[k];
+        else data[k] = configPayload[k];
+      });
+      var version = Math.max(Number(state.schemaVersion) || 0, Number(actual && actual.schema_version) || 0) || state.schemaVersion;
+      configFinal = { data: data, schema_version: version };
+      return client.from('config').upsert({ id: 'singleton', data: data, schema_version: version, updated_at: ahora });
     }).then(function (res) {
-      if (res.error) throw new Error('config: ' + res.error.message);
+      if (res && res.error) throw new Error('config: ' + res.error.message);
     });
     return Promise.all(escrituras.concat([escrituraConfig])).then(function () {
-      return { ok: true, ts: ahora };
+      // Lo que realmente viajó — el caller parchea SU base con esto (y no con
+      // el state entero: mientras el push estaba en vuelo pudo llegar algo por realtime).
+      return { ok: true, ts: ahora, enviados: enviados, borrados: borrados, config: configFinal };
     }).catch(function (err) {
       return { ok: false, error: err.message };
     });

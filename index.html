@@ -1458,7 +1458,18 @@ function loadState() {
 // P0-4: antes fallaba en silencio (catch vacío). Ahora, si localStorage
 // está lleno o no disponible, avisa de forma persistente y ofrece un
 // respaldo inmediato en vez de perder la venta sin que nadie se entere.
+// Las subidas (comprobantes, fotos) siguen yendo por Apps Script, cuya
+// sesión vence a los 90 días aunque la de Supabase siga viva.
+function mensajeErrorSubida_(err) {
+  return /sesi[oó]n inv[aá]lida/i.test(err.message)
+    ? 'tu sesión para subir archivos venció. Cerrá sesión (botón de perfil) y volvé a entrar con Google.'
+    : err.message;
+}
+// Cuántas veces se guardó un cambio local — pullSupabase_ lo mira para no
+// reemplazar el state con un pull completo si hubo una edición mientras bajaba.
+let mutacionesLocales = 0;
 function saveState() {
+  mutacionesLocales++;
   try {
     localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso()));
     saveConteoEnProgresoLocal();
@@ -1506,13 +1517,26 @@ const usaSupabase = (() => { try { return localStorage.getItem('crumbly-backend'
 // suben). Mismo espíritu que `crumbly-catalog-base`, pero con las 12
 // colecciones + config.
 const SUPABASE_BASE_KEY = 'crumbly-supabase-base';
+// La base vive en memoria (una sola copia, sin re-parsear en cada evento de
+// realtime) y se persiste en localStorage para la próxima vez que se abra.
+let baseEnMemoria;
 function loadSupabaseBase() {
-  try { const raw = localStorage.getItem(SUPABASE_BASE_KEY); return raw ? JSON.parse(raw) : null; }
-  catch (e) { return null; }
+  if (baseEnMemoria === undefined) {
+    try { const raw = localStorage.getItem(SUPABASE_BASE_KEY); baseEnMemoria = raw ? JSON.parse(raw) : null; }
+    catch (e) { baseEnMemoria = null; }
+  }
+  return baseEnMemoria;
 }
 function saveSupabaseBase(s) {
+  baseEnMemoria = s;
   try { localStorage.setItem(SUPABASE_BASE_KEY, JSON.stringify(s)); }
-  catch (e) { /* sin base, schedulePush no empuja hasta el próximo pull — nunca un push completo a ciegas */ }
+  catch (e) {
+    // Almacenamiento lleno: esta sesión sigue bien (base en memoria), pero
+    // una base VIEJA guardada haría que la próxima apertura compare contra
+    // datos equivocados — se borra, y al reabrir se re-baja todo limpio.
+    try { localStorage.removeItem(SUPABASE_BASE_KEY); } catch (e2) {}
+    showPersistentError('El almacenamiento del navegador está lleno. La app sigue sincronizando, pero conviene liberar espacio (o exportar un respaldo) antes de cerrarla.', 'Exportar respaldo ahora', () => { exportVentasCSV(); exportInventarioCSV(); });
+  }
 }
 function copiaParaSync_() {
   return JSON.parse(JSON.stringify(stateSinConteoEnProgreso()));
@@ -1522,17 +1546,53 @@ function copiaParaSync_() {
 // si el usuario edita mientras el push está en vuelo, esa edición no
 // queda marcada como sincronizada por accidente (la base nueva es lo que
 // realmente se envió, no el state de ese momento).
+//
+// Al terminar, la base se PARCHEA solo con lo que viajó (filas enviadas,
+// ids borrados, config fusionada) — no se reemplaza con `enviado` entero:
+// mientras el push estaba en vuelo pudo llegar por realtime el cambio de
+// otro dispositivo (ej. un pedido marcado Listo), y reemplazarla lo borraba.
 async function pushSupabase_() {
   const enviado = copiaParaSync_();
   const idsABorrar = CrumblySync.getBorradosPendientes();
   const r = await CrumblySupabaseSync.push(auth.getSupabase(), enviado, idsABorrar, loadSupabaseBase());
   if (!r.ok) return r;
   CrumblySync.limpiarBorradosPendientes(idsABorrar);
+  const copia = v => JSON.parse(JSON.stringify(v));
+  const estable = CrumblySupabaseSync.jsonEstable;
+  const base = loadSupabaseBase();
+  Object.keys(r.enviados).forEach(col => {
+    base[col] = base[col] || [];
+    r.enviados[col].forEach(reg => {
+      const i = base[col].findIndex(x => x.id === reg.id);
+      if (i === -1) base[col].push(copia(reg)); else base[col][i] = copia(reg);
+    });
+  });
+  Object.keys(r.borrados).forEach(col => {
+    base[col] = (base[col] || []).filter(x => r.borrados[col].indexOf(x.id) === -1);
+  });
+  if (r.config) {
+    // La config que quedó en el servidor (mis claves + las de otros): la
+    // base la adopta, y el state también salvo en claves que edité recién.
+    Object.keys(r.config.data).forEach(k => {
+      if (estable(state[k]) === estable(enviado[k])) state[k] = copia(r.config.data[k]);
+      base[k] = copia(r.config.data[k]);
+    });
+    base.schemaVersion = r.config.schema_version;
+    if (!(state.schemaVersion > r.config.schema_version)) state.schemaVersion = r.config.schema_version;
+  }
   state.config.lastSync = r.ts;
-  enviado.config.lastSync = r.ts; // si no, el próximo push vería config "cambiado" solo por lastSync
-  saveSupabaseBase(enviado);
+  if (base.config) base.config.lastSync = r.ts; // lastSync es de este dispositivo: no cuenta como cambio a subir
+  saveSupabaseBase(base);
   try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
   return r;
+}
+// Push y pull nunca se superponen: uno en vuelo mientras el otro reemplaza
+// el state era la receta para perder una venta.
+let colaSync = Promise.resolve();
+function enCola_(fn) {
+  const p = colaSync.then(fn, fn);
+  colaSync = p.catch(() => {});
+  return p;
 }
 
 // Hasta qué `updated_at` del SERVIDOR ya bajó este dispositivo — el
@@ -1559,8 +1619,17 @@ async function pullSupabase_() {
       return { ok: true };
     }
   }
-  const r = await CrumblySupabaseSync.pull(sb);
-  if (!r.ok) return r;
+  // Pull completo. Si alguien guardó un cambio mientras bajaba, reemplazar
+  // el state lo perdería: se vuelve a subir y a bajar (hasta 3 veces).
+  let r;
+  for (let intento = 0; ; intento++) {
+    const antes = mutacionesLocales;
+    r = await CrumblySupabaseSync.pull(sb);
+    if (!r.ok) return r;
+    if (mutacionesLocales === antes) break;
+    if (intento === 2) return { ok: false, error: 'hubo cambios mientras se descargaba — se reintenta en la próxima sincronización' };
+    if (loadSupabaseBase()) { const p = await pushSupabase_(); if (!p.ok) return p; }
+  }
   // Sin fila de config = Supabase todavía vacío (falta migrarASupabase).
   // Aplicarlo vaciaría los datos locales de este dispositivo.
   if (r.state.schemaVersion === undefined) return { ok: false, error: 'Supabase todavía no tiene datos (falta la migración)' };
@@ -1591,11 +1660,13 @@ function aplicarCambiosSupabase_(r) {
     const sinPendiente = claves.every(k => estable(state[k]) === estable(base[k]));
     if (sinPendiente) {
       claves.forEach(k => { state[k] = cfg.data[k]; base[k] = JSON.parse(JSON.stringify(cfg.data[k])); });
-      if (cfg.schema_version != null) { state.schemaVersion = cfg.schema_version; base.schemaVersion = cfg.schema_version; }
+      // schemaVersion nunca baja: si este dispositivo ya migró a una versión
+      // más nueva, bajarla haría re-correr migraciones en cada carga.
+      if (cfg.schema_version != null && !(state.schemaVersion > cfg.schema_version)) { state.schemaVersion = cfg.schema_version; base.schemaVersion = cfg.schema_version; }
     }
   }
   state.config.lastSync = new Date().toISOString();
-  base.config = JSON.parse(JSON.stringify(state.config)); // lastSync es de este dispositivo: no cuenta como cambio a subir
+  if (base.config) base.config.lastSync = state.config.lastSync; // lastSync es de este dispositivo: no cuenta como cambio a subir
   saveSupabaseBase(base);
   saveSupabaseDesde(r.hasta);
   try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
@@ -1752,7 +1823,7 @@ async function migrarASupabase(opciones) {
 
 function pushInBackground() {
   if (usaSupabase) {
-    pushSupabase_()
+    enCola_(pushSupabase_)
       .then(r => {
         if (r.code === 'BORRADO_MASIVO') {
           showPersistentError('No se sincronizó: ' + r.error + '. Los cambios quedan en este dispositivo. Recargá la app; si vuelve a pasar, avisá antes de seguir.', 'Recargar', () => location.reload());
@@ -1892,7 +1963,7 @@ async function afterLogin_(successMsg) {
   refreshAll();
   if (usaSupabase) {
     let r;
-    try { r = await pullSupabase_(); } catch (e) { r = { ok: false, error: e.message }; }
+    try { r = await enCola_(pullSupabase_); } catch (e) { r = { ok: false, error: e.message }; }
     if (!r.ok) { showToast('No se pudo traer los datos: ' + (r.error || 'revisá tu conexión')); return; }
     refreshAll();
     updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
@@ -1958,7 +2029,7 @@ function pullOnLoad() {
   if (!state.config.lastSync) return;
   if (!auth.isAuthenticated()) return;
   if (usaSupabase) {
-    pullSupabase_()
+    enCola_(pullSupabase_)
       .then(r => {
         if (!r.ok) { updateSyncStatus('Error al sincronizar: ' + (r.error || 'desconocido'), true); return; }
         updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
@@ -2428,8 +2499,9 @@ function getAlertasCentro_() {
     sev: 4, texto: '"' + i.nombre + '" tiene stock negativo o faltante sin saldar',
     accion: () => { closeModal('modal-alertas'); navTo('inventario'); openInsumoModal(i.id); }
   }));
-  // 5 — la alarma de tamaño (X0): bloqueado pesa más que advertencia.
-  const sizeInfo = CrumblySync.getAlarmSizeInfo(stateSinConteoEnProgreso(), CrumblySync.getFaseConocida());
+  // 5 — la alarma de tamaño (X0): bloqueado pesa más que advertencia. Solo
+  // con Sheets: Supabase no tiene tope de celda.
+  const sizeInfo = usaSupabase ? { nivel: 'ok' } : CrumblySync.getAlarmSizeInfo(stateSinConteoEnProgreso(), CrumblySync.getFaseConocida());
   if (sizeInfo.nivel === 'bloqueado') alertas.push({
     sev: 1, texto: 'Sincronización BLOQUEADA por tamaño — ver Ajustes',
     accion: () => { closeModal('modal-alertas'); openModal('modal-ajustes'); }
@@ -3526,7 +3598,7 @@ async function onProductoFotoChange(e) {
     document.getElementById('p-foto-empty').style.display = 'none';
     labelEl.textContent = 'Subir foto';
   } catch (err) {
-    showToast('No se pudo subir la foto: ' + err.message);
+    showToast('No se pudo subir la foto: ' + mensajeErrorSubida_(err));
     labelEl.textContent = 'Subir foto';
     e.target.value = '';
   }
@@ -3895,7 +3967,7 @@ async function onComprobanteChange(e, labelId) {
   } catch (err) {
     label.textContent = 'Subir comprobante';
     setComprobanteValor(labelId, '');
-    showToast('No se pudo subir el comprobante: ' + err.message);
+    showToast('No se pudo subir el comprobante: ' + mensajeErrorSubida_(err));
   }
 }
 function decDraftQty() { ventaDraftQty = Math.max(1, ventaDraftQty - 1); document.getElementById('venta-draft-qty').textContent = ventaDraftQty; }

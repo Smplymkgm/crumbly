@@ -45,6 +45,8 @@ function fakeClient(tablas, maxRows) {
           gte: function (col, val) { filtros.push(r => r[col] != null && r[col] >= val); return q; },
           order: function (col) { orden = col; return q; },
           range: function (desde, hasta) { rango = [desde, hasta]; return q; },
+          gt: function (col, val) { filtros.push(r => r[col] > val); return q; },
+          limit: function (n) { rango = [0, n - 1]; return q; },
           maybeSingle: function () { const r = resolver(); return Promise.resolve({ data: r.data[0] || null, error: null }); },
           then: function (ok, err) { return Promise.resolve(resolver()).then(ok, err); }
         };
@@ -117,7 +119,7 @@ test('propaga un error de Postgres sin lanzar', async () => {
     return {
       select: function () {
         const q = {
-          is: function () { return q; }, order: function () { return q; }, range: function () { return q; },
+          is: function () { return q; }, order: function () { return q; }, range: function () { return q; }, limit: function () { return q; }, gt: function () { return q; },
           then: function (ok) { return Promise.resolve({ data: null, error: { message: 'tabla no existe' } }).then(ok); },
           eq: function () { return { maybeSingle: function () { return Promise.resolve({ data: null, error: null }); } }; }
         };
@@ -350,6 +352,50 @@ test('idsABorrar sigue funcionando con base', async () => {
   state.ventas = state.ventas.filter(v => v.id !== 'v1');
   await Sync.push(c, state, { ventas: ['v1'] }, BASE);
   assert.ok(c.tablas.ventas[0].deleted_at);
+});
+
+group('push: auditoría (revivir, config por clave, lo enviado)');
+
+test('CRITERIO: un id que vuelve (reclasificado ida y vuelta) revive su fila — deleted_at: null en el upsert', async () => {
+  const c = fakeClient({ materia: [{ id: 'm1', data: BASE.materia[0], deleted_at: '2026-09-30T10:00:00Z' }] });
+  const base = copia(BASE); base.materia = [BASE.materia[1]]; // m1 no estaba (se había movido a empaques)
+  await Sync.push(c, copia(BASE), undefined, base);
+  assert.strictEqual(c.tablas.materia.find(f => f.id === 'm1').deleted_at, null);
+});
+
+test('CRITERIO: config se fusiona CLAVE POR CLAVE — no revierte lo que otro dispositivo cambió en otra clave', async () => {
+  // En el servidor, otro dispositivo ya cambió factorPrestacional a 1.5.
+  const c = fakeClient({ config: [{ id: 'singleton', data: { config: { email: 'x@x.com', factorPrestacional: 1.38 }, otraClave: 'servidor' }, schema_version: 9 }] });
+  c.tablas.config[0].data.config.factorPrestacional = 1.5;
+  // Este dispositivo cambió SOLO la clave `categoriasComportamiento`.
+  const state = copia(BASE);
+  state.categoriasComportamiento = { Waffles: 'preparado' };
+  const r = await Sync.push(c, state, undefined, BASE);
+  assert.strictEqual(r.ok, true);
+  const data = c.tablas.config[0].data;
+  assert.deepStrictEqual(data.categoriasComportamiento, { Waffles: 'preparado' });
+  assert.strictEqual(data.config.factorPrestacional, 1.5, 'no pisó la clave config del otro dispositivo');
+  assert.strictEqual(data.otraClave, 'servidor');
+  assert.deepStrictEqual(r.config.data, data, 'devuelve la config final para que el caller la adopte');
+});
+
+test('schema_version nunca baja: un dispositivo con versión vieja no la retrocede', async () => {
+  const c = fakeClient({ config: [{ id: 'singleton', data: {}, schema_version: 11 }] });
+  const state = copia(BASE); state.schemaVersion = 10; // distinto de la base (9) → escribe config
+  await Sync.push(c, state, undefined, BASE);
+  assert.strictEqual(c.tablas.config[0].schema_version, 11);
+});
+
+test('devuelve exactamente lo que viajó (enviados y borrados), para parchear la base', async () => {
+  const c = fakeClient();
+  const state = copia(BASE);
+  state.materia[0].costo = 7;
+  state.ventas = state.ventas.filter(v => v.id !== 'v2');
+  const r = await Sync.push(c, state, undefined, BASE);
+  assert.deepStrictEqual(r.enviados.materia.map(x => x.id), ['m1']);
+  assert.ok(!r.enviados.ventas);
+  assert.deepStrictEqual(r.borrados.ventas, ['v2']);
+  assert.strictEqual(r.config, null, 'config sin cambios no viaja');
 });
 
 group('pull incremental (pullCambios)');
