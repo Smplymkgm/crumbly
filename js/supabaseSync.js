@@ -269,6 +269,7 @@
     isConfigured: isConfigured,
     pull: pull,
     push: push,
-    migrarDesdeState: migrarDesdeState
+    migrarDesdeState: migrarDesdeState,
+    jsonEstable: jsonEstable
   };
 });

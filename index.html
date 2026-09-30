@@ -88,6 +88,15 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 
 /* ─── Cards / pills / chips ─── */
 .card{background:var(--white);border:1px solid var(--line);border-radius:16px;padding:18px}
+.pedidos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin-bottom:10px}
+.pedido-card{display:flex;flex-direction:column;gap:10px}
+.pedido-card.listo{border-color:var(--success);box-shadow:inset 4px 0 0 var(--success)}
+.pedido-cabecera{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.pedido-nombre{font-size:var(--fs-h3);font-weight:var(--fw-bold);color:var(--ink);overflow-wrap:anywhere}
+.pedido-espera{font-size:var(--fs-sm);color:var(--muted);white-space:nowrap}
+.pedido-espera.tarde{color:var(--danger);font-weight:var(--fw-bold)}
+.pedido-items{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:var(--fs-body)}
+.pedido-nota{background:var(--bg);border-radius:10px;padding:8px 10px;font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--ink)}
 .card-title{font-weight:var(--fw-bold);font-size:var(--fs-h2);line-height:var(--lh-tight);color:var(--ink)}
 .page-title{font-weight:var(--fw-bold);font-size:var(--fs-h1);line-height:var(--lh-tight);color:var(--ink)}
 .pill-row{display:flex;gap:4px;background:var(--white);border:1px solid var(--line);border-radius:999px;padding:3px}
@@ -225,6 +234,7 @@ textarea.field{height:auto}
     </div>
     <button class="nav-item active" data-nav="dashboard" onclick="navTo('dashboard',this)"><i class="ph ph-squares-four"></i><span>Dashboard</span></button>
     <button class="nav-item" data-nav="caja" onclick="navTo('caja',this)"><i class="ph ph-cash-register"></i><span>Caja</span></button>
+    <button class="nav-item" data-nav="pedidos" onclick="navTo('pedidos',this)"><i class="ph ph-chef-hat"></i><span>Pedidos <b id="pedidos-badge"></b></span></button>
     <button class="nav-item" data-nav="inventario" onclick="navTo('inventario',this)"><i class="ph ph-package"></i><span>Inventario</span></button>
     <button class="nav-item" data-nav="productos" onclick="navTo('productos',this)"><i class="ph ph-cookie"></i><span>Productos</span></button>
     <button class="nav-item" data-nav="clientes" onclick="navTo('clientes',this)"><i class="ph ph-users"></i><span>Clientes</span></button>
@@ -598,6 +608,12 @@ textarea.field{height:auto}
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap" id="prod-chips"></div>
         <div id="prod-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px"></div>
+      </div>
+
+      <!-- PEDIDOS -->
+      <div class="page-view" id="page-pedidos">
+        <div class="page-title">Pedidos</div>
+        <div id="pedidos-list"></div>
       </div>
 
       <!-- CLIENTES -->
@@ -1129,6 +1145,11 @@ textarea.field{height:auto}
     </div>
 
     <div style="margin-bottom:16px">
+      <label class="field-label" for="venta-nota">Nota para quien prepara (opcional)</label>
+      <textarea id="venta-nota" class="field" rows="2" style="border-radius:12px" placeholder="Ej: sin maní, helado aparte"></textarea>
+    </div>
+
+    <div style="margin-bottom:16px">
       <label class="field-label">Método de pago</label>
       <div class="pill-row" id="venta-metodo-pago" style="margin-bottom:14px"></div>
       <div id="venta-comprobante-wrap" style="display:none">
@@ -1536,6 +1557,131 @@ function aplicarPullSupabase_(remoto) {
   state.config.lastSync = new Date().toISOString();
   saveSupabaseBase(copiaParaSync_());
   try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
+  iniciarRealtime_();
+}
+
+// Realtime: lo que otro dispositivo escribe llega al instante (pedidos
+// nuevos, cambios de estado, stock) sin recargar. Cada fila remota se
+// aplica al state Y a la base, así el próximo push no la reenvía como
+// cambio propio. Requiere las tablas en la publicación supabase_realtime
+// (supabase/migrations/0002_realtime.sql).
+let realtimeCanal = null;
+let refrescoRemotoTimer = null;
+function iniciarRealtime_() {
+  if (!usaSupabase || realtimeCanal) return;
+  let sb;
+  try { sb = auth.getSupabase(); } catch (e) { return; } // sin supabase-js (offline): el próximo pull lo reintenta
+  realtimeCanal = sb.channel('crumbly-cambios');
+  CrumblySupabaseSync.COLECCIONES.forEach(tabla => {
+    realtimeCanal.on('postgres_changes', { event: '*', schema: 'public', table: tabla }, p => aplicarFilaRemota_(tabla, p.new));
+  });
+  realtimeCanal.subscribe();
+}
+function detenerRealtime_() {
+  if (realtimeCanal) { realtimeCanal.unsubscribe(); realtimeCanal = null; }
+}
+function aplicarFilaRemota_(coleccion, fila) {
+  const base = loadSupabaseBase();
+  if (!fila || !fila.id || !base || !Array.isArray(state[coleccion])) return;
+  const estable = CrumblySupabaseSync.jsonEstable;
+  const iLocal = state[coleccion].findIndex(r => r.id === fila.id);
+  const local = iLocal === -1 ? null : state[coleccion][iLocal];
+  const enBase = (base[coleccion] || []).find(r => r.id === fila.id) || null;
+  // Edición propia todavía sin subir: gana la local (el push que viene
+  // la manda). Sin esto, el eco de un push anterior pisaría, por ejemplo,
+  // "Entregado" tocado un segundo después de "Listo".
+  if (local && (!enBase || estable(local) !== estable(enBase))) return;
+  const borrada = !!fila.deleted_at || !fila.data;
+  if (!borrada && local && estable(local) === estable(fila.data)) return; // eco de mi propio push
+  const reemplazar = (arr, dato) => {
+    const i = arr.findIndex(r => r.id === fila.id);
+    if (borrada) { if (i !== -1) arr.splice(i, 1); }
+    else if (i === -1) arr.push(dato);
+    else arr[i] = dato;
+  };
+  base[coleccion] = base[coleccion] || [];
+  reemplazar(state[coleccion], fila.data);
+  reemplazar(base[coleccion], JSON.parse(JSON.stringify(fila.data || null)));
+  saveSupabaseBase(base);
+  try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
+  if (coleccion === 'ventas' && !local && !borrada && fila.data.estado === 'pendiente') avisarPedidoNuevo_();
+  // Una venta llega junto con varias filas de stock — un solo refresco.
+  clearTimeout(refrescoRemotoTimer);
+  refrescoRemotoTimer = setTimeout(refreshAll, 250);
+}
+// Al volver a la app (celular desbloqueado, pestaña de nuevo al frente)
+// se trae todo: el canal de realtime pudo haberse cortado mientras tanto.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && usaSupabase) pullOnLoad();
+});
+
+/* ─── Pedidos: caja registra, quien prepara marca Listo → Entregado ───
+   Una venta nueva nace 'pendiente' (registrarVenta). Las ventas sin
+   `estado` (todas las anteriores a esto) cuentan como entregadas. */
+const PEDIDO_ESPERA_TARDE_MIN = 10;
+function renderPedidos() {
+  const activos = state.ventas
+    .filter(v => v.estado === 'pendiente' || v.estado === 'listo')
+    .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+  const pendientes = activos.filter(v => v.estado === 'pendiente');
+  const badge = document.getElementById('pedidos-badge');
+  if (badge) badge.textContent = pendientes.length ? '(' + pendientes.length + ')' : '';
+  const el = document.getElementById('pedidos-list');
+  if (!el) return;
+  if (!activos.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">No hay pedidos en curso</p>'; return; }
+  const tarjeta = v => {
+    const min = Math.floor((Date.now() - new Date(v.fecha)) / 60000);
+    const listo = v.estado === 'listo';
+    const cliente = v.clienteId && state.clientes.find(c => c.id === v.clienteId);
+    return `
+      <div class="card pedido-card${listo ? ' listo' : ''}">
+        <div class="pedido-cabecera">
+          <span class="pedido-nombre">${esc(v.nombrePedido || (cliente && cliente.nombre) || 'Sin nombre')}</span>
+          <span class="pedido-espera${!listo && min >= PEDIDO_ESPERA_TARDE_MIN ? ' tarde' : ''}">${min < 1 ? 'recién' : 'hace ' + min + ' min'}</span>
+        </div>
+        <ul class="pedido-items">${v.items.map(i => `<li><b>${i.qty}×</b> ${esc(i.nombre)}</li>`).join('')}</ul>
+        ${v.nota ? `<div class="pedido-nota"><i class="ph ph-note-pencil"></i> ${esc(v.nota)}</div>` : ''}
+        <button class="btn btn-block" onclick="avanzarPedido('${v.id}')">${listo ? '<i class="ph ph-hand-coins"></i> Entregado' : '<i class="ph ph-check"></i> Listo'}</button>
+      </div>`;
+  };
+  const seccion = (titulo, lista) => lista.length
+    ? `<div class="card-title" style="margin:6px 0 10px">${titulo} (${lista.length})</div><div class="pedidos-grid">${lista.map(tarjeta).join('')}</div>`
+    : '';
+  el.innerHTML = seccion('Por preparar', pendientes) + seccion('Listos para entregar', activos.filter(v => v.estado === 'listo'));
+}
+function avanzarPedido(id) {
+  const v = state.ventas.find(x => x.id === id);
+  if (!v) return;
+  v.estado = v.estado === 'pendiente' ? 'listo' : 'entregado';
+  v.estadoFecha = new Date().toISOString();
+  saveState();
+  renderPedidos();
+}
+// El tiempo de espera avanza solo mientras la pantalla está a la vista.
+setInterval(() => {
+  const pagina = document.getElementById('page-pedidos');
+  if (pagina && pagina.classList.contains('active')) renderPedidos();
+}, 30000);
+
+// Aviso sonoro de pedido nuevo. Los navegadores solo dejan sonar audio
+// después de que la persona tocó la pantalla al menos una vez — por eso
+// el AudioContext se crea (o se reactiva) en el primer toque.
+let audioCtx = null;
+document.addEventListener('pointerdown', () => {
+  try { audioCtx = audioCtx || new AudioContext(); if (audioCtx.state === 'suspended') audioCtx.resume(); } catch (e) {}
+});
+function avisarPedidoNuevo_() {
+  showToast('Pedido nuevo');
+  if (!audioCtx) return;
+  [0, 0.2].forEach(t => {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    const t0 = audioCtx.currentTime + t;
+    o.frequency.value = 880;
+    g.gain.setValueAtTime(0.25, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.18);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(t0); o.stop(t0 + 0.2);
+  });
 }
 
 // Corte único Sheets → Supabase. Se corre A MANO desde la consola, una
@@ -1745,6 +1891,7 @@ async function handleGoogleCredential(response) {
 function cerrarSesion() {
   if (!confirm('¿Cerrar sesión? Vas a tener que ingresar de nuevo para usar la app en este dispositivo.')) return;
   closeModal('modal-ajustes');
+  detenerRealtime_();
   auth.logout();
   showLoginGate();
 }
@@ -2459,6 +2606,7 @@ function navTo(page, el) {
   closeMobileMenu();
   if (page === 'dashboard') renderReportes();
   if (page === 'caja') renderCaja();
+  if (page === 'pedidos') renderPedidos();
   if (page === 'inventario') { renderInventario(); renderMermas(); }
   if (page === 'productos') renderProductos();
   if (page === 'clientes') renderClientes();
@@ -3619,6 +3767,7 @@ function openSaleModal() {
   document.getElementById('venta-cliente-telefono').value = '';
   document.getElementById('venta-cliente-direccion').value = '';
   document.getElementById('venta-cliente-nuevo-form').style.display = 'none';
+  document.getElementById('venta-nota').value = '';
   document.getElementById('venta-draft-producto').value = '';
   document.getElementById('venta-draft-qty').textContent = '1';
   document.getElementById('venta-buscar-sugerencias').style.display = 'none';
@@ -3835,6 +3984,14 @@ function registrarVenta() {
     return;
   }
   if (!venta) { showToast('Error al registrar la venta'); return; }
+  // Pedidos: una venta de HOY nace pendiente y aparece en la pantalla de
+  // quien prepara. Una venta cargada con fecha pasada no es un pedido.
+  if (!opts.fecha) {
+    venta.estado = 'pendiente';
+    venta.nombrePedido = document.getElementById('venta-cliente-nombre').value.trim();
+    const nota = document.getElementById('venta-nota').value.trim();
+    if (nota) venta.nota = nota;
+  }
   saveState();
   closeSaleModal();
   renderCaja();
@@ -5418,6 +5575,7 @@ function refreshAll() {
   renderCaja();
   renderClientes();
   renderReportes();
+  renderPedidos();
   actualizarPuntoAlertas(); // W3.2: el punto de la campana refleja alertas reales
 }
 
