@@ -44,14 +44,23 @@
   // "llegaron menos de PAGINA"): así funciona igual si el proyecto tiene un
   // Max rows menor que PAGINA — a cambio de un round-trip extra por tabla.
   var PAGINA = 1000;
-  function leerTabla(client, coleccion, desde, acumuladas) {
-    return client.from(coleccion).select('data').is('deleted_at', null).order('id').range(desde, desde + PAGINA - 1)
+  // `filtrar(query)` agrega los filtros de cada caso (filas vivas, o
+  // cambios desde una fecha); devuelve las filas crudas de PostgREST.
+  function leerPaginado(client, coleccion, columnas, filtrar, desde, acumuladas) {
+    return filtrar(client.from(coleccion).select(columnas)).order('id').range(desde, desde + PAGINA - 1)
       .then(function (res) {
         if (res.error) throw new Error(coleccion + ': ' + res.error.message);
         var filas = res.data || [];
         if (!filas.length) return acumuladas;
-        return leerTabla(client, coleccion, desde + filas.length, acumuladas.concat(filas.map(function (r) { return r.data; })));
+        return leerPaginado(client, coleccion, columnas, filtrar, desde + filas.length, acumuladas.concat(filas));
       });
+  }
+  function soloVivas(q) { return q.is('deleted_at', null); }
+
+  // El `updated_at` más nuevo visto — lo pone el SERVIDOR (trigger de
+  // 0003_updated_at.sql), no el reloj de cada celular.
+  function maxUpdatedAt(filas, previo) {
+    return filas.reduce(function (m, f) { return f.updated_at && (!m || f.updated_at > m) ? f.updated_at : m; }, previo);
   }
 
   function leerConfig(client) {
@@ -70,7 +79,7 @@
   // resuelve solo.
   function pull(client) {
     var lecturas = COLECCIONES.map(function (coleccion) {
-      return leerTabla(client, coleccion, 0, []).then(function (filas) {
+      return leerPaginado(client, coleccion, 'data,updated_at', soloVivas, 0, []).then(function (filas) {
         return { coleccion: coleccion, filas: filas };
       });
     });
@@ -81,8 +90,37 @@
       var lecturaConfigRes = resultados[resultados.length - 1];
       var state = Object.assign({}, lecturaConfigRes.data);
       if (lecturaConfigRes.schema_version !== undefined) state.schemaVersion = lecturaConfigRes.schema_version;
-      resultados.slice(0, COLECCIONES.length).forEach(function (r) { state[r.coleccion] = r.filas; });
-      return { ok: true, state: state };
+      var hasta;
+      resultados.slice(0, COLECCIONES.length).forEach(function (r) {
+        state[r.coleccion] = r.filas.map(function (f) { return f.data; });
+        hasta = maxUpdatedAt(r.filas, hasta);
+      });
+      return { ok: true, state: state, hasta: hasta };
+    }).catch(function (err) {
+      return { ok: false, error: err.message };
+    });
+  }
+
+  // Pull INCREMENTAL: solo las filas con updated_at >= `desde` (menos un
+  // margen), INCLUIDAS las borradas (deleted_at) para que el borrado llegue.
+  // Es lo que se usa al volver a la app: el pull completo bajaba todo el
+  // historial de ventas cada vez (tráfico que se come el plan gratis).
+  // Config (una fila chica) se lee siempre entera.
+  // ponytail: margen fijo de 60 s contra transacciones que commitean tarde; re-aplicar una fila es idempotente.
+  var MARGEN_MS = 60000;
+  function pullCambios(client, desde) {
+    var corte = new Date(Date.parse(desde) - MARGEN_MS).toISOString();
+    var desdeCorte = function (q) { return q.gte('updated_at', corte); };
+    var lecturas = COLECCIONES.map(function (coleccion) {
+      return leerPaginado(client, coleccion, 'id,data,deleted_at,updated_at', desdeCorte, 0, []);
+    });
+    return Promise.all(lecturas.concat([leerConfig(client)])).then(function (res) {
+      var cambios = {}, hasta = desde;
+      COLECCIONES.forEach(function (c, i) {
+        if (res[i].length) cambios[c] = res[i];
+        hasta = maxUpdatedAt(res[i], hasta);
+      });
+      return { ok: true, cambios: cambios, config: res[res.length - 1], hasta: hasta };
     }).catch(function (err) {
       return { ok: false, error: err.message };
     });
@@ -132,9 +170,15 @@
   // otro dispositivo editó (el mismo problema de U4). Sin base (undefined)
   // sube todo — lo que necesita la migración única (migrarDesdeState).
   //
-  // Un registro que está en la base y ya no está en `state` NO se borra:
-  // los borrados se declaran explícitamente en `idsABorrar`, nunca se
-  // infieren por ausencia (V0).
+  // Un registro que está en la BASE y ya no está en `state` lo borró este
+  // dispositivo — se borra (soft-delete). Es seguro acá, a diferencia de
+  // Sheets (V0): la base tiene solo lo que ESTE dispositivo ya vio, así que
+  // lo que otro dispositivo agregó y este todavía no bajó no está en la
+  // base y nunca se lee como borrado. Así cualquier camino de borrado
+  // (insumo, producto, receta, cliente, reclasificar) funciona sin tener
+  // que acordarse de declararlo. Freno: si una colección perdería más de
+  // la mitad de sus filas de golpe (y más de 5), no se escribe nada — eso
+  // huele a un state roto, no a borrados de verdad.
   //
   // `idsABorrar`: mismo contrato que js/sync.js (V0) — `{coleccion:
   // [id,...]}` de lo que ESTE dispositivo borró de verdad. Se traduce a un
@@ -142,6 +186,23 @@
   // sintética.
   function push(client, state, idsABorrar, base) {
     var ahora = new Date().toISOString();
+    var borrados = {};
+    for (var i = 0; i < COLECCIONES.length; i++) {
+      var col = COLECCIONES[i];
+      var explicitos = (idsABorrar && idsABorrar[col]) || [];
+      var ausentes = [];
+      if (base && Array.isArray(state[col])) {
+        var vivos = {};
+        state[col].forEach(function (r) { if (r) vivos[r.id] = true; });
+        ausentes = (base[col] || []).filter(function (r) { return r && r.id != null && !vivos[r.id]; }).map(function (r) { return r.id; });
+        var enBaseTotal = (base[col] || []).length;
+        if (ausentes.length > 5 && ausentes.length > enBaseTotal / 2) {
+          return Promise.resolve({ ok: false, code: 'BORRADO_MASIVO', error: col + ': se borrarían ' + ausentes.length + ' de ' + enBaseTotal + ' registros de una vez — no se sincronizó nada' });
+        }
+      }
+      var union = explicitos.concat(ausentes.filter(function (id) { return explicitos.indexOf(id) === -1; }));
+      if (union.length) borrados[col] = union;
+    }
     var escrituras = COLECCIONES.map(function (coleccion) {
       var enBase = null;
       if (base) {
@@ -158,10 +219,11 @@
             if (res.error) throw new Error(coleccion + ': ' + res.error.message);
           })
         : Promise.resolve();
-      var idsABorrarDeEsta = (idsABorrar && idsABorrar[coleccion]) || [];
+      var idsABorrarDeEsta = borrados[coleccion] || [];
       if (idsABorrarDeEsta.length) {
         p = p.then(function () {
-          return client.from(coleccion).update({ deleted_at: ahora }).in('id', idsABorrarDeEsta);
+          // updated_at también: el pull incremental de los demás ve el borrado por esa columna.
+          return client.from(coleccion).update({ deleted_at: ahora, updated_at: ahora }).in('id', idsABorrarDeEsta);
         }).then(function (res) {
           if (res && res.error) throw new Error(coleccion + ' (borrado): ' + res.error.message);
         });
@@ -268,6 +330,7 @@
     COLECCIONES: COLECCIONES,
     isConfigured: isConfigured,
     pull: pull,
+    pullCambios: pullCambios,
     push: push,
     migrarDesdeState: migrarDesdeState,
     jsonEstable: jsonEstable

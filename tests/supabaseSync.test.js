@@ -42,6 +42,7 @@ function fakeClient(tablas, maxRows) {
         const q = {
           is: function (col, val) { filtros.push(r => (val === null ? r[col] == null : r[col] === val)); return q; },
           eq: function (col, val) { filtros.push(r => r[col] === val); return q; },
+          gte: function (col, val) { filtros.push(r => r[col] != null && r[col] >= val); return q; },
           order: function (col) { orden = col; return q; },
           range: function (desde, hasta) { rango = [desde, hasta]; return q; },
           maybeSingle: function () { const r = resolver(); return Promise.resolve({ data: r.data[0] || null, error: null }); },
@@ -256,13 +257,49 @@ test('mismo contenido con las claves en otro orden (jsonb las reordena) NO cuent
   assert.strictEqual(upserteadas(c, 'materia').length, 0);
 });
 
-test('un registro que está en la base y ya no en el state NO se borra por ausencia (solo idsABorrar borra, V0)', async () => {
-  const c = fakeClient({ materia: [filaViva('m2', BASE.materia[1])] });
+test('CRITERIO: un registro que está en la base y ya no en el state lo borré yo → soft-delete (insumo, producto, cliente...)', async () => {
+  const c = fakeClient({ materia: [filaViva('m1', BASE.materia[0]), filaViva('m2', BASE.materia[1])] });
   const state = copia(BASE);
   state.materia = state.materia.filter(m => m.id !== 'm2');
-  await Sync.push(c, state, undefined, BASE);
+  const r = await Sync.push(c, state, undefined, BASE);
+  assert.strictEqual(r.ok, true);
+  assert.ok(c.tablas.materia.find(f => f.id === 'm2').deleted_at);
+  assert.strictEqual(c.tablas.materia.find(f => f.id === 'm1').deleted_at, null);
+});
+
+test('CRITERIO: lo que otro dispositivo agregó y yo todavía no bajé (no está en MI base) nunca se borra', async () => {
+  const c = fakeClient({ materia: [filaViva('m1', BASE.materia[0]), filaViva('m2', BASE.materia[1]), filaViva('m9', { id: 'm9', nombre: 'Nuevo de otro' })] });
+  await Sync.push(c, copia(BASE), undefined, BASE);
   assert.ok(!c.calls.some(x => x.op === 'update'));
-  assert.strictEqual(c.tablas.materia[0].deleted_at, null);
+  assert.strictEqual(c.tablas.materia.find(f => f.id === 'm9').deleted_at, null);
+});
+
+test('CRITERIO: freno — borrar más de la mitad de una colección de golpe (y más de 5) no escribe NADA', async () => {
+  const base = copia(BASE);
+  base.ventas = Array.from({ length: 10 }, (_, i) => ({ id: 'v' + i, total: i }));
+  const state = copia(base);
+  state.ventas = state.ventas.slice(0, 2); // 8 de 10 "desaparecen"
+  state.materia[0].costo = 99; // y un cambio legítimo que tampoco debe viajar
+  const c = fakeClient();
+  const r = await Sync.push(c, state, undefined, base);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.code, 'BORRADO_MASIVO');
+  assert.strictEqual(c.calls.filter(x => x.op !== 'select').length, 0);
+});
+
+test('una colección que falta del state (undefined) no se lee como "borré todo"', async () => {
+  const c = fakeClient();
+  const state = copia(BASE);
+  delete state.ventas;
+  const r = await Sync.push(c, state, undefined, BASE);
+  assert.strictEqual(r.ok, true);
+  assert.ok(!c.calls.some(x => x.op === 'update'));
+});
+
+test('sin base (migración) no se infiere ningún borrado', async () => {
+  const c = fakeClient({ materia: [filaViva('mX', { id: 'mX' })] });
+  await Sync.push(c, copia(BASE));
+  assert.ok(!c.calls.some(x => x.op === 'update'));
 });
 
 test('CRITERIO: sin base, sube todo (lo que necesita la migración única)', async () => {
@@ -313,6 +350,49 @@ test('idsABorrar sigue funcionando con base', async () => {
   state.ventas = state.ventas.filter(v => v.id !== 'v1');
   await Sync.push(c, state, { ventas: ['v1'] }, BASE);
   assert.ok(c.tablas.ventas[0].deleted_at);
+});
+
+group('pull incremental (pullCambios)');
+
+function filaCon(id, data, updated_at, deleted_at) { return { id, data, updated_at, deleted_at: deleted_at || null }; }
+
+test('pull completo devuelve `hasta` = el updated_at más nuevo (del servidor)', async () => {
+  const c = fakeClient({
+    materia: [filaCon('m1', { id: 'm1' }, '2026-09-30T10:00:00.000Z')],
+    ventas: [filaCon('v1', { id: 'v1' }, '2026-09-30T12:00:00.000Z')]
+  });
+  const r = await Sync.pull(c);
+  assert.strictEqual(r.hasta, '2026-09-30T12:00:00.000Z');
+});
+
+test('CRITERIO: solo trae lo cambiado desde `desde` (con margen) — lo viejo no viaja', async () => {
+  const c = fakeClient({
+    ventas: [
+      filaCon('v-vieja', { id: 'v-vieja' }, '2026-09-29T08:00:00.000Z'),
+      filaCon('v-nueva', { id: 'v-nueva' }, '2026-09-30T12:00:30.000Z'),
+      filaCon('v-margen', { id: 'v-margen' }, '2026-09-30T11:59:30.000Z') // 30 s antes de `desde`: entra por el margen
+    ]
+  });
+  const r = await Sync.pullCambios(c, '2026-09-30T12:00:00.000Z');
+  assert.strictEqual(r.ok, true);
+  assert.deepStrictEqual(r.cambios.ventas.map(f => f.id).sort(), ['v-margen', 'v-nueva']);
+  assert.strictEqual(r.hasta, '2026-09-30T12:00:30.000Z');
+  assert.ok(!r.cambios.materia, 'colecciones sin cambios no aparecen');
+});
+
+test('CRITERIO: trae también las filas BORRADAS después de `desde` (así el borrado llega)', async () => {
+  const c = fakeClient({ productos: [filaCon('p1', { id: 'p1' }, '2026-09-30T12:05:00.000Z', '2026-09-30T12:05:00.000Z')] });
+  const r = await Sync.pullCambios(c, '2026-09-30T12:00:00.000Z');
+  assert.strictEqual(r.cambios.productos[0].id, 'p1');
+  assert.ok(r.cambios.productos[0].deleted_at);
+});
+
+test('sin cambios: `hasta` queda igual a `desde` y config se lee igual', async () => {
+  const c = fakeClient({ config: [{ id: 'singleton', data: { config: { email: 'a' } }, schema_version: 10 }] });
+  const r = await Sync.pullCambios(c, '2026-09-30T12:00:00.000Z');
+  assert.strictEqual(r.hasta, '2026-09-30T12:00:00.000Z');
+  assert.deepStrictEqual(r.cambios, {});
+  assert.strictEqual(r.config.schema_version, 10);
 });
 
 group('migrarDesdeState');

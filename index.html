@@ -1242,7 +1242,7 @@ textarea.field{height:auto}
       <div style="border-top:1px solid var(--line);padding-top:16px;margin-top:2px">
         <div class="card-title" style="margin-bottom:2px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-size:var(--fs-xs)">Diagnóstico del sistema</div>
       </div>
-      <div>
+      <div class="solo-sheets">
         <!-- T0 (Ronda 3) / U0 (Ronda 4): lo que puede llenar la celda de
              Sheets y bloquear la sincronización es el CATÁLOGO (menú:
              productos, insumos, recetas, config), no el historial de
@@ -1272,7 +1272,7 @@ textarea.field{height:auto}
         <div class="card-title" style="font-size:var(--fs-sm);margin-bottom:6px">Filas append-only — no cuentan contra el tope</div>
         <div id="payload-desglose-append" style="display:flex;flex-direction:column;gap:4px"></div>
       </div>
-      <div>
+      <div class="solo-sheets">
         <!-- U3 (auditoría, Ronda 4): antes esto solo vivía en Logger.log()
              del editor de Apps Script — desaparecía apenas alguien lo
              borrara, y nadie más podía verlo. Se pide al backend al abrir
@@ -1302,7 +1302,7 @@ textarea.field{height:auto}
     </div>
     <div style="display:flex;flex-direction:column;gap:16px">
       <div>
-        <div class="card-title" style="margin-bottom:10px">Sincronización (Google Sheets)</div>
+        <div class="card-title" style="margin-bottom:10px">Sincronización</div>
         <p class="item-sub" id="ajustes-usuario" style="margin-bottom:6px"></p>
         <p class="item-sub" id="sync-status" style="margin-bottom:10px">Sin sincronizar todavía.</p>
         <button class="btn-cancel" onclick="cerrarSesion()">Cerrar sesión en este dispositivo</button>
@@ -1535,28 +1535,71 @@ async function pushSupabase_() {
   return r;
 }
 
-// Pull de Supabase. Si ya hay base, primero sube lo local pendiente: así
-// el pull que viene después no pisa ediciones propias sin sincronizar
+// Hasta qué `updated_at` del SERVIDOR ya bajó este dispositivo — el
+// punto de partida del próximo pull incremental.
+const SUPABASE_DESDE_KEY = 'crumbly-supabase-desde';
+function loadSupabaseDesde() { try { return localStorage.getItem(SUPABASE_DESDE_KEY); } catch (e) { return null; } }
+function saveSupabaseDesde(ts) { try { if (ts) localStorage.setItem(SUPABASE_DESDE_KEY, ts); } catch (e) {} }
+
+// Pull de Supabase, y lo aplica. Si ya hay base, primero sube lo local
+// pendiente: así lo que baja no pisa ediciones propias sin sincronizar
 // (cada fila la gana el último que escribió — lo que reemplaza a
-// mergeCatalogs en este backend).
+// mergeCatalogs en este backend). Con base y `desde`, baja SOLO lo
+// cambiado (pullCambios); si no, todo (primera vez en este dispositivo).
 async function pullSupabase_() {
+  const sb = auth.getSupabase();
   if (loadSupabaseBase()) {
     const p = await pushSupabase_();
     if (!p.ok) return p;
+    const desde = loadSupabaseDesde();
+    if (desde) {
+      const r = await CrumblySupabaseSync.pullCambios(sb, desde);
+      if (!r.ok) return r;
+      aplicarCambiosSupabase_(r);
+      return { ok: true };
+    }
   }
-  const r = await CrumblySupabaseSync.pull(auth.getSupabase());
+  const r = await CrumblySupabaseSync.pull(sb);
   if (!r.ok) return r;
   // Sin fila de config = Supabase todavía vacío (falta migrarASupabase).
   // Aplicarlo vaciaría los datos locales de este dispositivo.
   if (r.state.schemaVersion === undefined) return { ok: false, error: 'Supabase todavía no tiene datos (falta la migración)' };
-  return r;
-}
-function aplicarPullSupabase_(remoto) {
-  state = migrarState_(remoto);
+  state = migrarState_(r.state);
   restaurarConteoEnProgresoLocal();
   state.config.lastSync = new Date().toISOString();
   saveSupabaseBase(copiaParaSync_());
+  saveSupabaseDesde(r.hasta);
   try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
+  iniciarRealtime_();
+  return { ok: true };
+}
+// Aplica un pull incremental: cada fila cambiada/borrada, más la fila de
+// config si cambió. Mismo criterio fila por fila que el realtime.
+function aplicarCambiosSupabase_(r) {
+  const base = loadSupabaseBase();
+  let pedidosNuevos = 0;
+  Object.keys(r.cambios).forEach(coleccion => {
+    r.cambios[coleccion].forEach(fila => {
+      if (aplicarFila_(base, coleccion, fila) === 'pedido-nuevo') pedidosNuevos++;
+    });
+  });
+  const cfg = r.config;
+  if (cfg && cfg.data) {
+    const estable = CrumblySupabaseSync.jsonEstable;
+    const claves = Object.keys(cfg.data);
+    // Solo si no hay una edición propia de config sin subir (acabamos de pushear, así que normalmente no).
+    const sinPendiente = claves.every(k => estable(state[k]) === estable(base[k]));
+    if (sinPendiente) {
+      claves.forEach(k => { state[k] = cfg.data[k]; base[k] = JSON.parse(JSON.stringify(cfg.data[k])); });
+      if (cfg.schema_version != null) { state.schemaVersion = cfg.schema_version; base.schemaVersion = cfg.schema_version; }
+    }
+  }
+  state.config.lastSync = new Date().toISOString();
+  base.config = JSON.parse(JSON.stringify(state.config)); // lastSync es de este dispositivo: no cuenta como cambio a subir
+  saveSupabaseBase(base);
+  saveSupabaseDesde(r.hasta);
+  try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
+  if (pedidosNuevos) avisarPedidoNuevo_();
   iniciarRealtime_();
 }
 
@@ -1580,19 +1623,24 @@ function iniciarRealtime_() {
 function detenerRealtime_() {
   if (realtimeCanal) { realtimeCanal.unsubscribe(); realtimeCanal = null; }
 }
-function aplicarFilaRemota_(coleccion, fila) {
-  const base = loadSupabaseBase();
-  if (!fila || !fila.id || !base || !Array.isArray(state[coleccion])) return;
+// Aplica UNA fila remota (realtime o pull incremental) al state y a la
+// base. Devuelve false si no cambió nada, 'pedido-nuevo' si llegó un
+// pedido pendiente que este dispositivo no tenía, true si no.
+function aplicarFila_(base, coleccion, fila) {
+  if (!fila || !fila.id || !base || !Array.isArray(state[coleccion])) return false;
   const estable = CrumblySupabaseSync.jsonEstable;
-  const iLocal = state[coleccion].findIndex(r => r.id === fila.id);
-  const local = iLocal === -1 ? null : state[coleccion][iLocal];
+  const local = state[coleccion].find(r => r.id === fila.id) || null;
   const enBase = (base[coleccion] || []).find(r => r.id === fila.id) || null;
-  // Edición propia todavía sin subir: gana la local (el push que viene
-  // la manda). Sin esto, el eco de un push anterior pisaría, por ejemplo,
+  // Cambio propio todavía sin subir: gana el local (el push que viene lo
+  // manda). Cubre las tres formas: editado (local ≠ base), nuevo (local
+  // sin base) y BORRADO (base sin local — si no, el eco lo resucitaría).
+  // Sin esto, el eco de un push anterior pisaría, por ejemplo,
   // "Entregado" tocado un segundo después de "Listo".
-  if (local && (!enBase || estable(local) !== estable(enBase))) return;
+  if (local && (!enBase || estable(local) !== estable(enBase))) return false;
+  if (!local && enBase) return false;
   const borrada = !!fila.deleted_at || !fila.data;
-  if (!borrada && local && estable(local) === estable(fila.data)) return; // eco de mi propio push
+  if (borrada && !local) return false;
+  if (!borrada && local && estable(local) === estable(fila.data)) return false; // eco de mi propio push
   const reemplazar = (arr, dato) => {
     const i = arr.findIndex(r => r.id === fila.id);
     if (borrada) { if (i !== -1) arr.splice(i, 1); }
@@ -1602,15 +1650,22 @@ function aplicarFilaRemota_(coleccion, fila) {
   base[coleccion] = base[coleccion] || [];
   reemplazar(state[coleccion], fila.data);
   reemplazar(base[coleccion], JSON.parse(JSON.stringify(fila.data || null)));
+  return (coleccion === 'ventas' && !local && !borrada && fila.data.estado === 'pendiente') ? 'pedido-nuevo' : true;
+}
+function aplicarFilaRemota_(coleccion, fila) {
+  const base = loadSupabaseBase();
+  const r = aplicarFila_(base, coleccion, fila);
+  if (!r) return;
   saveSupabaseBase(base);
   try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
-  if (coleccion === 'ventas' && !local && !borrada && fila.data.estado === 'pendiente') avisarPedidoNuevo_();
+  if (r === 'pedido-nuevo') avisarPedidoNuevo_();
   // Una venta llega junto con varias filas de stock — un solo refresco.
   clearTimeout(refrescoRemotoTimer);
   refrescoRemotoTimer = setTimeout(refreshAll, 250);
 }
 // Al volver a la app (celular desbloqueado, pestaña de nuevo al frente)
-// se trae todo: el canal de realtime pudo haberse cortado mientras tanto.
+// se pone al día con lo cambiado (pull incremental): el canal de realtime
+// pudo haberse cortado mientras tanto.
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && usaSupabase) pullOnLoad();
 });
@@ -1699,6 +1754,11 @@ function pushInBackground() {
   if (usaSupabase) {
     pushSupabase_()
       .then(r => {
+        if (r.code === 'BORRADO_MASIVO') {
+          showPersistentError('No se sincronizó: ' + r.error + '. Los cambios quedan en este dispositivo. Recargá la app; si vuelve a pasar, avisá antes de seguir.', 'Recargar', () => location.reload());
+          updateSyncStatus('Sincronización detenida por seguridad', true);
+          return;
+        }
         if (!r.ok) { updateSyncStatus('Error al sincronizar: ' + (r.error || 'desconocido'), true); return; }
         updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
       })
@@ -1834,7 +1894,6 @@ async function afterLogin_(successMsg) {
     let r;
     try { r = await pullSupabase_(); } catch (e) { r = { ok: false, error: e.message }; }
     if (!r.ok) { showToast('No se pudo traer los datos: ' + (r.error || 'revisá tu conexión')); return; }
-    aplicarPullSupabase_(r.state);
     refreshAll();
     updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
     if (successMsg) showToast(successMsg);
@@ -1902,7 +1961,6 @@ function pullOnLoad() {
     pullSupabase_()
       .then(r => {
         if (!r.ok) { updateSyncStatus('Error al sincronizar: ' + (r.error || 'desconocido'), true); return; }
-        aplicarPullSupabase_(r.state);
         updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
         refreshAll();
       })
@@ -5432,7 +5490,13 @@ function deleteCliente() {
 function openModal(id) {
   document.getElementById(id).classList.add('open');
   // T0/T2.1/U3/W3.1: se calculan al abrir, no en cada guardado.
-  if (id === 'modal-ajustes') { renderPayloadPanel(); renderReporteIntegridad(); renderMigrationStatus(); renderCategoriasComportamiento(); }
+  if (id === 'modal-ajustes') {
+    // El tope de la celda y la migración a filas son cosas de Sheets: con
+    // Supabase no aplican (y consultarlas pegaba un GET lento al Apps Script).
+    document.querySelectorAll('.solo-sheets').forEach(el => { el.style.display = usaSupabase ? 'none' : ''; });
+    if (!usaSupabase) { renderPayloadPanel(); renderMigrationStatus(); }
+    renderReporteIntegridad(); renderCategoriasComportamiento();
+  }
 }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 // ─── Z5 (Ronda 7): tocar el fondo oscuro cierra el modal ────────────────
