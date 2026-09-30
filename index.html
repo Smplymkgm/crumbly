@@ -88,12 +88,16 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 
 /* ─── Cards / pills / chips ─── */
 .card{background:var(--white);border:1px solid var(--line);border-radius:16px;padding:18px}
-.info{display:inline-block;position:relative;vertical-align:middle;margin-left:3px}
+/* La burbuja se ubica contra el MODAL (no contra el ícono): queda justo
+   debajo del ícono en lo vertical, pero siempre dentro del ancho del
+   formulario — pegada al ícono se salía de la pantalla en el celular. */
+.info{display:inline-block;vertical-align:middle;margin-left:3px}
 .info summary{list-style:none;cursor:pointer;color:var(--muted);display:inline-flex;align-items:center;font-size:15px;line-height:1;padding:2px}
 .info summary::-webkit-details-marker{display:none}
 .info[open] summary{color:var(--ink)}
-.info p{position:absolute;z-index:20;left:-8px;top:calc(100% + 6px);width:min(260px,70vw);margin:0;padding:10px 12px;background:var(--ink);color:var(--white);border-radius:10px;font-size:var(--fs-xs);font-weight:var(--fw-medium);line-height:1.45;text-transform:none;letter-spacing:0;white-space:normal;box-shadow:0 8px 24px rgba(0,0,0,.18)}
-.info.derecha p{left:auto;right:-8px}
+.info p{position:absolute;z-index:20;left:16px;width:min(340px,calc(100% - 32px));margin:6px 0 0;padding:10px 12px;background:var(--ink);color:var(--white);border-radius:10px;font-size:var(--fs-xs);font-weight:var(--fw-medium);line-height:1.45;text-transform:none;letter-spacing:0;white-space:normal;box-shadow:0 8px 24px rgba(0,0,0,.18)}
+.conteo-fila{border:1px solid var(--line);border-radius:9px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.conteo-fila.falta-motivo{border-color:var(--danger);box-shadow:inset 3px 0 0 var(--danger)}
 .ins-seccion{font-size:var(--fs-xs);font-weight:var(--fw-bold);color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:16px 0 8px;padding-top:12px;border-top:1px solid var(--line);display:flex;align-items:center}
 .ins-dato{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--bg);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:var(--fs-sm)}
 .ins-mas{border-top:1px solid var(--line);margin-top:8px;padding-top:10px}
@@ -197,7 +201,7 @@ textarea.field{height:auto}
 /* ─── Modal ─── */
 .modal-overlay{position:fixed;inset:0;background:rgba(17,17,17,.45);display:none;align-items:center;justify-content:center;z-index:200;padding:20px}
 .modal-overlay.open{display:flex}
-.modal{background:var(--white);border-radius:20px;padding:22px;width:440px;max-width:100%;max-height:88vh;overflow-y:auto}
+.modal{position:relative;background:var(--white);border-radius:20px;padding:22px;width:440px;max-width:100%;max-height:88vh;overflow-y:auto}
 .modal-wide{width:500px}
 .modal-title-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
 .modal-title{font-weight:var(--fw-bold);font-size:var(--fs-h2);line-height:var(--lh-tight);color:var(--ink)}
@@ -1131,14 +1135,17 @@ textarea.field{height:auto}
 <div class="modal-overlay" id="modal-conteo">
   <div class="modal modal-wide">
     <div class="modal-title-row">
-      <span class="modal-title">Conteo físico</span>
+      <span class="modal-title">Conteo físico
+        <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p><b>Teórica:</b> lo que el sistema cree que hay. <b>Contada:</b> lo que encontrás físicamente. Si no coinciden, elegí un motivo. Podés guardar y seguir después: nada cambia en el stock hasta que tocás <b>Cerrar conteo</b>.</p></details>
+      </span>
       <button class="modal-close" onclick="closeModal('modal-conteo')"><i class="ph ph-x"></i></button>
     </div>
-    <p class="item-sub" style="margin-top:-8px;margin-bottom:12px">Cantidad teórica = lo que el sistema cree que hay. Cantidad contada = lo que se encontró físicamente. Se puede guardar parcial y seguir después — nada se descuenta hasta que cierres el conteo.</p>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px" id="conteo-chips-tipo"></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px" id="conteo-chips-tipo"></div>
+    <input type="search" id="conteo-buscar" class="field" style="margin-bottom:10px;height:38px" placeholder="Buscar insumo" autocomplete="off" oninput="filtrarConteo_(this.value)">
     <div id="conteo-list" style="display:flex;flex-direction:column;gap:8px;max-height:44vh;overflow-y:auto;margin-bottom:12px"></div>
+    <p class="item-sub" id="conteo-progreso" style="margin-bottom:6px"></p>
     <div class="total-row" style="margin-bottom:10px">
-      <span>Diferencia de lo contado hasta ahora</span>
+      <span>Diferencia de lo contado</span>
       <strong id="conteo-diferencia-total">$0</strong>
     </div>
     <div class="modal-btns">
@@ -5499,6 +5506,8 @@ function conteoKey(tipo, id) { return tipo + ':' + id; }
 
 function openModalConteo() {
   conteoTipoActivo = 'materia';
+  conteoFiltro = '';
+  document.getElementById('conteo-buscar').value = '';
   renderConteoChipsTipo();
   renderConteoList();
   openModal('modal-conteo');
@@ -5523,12 +5532,13 @@ function conteoUnidadDe(item) {
   return item.unidad || (conteoTipoActivo === 'preparaciones' ? 'g' : '');
 }
 function renderConteoList() {
-  const items = state[conteoTipoActivo] || [];
+  const items = (state[conteoTipoActivo] || []).slice()
+    .sort((a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es', { sensitivity: 'base' }));
   const el = document.getElementById('conteo-list');
   el.innerHTML = items.length ? items.map(item => {
     const key = conteoKey(conteoTipoActivo, item.id);
     const entry = state.conteoEnProgreso[key];
-    return `<div style="border:1px solid var(--line);border-radius:9px;padding:10px 12px;display:flex;flex-direction:column;gap:8px">
+    return `<div class="conteo-fila" id="conteo-fila-${item.id}" data-buscar="${esc(normalizarBusqueda_(item.nombre))}">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
         <div>
           <div style="font-weight:var(--fw-bold);font-size:var(--fs-sm);color:var(--ink)">${esc(item.nombre)}</div>
@@ -5551,6 +5561,21 @@ function renderConteoList() {
   // escribiendo un número de varias cifras.
   items.forEach(item => actualizarFilaConteo(item.id));
   actualizarDiferenciaTotal();
+  filtrarConteo_(conteoFiltro);
+}
+let conteoFiltro = '';
+function filtrarConteo_(q) {
+  conteoFiltro = q;
+  const n = normalizarBusqueda_(q.trim());
+  document.querySelectorAll('#conteo-list .conteo-fila').forEach(f => { f.style.display = !n || f.dataset.buscar.includes(n) ? '' : 'none'; });
+}
+// Líneas contadas con diferencia y sin motivo: sin motivo no se puede cerrar.
+function conteoSinMotivo_() {
+  const lineas = conteoLineasCompletas();
+  if (!lineas.length) return [];
+  const conDiferencia = new Set(CrumblyCore.previsualizarConteo(state, lineas).lineas
+    .filter(p => p.requiereMotivo).map(p => p.insumoTipo + ':' + p.insumoId));
+  return lineas.filter(l => conDiferencia.has(l.insumoTipo + ':' + l.insumoId) && !(l.motivo && String(l.motivo).trim()));
 }
 // Actualiza SOLO la línea de diferencia + el select de motivo de un
 // insumo, sin tocar el <input> — así escribir "2100" no pierde el foco
@@ -5564,6 +5589,8 @@ function actualizarFilaConteo(id) {
   const entry = state.conteoEnProgreso[key];
   const preview = entry ? CrumblyCore.previsualizarConteo(state, [{ insumoTipo: conteoTipoActivo, insumoId: id, cantidadContada: entry.cantidad }]) : null;
   const p = preview && preview.lineas[0];
+  const fila = document.getElementById('conteo-fila-' + id);
+  if (fila) fila.classList.toggle('falta-motivo', !!(p && p.requiereMotivo && !entry.motivo));
   if (!p || !p.requiereMotivo) { difEl.hidden = true; motivoEl.hidden = true; return; }
   difEl.hidden = false;
   difEl.style.color = p.diferencia < 0 ? 'var(--danger)' : 'var(--ink)';
@@ -5584,8 +5611,18 @@ function onConteoCantidadInput(id, value) {
 function onConteoMotivoInput(id, motivo) {
   const key = conteoKey(conteoTipoActivo, id);
   if (state.conteoEnProgreso[key]) state.conteoEnProgreso[key].motivo = motivo;
+  actualizarFilaConteo(id);
+  actualizarDiferenciaTotal();
 }
 function conteoLineasCompletas() {
+  // Un conteo guardado puede apuntar a un insumo que después se borró o se
+  // reclasificó (otro tipo): cerrarConteo tiraba "Insumo no encontrado" y
+  // el conteo no se podía cerrar nunca. Esas líneas se descartan acá.
+  Object.keys(state.conteoEnProgreso).forEach(key => {
+    const sep = key.indexOf(':');
+    const tipo = key.slice(0, sep), id = key.slice(sep + 1);
+    if (!(state[tipo] || []).some(x => x.id === id)) delete state.conteoEnProgreso[key];
+  });
   return Object.keys(state.conteoEnProgreso).map(key => {
     const sep = key.indexOf(':');
     const tipo = key.slice(0, sep), id = key.slice(sep + 1);
@@ -5594,8 +5631,16 @@ function conteoLineasCompletas() {
   });
 }
 function actualizarDiferenciaTotal() {
-  const preview = CrumblyCore.previsualizarConteo(state, conteoLineasCompletas());
+  const lineas = conteoLineasCompletas();
+  const preview = CrumblyCore.previsualizarConteo(state, lineas);
   document.getElementById('conteo-diferencia-total').textContent = fmt(preview.totalDiferenciaValor);
+  const faltan = conteoSinMotivo_().length;
+  const prog = document.getElementById('conteo-progreso');
+  if (prog) {
+    prog.innerHTML = lineas.length
+      ? lineas.length + ' contado' + (lineas.length === 1 ? '' : 's') + (faltan ? ' · <b style="color:var(--danger)">' + faltan + ' sin motivo</b>' : ' · listo para cerrar')
+      : 'Todavía no contaste ningún insumo';
+  }
 }
 function guardarConteoParcial() {
   saveState();
@@ -5605,6 +5650,19 @@ function guardarConteoParcial() {
 function cerrarConteoUI() {
   const lineas = conteoLineasCompletas();
   if (!lineas.length) { showToast('No has contado ningún insumo todavía'); return; }
+  // Sin motivo no se puede cerrar: en vez de un aviso que se va solo, se
+  // lleva a la persona al primer insumo que le falta, marcado en rojo.
+  const faltan = conteoSinMotivo_();
+  if (faltan.length) {
+    const primero = faltan[0];
+    if (primero.insumoTipo !== conteoTipoActivo) { conteoTipoActivo = primero.insumoTipo; renderConteoChipsTipo(); }
+    document.getElementById('conteo-buscar').value = ''; conteoFiltro = '';
+    renderConteoList();
+    const fila = document.getElementById('conteo-fila-' + primero.insumoId);
+    if (fila) { fila.scrollIntoView({ behavior: 'smooth', block: 'center' }); const sel = document.getElementById('conteo-motivo-' + primero.insumoId); if (sel) sel.focus(); }
+    showToast('Elegí el motivo en ' + faltan.length + ' insumo' + (faltan.length === 1 ? '' : 's') + ' marcado' + (faltan.length === 1 ? '' : 's') + ' en rojo');
+    return;
+  }
   const preview = CrumblyCore.previsualizarConteo(state, lineas);
   const conDiferencia = preview.lineas.filter(l => l.requiereMotivo).length;
   if (!confirm('Vas a cerrar el conteo: ' + lineas.length + ' insumo(s) contado(s), ' + conDiferencia + ' con diferencia.\nDiferencia total: ' + fmt(preview.totalDiferenciaValor) + '.\n\n¿Confirmar?')) return;
