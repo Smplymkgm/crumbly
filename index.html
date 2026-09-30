@@ -94,12 +94,17 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 .adiciones-lista summary::after{content:'▾';margin-left:auto;color:var(--muted);transition:transform .15s}
 .adiciones-lista[open] summary::after{transform:rotate(180deg)}
 .adiciones-resumen{font-weight:var(--fw-medium);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-.adiciones-opciones{border-top:1px solid var(--line);max-height:260px;overflow-y:auto}
+.adiciones-buscar{padding:10px 14px 0;border-top:1px solid var(--line)}
+.adiciones-buscar .field{height:36px}
+.adiciones-opciones{border-top:1px solid var(--line);margin-top:10px;max-height:260px;overflow-y:auto}
 .adicion-opcion{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);font-size:var(--fs-sm);cursor:pointer}
 .adicion-opcion:last-child{border-bottom:none}
 .adicion-opcion input{width:18px;height:18px;flex-shrink:0;accent-color:var(--ink)}
 .adicion-nombre{flex:1;color:var(--text)}
 .adicion-precio{color:var(--muted);white-space:nowrap}
+.pedidos-historial{margin-top:14px}
+.historial-fila{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);font-size:var(--fs-sm)}
+.historial-fila:last-child{border-bottom:none}
 .pedidos-en-vivo{font-size:var(--fs-sm);color:var(--muted);white-space:nowrap}
 .pedidos-en-vivo.activo{color:var(--success);font-weight:var(--fw-bold)}
 .pedidos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin-bottom:10px}
@@ -1122,9 +1127,17 @@ textarea.field{height:auto}
       <button class="modal-close" onclick="closeSaleModal()"><i class="ph ph-x"></i></button>
     </div>
 
+    <!-- Pedidos: el nombre con el que se llama al cliente cuando está listo.
+         Aparte de "Cliente" a propósito: escribir ahí crea un cliente en
+         la lista, y en un local con gente de paso la llenaba de nombres sueltos. -->
+    <div style="margin-bottom:12px">
+      <label class="field-label" for="venta-nombre-pedido">Nombre para llamar</label>
+      <input type="text" id="venta-nombre-pedido" class="field" placeholder="Ej: Laura" autocomplete="off">
+    </div>
+
     <div style="display:flex;gap:10px;margin-bottom:14px">
       <div style="flex:1">
-        <label class="field-label">Cliente</label>
+        <label class="field-label">Cliente <span style="font-weight:var(--fw-medium)">(opcional)</span></label>
         <input type="text" id="venta-cliente-nombre" class="field" placeholder="Nombre o teléfono" list="clientes-datalist" oninput="onVentaClienteInput()">
         <datalist id="clientes-datalist"></datalist>
         <span style="font-size:var(--fs-xs);color:var(--muted);display:block;margin-top:5px">Se busca o crea automáticamente.</span>
@@ -1794,15 +1807,41 @@ function renderPedidos() {
   if (badge) badge.textContent = pendientes.length ? '(' + pendientes.length + ')' : '';
   const el = document.getElementById('pedidos-list');
   if (!el) return;
-  if (!activos.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">No hay pedidos en curso</p>'; return; }
+  const nombreDe = v => {
+    const cliente = v.clienteId && state.clientes.find(c => c.id === v.clienteId);
+    return esc(v.nombrePedido || (cliente && cliente.nombre) || 'Sin nombre');
+  };
+  // Historial de HOY (entregados), el más reciente arriba. Las ventas de
+  // antes de Pedidos no tienen `estado` y no aparecen.
+  const hoy = todayLocalISO();
+  const esDeHoy = v => { const d = new Date(v.fecha); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') === hoy; };
+  const hora = iso => new Date(iso).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+  const entregados = state.ventas.filter(v => v.estado === 'entregado' && esDeHoy(v))
+    .sort((a, b) => new Date(b.entregadoEn || b.estadoFecha || b.fecha) - new Date(a.entregadoEn || a.estadoFecha || a.fecha));
+  const histPrevio = el.querySelector('.pedidos-historial');
+  const historial = entregados.length ? `
+    <details class="adiciones-lista pedidos-historial"${histPrevio && histPrevio.open ? ' open' : ''}>
+      <summary><span>Historial de hoy</span><span class="adiciones-resumen">${entregados.length} entregado${entregados.length === 1 ? '' : 's'}</span></summary>
+      <div class="adiciones-opciones">${entregados.map(v => {
+        const fin = v.entregadoEn || v.estadoFecha;
+        const tardo = fin ? Math.max(0, Math.round((new Date(fin) - new Date(v.fecha)) / 60000)) : null;
+        return `<div class="historial-fila">
+          <div style="flex:1;min-width:0">
+            <div><b>${nombreDe(v)}</b> <span class="item-sub">· ${hora(v.fecha)}${tardo !== null ? ' · tardó ' + tardo + ' min' : ''}</span></div>
+            <div class="item-sub">${v.items.map(i => i.qty + '× ' + esc(i.nombre)).join(', ')}</div>
+          </div>
+          <button class="btn-icon" title="Volver a Listos" onclick="deshacerEntregado('${v.id}')"><i class="ph ph-arrow-counter-clockwise"></i></button>
+        </div>`;
+      }).join('')}</div>
+    </details>` : '';
+  if (!activos.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">No hay pedidos en curso</p>' + historial; return; }
   const tarjeta = v => {
     const min = Math.floor((Date.now() - new Date(v.fecha)) / 60000);
     const listo = v.estado === 'listo';
-    const cliente = v.clienteId && state.clientes.find(c => c.id === v.clienteId);
     return `
       <div class="card pedido-card${listo ? ' listo' : ''}">
         <div class="pedido-cabecera">
-          <span class="pedido-nombre">${esc(v.nombrePedido || (cliente && cliente.nombre) || 'Sin nombre')}</span>
+          <span class="pedido-nombre">${nombreDe(v)}</span>
           <span class="pedido-espera${!listo && min >= PEDIDO_ESPERA_TARDE_MIN ? ' tarde' : ''}">${min < 1 ? 'recién' : 'hace ' + min + ' min'}</span>
         </div>
         <ul class="pedido-items">${v.items.map(i => `<li><b>${i.qty}×</b> ${esc(i.nombre)}</li>`).join('')}</ul>
@@ -1813,12 +1852,24 @@ function renderPedidos() {
   const seccion = (titulo, lista) => lista.length
     ? `<div class="card-title" style="margin:6px 0 10px">${titulo} (${lista.length})</div><div class="pedidos-grid">${lista.map(tarjeta).join('')}</div>`
     : '';
-  el.innerHTML = seccion('Por preparar', pendientes) + seccion('Listos para entregar', activos.filter(v => v.estado === 'listo'));
+  el.innerHTML = seccion('Por preparar', pendientes) + seccion('Listos para entregar', activos.filter(v => v.estado === 'listo')) + historial;
 }
 function avanzarPedido(id) {
   const v = state.ventas.find(x => x.id === id);
   if (!v) return;
-  v.estado = v.estado === 'pendiente' ? 'listo' : 'entregado';
+  const ahora = new Date().toISOString();
+  if (v.estado === 'pendiente') { v.estado = 'listo'; v.listoEn = ahora; }
+  else { v.estado = 'entregado'; v.entregadoEn = ahora; }
+  v.estadoFecha = ahora;
+  saveState();
+  renderPedidos();
+}
+// Desde el historial: un "Entregado" tocado sin querer vuelve a Listos.
+function deshacerEntregado(id) {
+  const v = state.ventas.find(x => x.id === id);
+  if (!v || v.estado !== 'entregado') return;
+  v.estado = 'listo';
+  delete v.entregadoEn;
   v.estadoFecha = new Date().toISOString();
   saveState();
   renderPedidos();
@@ -3959,13 +4010,14 @@ function todayLocalISO() {
   return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0');
 }
 function openSaleModal() {
-  ventaCart = []; ventaDraftQty = 1; ventaDraftAdiciones = []; ventaDraftSelected = null;
+  ventaCart = []; ventaDraftQty = 1; ventaDraftAdiciones = []; ventaDraftSelected = null; adicionesFiltro = '';
   ventaMetodoPago = 'efectivo'; ventaComprobante = '';
   document.getElementById('venta-cliente-nombre').value = '';
   document.getElementById('venta-cliente-telefono').value = '';
   document.getElementById('venta-cliente-direccion').value = '';
   document.getElementById('venta-cliente-nuevo-form').style.display = 'none';
   document.getElementById('venta-nota').value = '';
+  document.getElementById('venta-nombre-pedido').value = '';
   document.getElementById('venta-draft-producto').value = '';
   document.getElementById('venta-draft-qty').textContent = '1';
   document.getElementById('venta-buscar-sugerencias').style.display = 'none';
@@ -4050,7 +4102,8 @@ function toggleDraftAdicion(id) {
 function renderDraftAdiciones() {
   const wrap = document.getElementById('venta-draft-adiciones');
   if (!ventaDraftSelected || ventaDraftSelected.tipo !== 'producto') { wrap.innerHTML = ''; return; }
-  const adiciones = CrumblyCore.getAdiciones(state);
+  const adiciones = CrumblyCore.getAdiciones(state).slice()
+    .sort((a, b) => (a.nombreAdicion || a.nombre).localeCompare(b.nombreAdicion || b.nombre, 'es'));
   if (!adiciones.length) { wrap.innerHTML = ''; return; }
   // Lista desplegable (antes: una nube de chips difícil de leer). Se
   // re-dibuja en cada toque, así que se conserva si estaba abierta.
@@ -4062,14 +4115,33 @@ function renderDraftAdiciones() {
     : 'ninguna';
   wrap.innerHTML = `<details class="adiciones-lista"${abierta ? ' open' : ''}>
     <summary><span>Adiciones</span><span class="adiciones-resumen">${resumen}</span></summary>
+    <div class="adiciones-buscar"><input type="search" class="field" placeholder="Buscar adición" value="${esc(adicionesFiltro)}" oninput="filtrarAdiciones_(this.value)" autocomplete="off"></div>
     <div class="adiciones-opciones">${adiciones.map(a => `
-      <label class="adicion-opcion">
+      <label class="adicion-opcion" data-buscar="${esc(normalizarBusqueda_(a.nombreAdicion || a.nombre))}">
         <input type="checkbox" ${ventaDraftAdiciones.includes(a.id) ? 'checked' : ''} onchange="toggleDraftAdicion('${a.id}')">
         <span class="adicion-nombre">${nombre(a)}</span>
         <span class="adicion-precio">+${fmt(a.precioAdicion)}</span>
       </label>`).join('')}
+      <p class="adiciones-vacio item-sub" style="display:none;padding:10px 14px">Sin resultados</p>
     </div>
   </details>`;
+  filtrarAdiciones_(adicionesFiltro);
+}
+// Buscador de adiciones: filtra ocultando filas (sin re-dibujar), así no
+// se pierde el foco ni lo que se estaba escribiendo. Ignora tildes.
+let adicionesFiltro = '';
+function normalizarBusqueda_(t) { return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+function filtrarAdiciones_(q) {
+  adicionesFiltro = q;
+  const n = normalizarBusqueda_(q.trim());
+  let visibles = 0;
+  document.querySelectorAll('#venta-draft-adiciones .adicion-opcion').forEach(fila => {
+    const ok = !n || fila.dataset.buscar.includes(n);
+    fila.style.display = ok ? '' : 'none';
+    if (ok) visibles++;
+  });
+  const vacio = document.querySelector('#venta-draft-adiciones .adiciones-vacio');
+  if (vacio) vacio.style.display = visibles ? 'none' : '';
 }
 // Buscador único de "Agregar producto o complemento" — reemplaza el
 // <input list="datalist"> nativo (poco confiable en navegadores móviles,
@@ -4122,7 +4194,7 @@ function addLineToCart() {
       adiciones: []
     });
   }
-  ventaDraftQty = 1; ventaDraftAdiciones = []; ventaDraftSelected = null;
+  ventaDraftQty = 1; ventaDraftAdiciones = []; ventaDraftSelected = null; adicionesFiltro = '';
   document.getElementById('venta-draft-producto').value = '';
   document.getElementById('venta-draft-qty').textContent = '1';
   renderDraftAdiciones();
@@ -4201,7 +4273,7 @@ function registrarVenta() {
   // quien prepara. Una venta cargada con fecha pasada no es un pedido.
   if (!opts.fecha) {
     venta.estado = 'pendiente';
-    venta.nombrePedido = document.getElementById('venta-cliente-nombre').value.trim();
+    venta.nombrePedido = document.getElementById('venta-nombre-pedido').value.trim() || document.getElementById('venta-cliente-nombre').value.trim();
     const nota = document.getElementById('venta-nota').value.trim();
     if (nota) venta.nota = nota;
   }
