@@ -1,12 +1,14 @@
 /**
  * Tests de autenticación (js/auth.js). Correr con:
  * node tests/auth.test.js
- * Sin red real — se inyecta un fetch de prueba. localStorage tampoco
+ * Sin red real — se inyecta un fetch de prueba (Apps Script) y un
+ * cliente de Supabase falso (auth.setSupabase). localStorage tampoco
  * existe en Node por defecto, así que se inyecta una implementación
  * mínima en memoria antes de requerir el módulo (auth.js la usa igual
  * que la usaría un navegador real).
  */
 const assert = require('assert');
+const nodeCrypto = require('crypto');
 const path = require('path');
 const authPath = path.join(__dirname, '..', 'js', 'auth.js');
 
@@ -47,10 +49,56 @@ function mockFetch(responses) {
 // una variable de módulo, así que reusar el mismo `require` entre tests
 // arrastraría estado de un test a otro (justo lo que restoreSession()
 // necesita poder probar: "cerrar y volver a abrir la pestaña").
-function freshAuth() {
+//
+// Por defecto trae inyectado un Supabase falso que acepta el login (el
+// correo está en `usuarios` y activo), para que los tests de Apps Script
+// de siempre sigan probando solo lo suyo.
+function freshAuth(sb) {
   delete require.cache[require.resolve(authPath)];
-  return require(authPath);
+  const auth = require(authPath);
+  auth.setSupabase(sb === undefined ? fakeSupabase() : sb);
+  return auth;
 }
+
+// Cliente de Supabase falso — solo lo que auth.js usa:
+// auth.signInWithIdToken, auth.signOut y
+// from('usuarios').select(...).eq('email', x).maybeSingle().
+// `usuarios` es la tabla (email → fila); `signInError` simula que
+// Supabase rechace el ID token (p.ej. nonce que no coincide).
+function fakeSupabase(opts) {
+  opts = opts || {};
+  const email = opts.email || 'duena@correo.com';
+  const usuarios = opts.usuarios || { [email]: { email, nombre: 'Duena', rol: 'admin', activo: true } };
+  const calls = { signIn: [], signOut: 0, eq: [] };
+  let sesionAbierta = false;
+  return {
+    calls,
+    get sesionAbierta() { return sesionAbierta; },
+    auth: {
+      signInWithIdToken(creds) {
+        calls.signIn.push(creds);
+        if (opts.signInError) return Promise.resolve({ data: { user: null, session: null }, error: { message: opts.signInError } });
+        sesionAbierta = true;
+        return Promise.resolve({ data: { user: { email: email.toUpperCase() }, session: {} }, error: null });
+      },
+      signOut() {
+        calls.signOut++;
+        sesionAbierta = false;
+        return Promise.resolve({ error: null });
+      }
+    },
+    from(tabla) {
+      assert.strictEqual(tabla, 'usuarios');
+      return {
+        select() { return this; },
+        eq(col, val) { calls.eq.push([col, val]); this._email = val; return this; },
+        maybeSingle() { return Promise.resolve({ data: usuarios[this._email] || null, error: null }); }
+      };
+    }
+  };
+}
+
+const loginOk = () => mockFetch([{ body: { success: true, authorized: true, user: usuarioGoogle, token: 'tok-sesion-1' } }]);
 
 const usuarioGoogle = { id: 1, email: 'duena@correo.com', nombre: 'Duena', rol: 'admin' };
 
@@ -148,6 +196,127 @@ test('tras logout, una instancia nueva ya no encuentra sesión guardada', async 
   const auth2 = freshAuth();
   auth2.restoreSession();
   assert.strictEqual(auth2.isAuthenticated(), false);
+});
+
+group('Supabase — signInWithIdToken + nonce');
+
+test('prepareGoogleNonce devuelve el SHA-256 hex del nonce crudo que se le pasa a Supabase', async () => {
+  const sb = fakeSupabase();
+  const auth = freshAuth(sb);
+  const hashed = await auth.prepareGoogleNonce();
+  assert.ok(/^[0-9a-f]{64}$/.test(hashed), 'hash en hex de 64 caracteres');
+  await auth.loginGoogle('jwt-de-google', loginOk());
+  const creds = sb.calls.signIn[0];
+  assert.strictEqual(creds.provider, 'google');
+  assert.strictEqual(creds.token, 'jwt-de-google');
+  assert.ok(creds.nonce && creds.nonce !== hashed, 'a Supabase va el nonce CRUDO, no el hash');
+  assert.strictEqual(nodeCrypto.createHash('sha256').update(creds.nonce).digest('hex'), hashed);
+});
+
+test('prepareGoogleNonce llamado dos veces (gate + onload) devuelve el mismo hash', async () => {
+  const auth = freshAuth();
+  const [a, b] = await Promise.all([auth.prepareGoogleNonce(), auth.prepareGoogleNonce()]);
+  assert.strictEqual(a, b);
+  assert.strictEqual(await auth.prepareGoogleNonce(), a);
+});
+
+test('un login fallido NO rota el nonce (el botón sigue con el mismo hash); uno exitoso sí', async () => {
+  const auth = freshAuth(fakeSupabase({ usuarios: {} }));
+  const h1 = await auth.prepareGoogleNonce();
+  await assert.rejects(() => auth.loginGoogle('jwt', loginOk()));
+  assert.strictEqual(await auth.prepareGoogleNonce(), h1);
+  auth.setSupabase(fakeSupabase());
+  await auth.loginGoogle('jwt', loginOk());
+  assert.notStrictEqual(await auth.prepareGoogleNonce(), h1);
+});
+
+test('busca en `usuarios` el correo en minúsculas', async () => {
+  const sb = fakeSupabase();
+  const auth = freshAuth(sb);
+  await auth.loginGoogle('jwt-de-google', loginOk());
+  assert.deepStrictEqual(sb.calls.eq[0], ['email', 'duena@correo.com']);
+});
+
+group('Supabase — allow-list `usuarios`');
+
+test('rechaza si el correo no está en `usuarios` de Supabase, cierra esa sesión y no llama a Apps Script', async () => {
+  global.localStorage = fakeLocalStorage();
+  const sb = fakeSupabase({ usuarios: {} });
+  const auth = freshAuth(sb);
+  const f = loginOk();
+  await assert.rejects(() => auth.loginGoogle('jwt-de-otra-cuenta', f), /Usuario no autorizado/);
+  assert.strictEqual(sb.calls.signOut, 1);
+  assert.strictEqual(sb.sesionAbierta, false);
+  assert.strictEqual(f.calls.length, 0);
+  assert.strictEqual(auth.isAuthenticated(), false);
+});
+
+test('rechaza si el usuario está con activo=false en Supabase, y cierra esa sesión', async () => {
+  global.localStorage = fakeLocalStorage();
+  const sb = fakeSupabase({ usuarios: { 'duena@correo.com': { email: 'duena@correo.com', activo: false } } });
+  const auth = freshAuth(sb);
+  await assert.rejects(() => auth.loginGoogle('jwt', loginOk()), /Usuario desactivado/);
+  assert.strictEqual(sb.calls.signOut, 1);
+  assert.strictEqual(sb.sesionAbierta, false);
+  assert.strictEqual(auth.isAuthenticated(), false);
+});
+
+group('Los dos backends tienen que aceptar');
+
+test('si Supabase rechaza el ID token, el login falla sin tocar Apps Script ni dejar sesión', async () => {
+  global.localStorage = fakeLocalStorage();
+  const sb = fakeSupabase({ signInError: 'Nonces mismatch' });
+  const auth = freshAuth(sb);
+  const f = loginOk();
+  await assert.rejects(() => auth.loginGoogle('jwt', f), /Supabase: Nonces mismatch/);
+  assert.strictEqual(f.calls.length, 0);
+  assert.strictEqual(auth.isAuthenticated(), false);
+  assert.strictEqual(freshAuth().restoreSession(), null);
+});
+
+test('si Apps Script rechaza después de que Supabase aceptó, se cierra la sesión de Supabase', async () => {
+  global.localStorage = fakeLocalStorage();
+  const sb = fakeSupabase();
+  const auth = freshAuth(sb);
+  const f = mockFetch([{ body: { success: false, authorized: false, message: 'Usuario no autorizado' } }]);
+  await assert.rejects(() => auth.loginGoogle('jwt', f), /Usuario no autorizado/);
+  assert.strictEqual(sb.calls.signOut, 1);
+  assert.strictEqual(sb.sesionAbierta, false);
+  assert.strictEqual(auth.isAuthenticated(), false);
+  assert.strictEqual(freshAuth().restoreSession(), null);
+});
+
+test('si Apps Script falla por red/HTTP, también se cierra la sesión de Supabase', async () => {
+  global.localStorage = fakeLocalStorage();
+  const sb = fakeSupabase();
+  const auth = freshAuth(sb);
+  await assert.rejects(() => auth.loginGoogle('jwt', mockFetch([{ status: 500, body: {} }])), /HTTP 500/);
+  assert.strictEqual(sb.sesionAbierta, false);
+  assert.strictEqual(auth.isAuthenticated(), false);
+});
+
+test('sin supabase-js cargado (CDN caído), el login falla con un mensaje claro', async () => {
+  const auth = freshAuth(null);
+  const f = loginOk();
+  await assert.rejects(auth.loginGoogle('jwt', f), /No se pudo cargar Supabase/); // promesa rechazada, no throw síncrono
+  assert.strictEqual(f.calls.length, 0);
+});
+
+test('logout también cierra la sesión de Supabase', async () => {
+  global.localStorage = fakeLocalStorage();
+  const sb = fakeSupabase();
+  const auth = freshAuth(sb);
+  await auth.loginGoogle('jwt', loginOk());
+  assert.strictEqual(sb.sesionAbierta, true);
+  auth.logout(mockFetch([{ body: { ok: true } }]));
+  assert.strictEqual(sb.calls.signOut, 1);
+  assert.strictEqual(sb.sesionAbierta, false);
+});
+
+test('logout sin supabase-js cargado no revienta', () => {
+  const auth = freshAuth(null);
+  auth.logout(mockFetch([]));
+  assert.strictEqual(auth.isAuthenticated(), false);
 });
 
 group('getBackendUrl');

@@ -1311,6 +1311,7 @@ textarea.field{height:auto}
 <script src="js/core.js"></script>
 <script src="js/rowsync.js"></script>
 <script src="js/sync.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="js/auth.js"></script>
 <script>
 let state = CrumblyCore.emptyState();
@@ -1561,9 +1562,23 @@ function hideLoginGate() {
 // el botón la mayoría de las veces (bug real: antes solo había un
 // intento, sin reintento, así que el botón nunca aparecía salvo que la
 // red fuera raro-rápida — encontrado al probar en un dispositivo real).
-function initGoogleSignIn() {
+// El `nonce` (hash) queda firmado dentro del ID token y Supabase lo
+// compara contra el valor crudo que guarda auth.js — ver
+// auth.prepareGoogleNonce. Las dos llamadas a esta función reciben el
+// MISMO nonce (auth.js lo reusa hasta el próximo login exitoso), así que
+// no importa cuál de las dos termine inicializando el botón.
+async function initGoogleSignIn() {
   if (typeof google === 'undefined' || !google.accounts) return;
-  google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleGoogleCredential });
+  let nonce;
+  try {
+    nonce = await auth.prepareGoogleNonce();
+  } catch (err) {
+    const errEl = document.getElementById('login-error');
+    errEl.textContent = 'No se pudo preparar el ingreso con Google: ' + err.message;
+    errEl.style.display = 'block';
+    return;
+  }
+  google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleGoogleCredential, nonce });
   google.accounts.id.renderButton(document.getElementById('google-signin-btn'), { theme: 'outline', size: 'large', width: 280 });
 }
 // Punto de entrada único tras CUALQUIER login exitoso (Google, correo, o
@@ -1604,9 +1619,9 @@ function applyUsuarioHeader_(user) {
   if (ajustesUsuario) ajustesUsuario.textContent = 'Conectado como ' + user.email + (user.rol ? ' · ' + user.rol : '');
 }
 // Google entrega un JWT firmado (response.credential) — auth.js lo
-// cambia por una sesión real: el backend lo verifica contra Google
-// (oauth2.googleapis.com/tokeninfo) antes de confiar en él. La app nunca
-// valida el JWT por su cuenta.
+// cambia por una sesión real en Supabase Y en Apps Script (los dos lo
+// verifican contra Google y contra su lista de usuarios antes de confiar
+// en él). La app nunca valida el JWT por su cuenta.
 async function handleGoogleCredential(response) {
   const errEl = document.getElementById('login-error');
   const statusEl = document.getElementById('login-status');

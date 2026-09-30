@@ -16,29 +16,38 @@ function group(name) { tests.push([null, () => console.log('\n== ' + name + ' ==
 
 // Cliente falso: `tablas` es { nombre: [ {id, data, deleted_at}, ... ] } —
 // el estado "real" de cada tabla, mutado por upsert/update como lo haría
-// Postgres. Cada método de la cadena registra la llamada en `calls` para
-// que los tests puedan inspeccionar qué se pidió.
-function fakeClient(tablas) {
+// Postgres. Cada llamada a select/upsert/update se registra en `calls` para
+// que los tests puedan inspeccionar qué se pidió. `select` arma una
+// consulta encadenable (is/eq/order/range/maybeSingle) que se resuelve al
+// hacer `then`, igual que el builder de supabase-js. `maxRows` imita el
+// tope "Max rows" de PostgREST (1000 por defecto en Supabase).
+function fakeClient(tablas, maxRows) {
   tablas = tablas || {};
+  maxRows = maxRows || 1000;
   const calls = [];
   function tabla(nombre) {
     if (!tablas[nombre]) tablas[nombre] = [];
     return {
-      select: function () {
-        calls.push({ tabla: nombre, op: 'select' });
-        const builder = {
-          is: function (col, val) {
-            const filas = tablas[nombre].filter(r => (val === null ? r[col] == null : r[col] === val));
-            return Promise.resolve({ data: filas, error: null });
-          },
-          eq: function (col, val) {
-            const filas = tablas[nombre].filter(r => r[col] === val);
-            return {
-              maybeSingle: function () { return Promise.resolve({ data: filas[0] || null, error: null }); }
-            };
-          }
+      select: function (cols, opts) {
+        calls.push({ tabla: nombre, op: 'select', cols: cols, opts: opts });
+        const filtros = [];
+        let orden = null, rango = null;
+        function resolver() {
+          let filas = tablas[nombre].filter(r => filtros.every(f => f(r)));
+          if (opts && opts.head) return { data: null, count: filas.length, error: null };
+          if (orden) filas = filas.slice().sort((x, y) => (x[orden] < y[orden] ? -1 : x[orden] > y[orden] ? 1 : 0));
+          if (rango) filas = filas.slice(rango[0], rango[1] + 1);
+          return { data: filas.slice(0, maxRows), error: null };
+        }
+        const q = {
+          is: function (col, val) { filtros.push(r => (val === null ? r[col] == null : r[col] === val)); return q; },
+          eq: function (col, val) { filtros.push(r => r[col] === val); return q; },
+          order: function (col) { orden = col; return q; },
+          range: function (desde, hasta) { rango = [desde, hasta]; return q; },
+          maybeSingle: function () { const r = resolver(); return Promise.resolve({ data: r.data[0] || null, error: null }); },
+          then: function (ok, err) { return Promise.resolve(resolver()).then(ok, err); }
         };
-        return builder;
+        return q;
       },
       upsert: function (filasNuevas) {
         calls.push({ tabla: nombre, op: 'upsert', filas: filasNuevas });
@@ -65,6 +74,12 @@ function fakeClient(tablas) {
   }
   return { from: tabla, calls: calls, tablas: tablas };
 }
+
+// Filas upserteadas en una tabla (todas las llamadas juntas).
+function upserteadas(c, nombre) {
+  return c.calls.filter(x => x.tabla === nombre && x.op === 'upsert').reduce((acc, x) => acc.concat(x.filas), []);
+}
+function filaViva(id, data) { return { id: id, data: data, deleted_at: null }; }
 
 group('pull');
 
@@ -100,16 +115,44 @@ test('propaga un error de Postgres sin lanzar', async () => {
   c.from = function (nombre) {
     return {
       select: function () {
-        return {
-          is: function () { return Promise.resolve({ data: null, error: { message: 'tabla no existe' } }); },
+        const q = {
+          is: function () { return q; }, order: function () { return q; }, range: function () { return q; },
+          then: function (ok) { return Promise.resolve({ data: null, error: { message: 'tabla no existe' } }).then(ok); },
           eq: function () { return { maybeSingle: function () { return Promise.resolve({ data: null, error: null }); } }; }
         };
+        return q;
       }
     };
   };
   const r = await Sync.pull(c);
   assert.strictEqual(r.ok, false);
   assert.ok(r.error.indexOf('tabla no existe') !== -1);
+});
+
+test('CRITERIO: pagina más allá del tope de Max rows — 2500 ventas vuelven las 2500, no 1000', async () => {
+  const ventas = [];
+  for (let i = 0; i < 2500; i++) { const id = 'v' + String(i).padStart(5, '0'); ventas.push(filaViva(id, { id: id })); }
+  const c = fakeClient({ ventas: ventas });
+  const r = await Sync.pull(c);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(r.state.ventas.length, 2500);
+  assert.strictEqual(new Set(r.state.ventas.map(v => v.id)).size, 2500);
+});
+
+test('pagina bien aunque el proyecto tenga un Max rows MENOR que la página pedida', async () => {
+  const ventas = [];
+  for (let i = 0; i < 1200; i++) { const id = 'v' + String(i).padStart(5, '0'); ventas.push(filaViva(id, { id: id })); }
+  const c = fakeClient({ ventas: ventas }, 500);
+  const r = await Sync.pull(c);
+  assert.strictEqual(r.state.ventas.length, 1200);
+});
+
+test('sin fila de config: state sin schemaVersion (migrateState decide), sin romper', async () => {
+  const c = fakeClient({ materia: [filaViva('m1', { id: 'm1' })] });
+  const r = await Sync.pull(c);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual('schemaVersion' in r.state, false);
+  assert.strictEqual(r.state.materia.length, 1);
 });
 
 group('push');
@@ -160,6 +203,229 @@ test('propaga un error de Postgres en push sin lanzar', async () => {
   const r = await Sync.push(c, { materia: [{ id: 'm1' }] });
   assert.strictEqual(r.ok, false);
   assert.ok(r.error.indexOf('RLS violada') !== -1);
+});
+
+group('push con base (solo lo que cambió)');
+
+const BASE = {
+  schemaVersion: 9,
+  materia: [{ id: 'm1', nombre: 'Harina', costo: 5 }, { id: 'm2', nombre: 'Azúcar', costo: 3 }],
+  ventas: [{ id: 'v1', total: 100 }, { id: 'v2', total: 200 }],
+  config: { email: 'x@x.com', factorPrestacional: 1.38 }
+};
+function copia(o) { return JSON.parse(JSON.stringify(o)); }
+
+test('CRITERIO: solo se sube el registro que cambió respecto de la base', async () => {
+  const c = fakeClient();
+  const state = copia(BASE);
+  state.materia[0].costo = 6;
+  const r = await Sync.push(c, state, undefined, BASE);
+  assert.strictEqual(r.ok, true);
+  const m = upserteadas(c, 'materia');
+  assert.deepStrictEqual(m.map(f => f.id), ['m1']);
+  assert.strictEqual(m[0].data.costo, 6);
+});
+
+test('CRITERIO: un registro que no toqué NO viaja — un dispositivo con copia vieja no pisa lo que editó otro', async () => {
+  // En Supabase, otro dispositivo ya cambió m2 a costo 4; este dispositivo
+  // todavía tiene la versión de la base (costo 3) y solo editó m1.
+  const c = fakeClient({ materia: [filaViva('m1', BASE.materia[0]), filaViva('m2', { id: 'm2', nombre: 'Azúcar', costo: 4 })] });
+  const state = copia(BASE);
+  state.materia[0].costo = 6;
+  await Sync.push(c, state, undefined, BASE);
+  assert.ok(!upserteadas(c, 'materia').some(f => f.id === 'm2'));
+  assert.strictEqual(c.tablas.materia.find(f => f.id === 'm2').data.costo, 4);
+  // ni las ventas de la historia se reescriben
+  assert.strictEqual(upserteadas(c, 'ventas').length, 0);
+});
+
+test('CRITERIO: un registro nuevo (id que la base no tiene) se sube', async () => {
+  const c = fakeClient();
+  const state = copia(BASE);
+  state.ventas.push({ id: 'v3', total: 300 });
+  await Sync.push(c, state, undefined, BASE);
+  assert.deepStrictEqual(upserteadas(c, 'ventas').map(f => f.id), ['v3']);
+  assert.strictEqual(upserteadas(c, 'materia').length, 0);
+});
+
+test('mismo contenido con las claves en otro orden (jsonb las reordena) NO cuenta como cambio', async () => {
+  const c = fakeClient();
+  const state = copia(BASE);
+  state.materia[1] = { costo: 3, nombre: 'Azúcar', id: 'm2' };
+  await Sync.push(c, state, undefined, BASE);
+  assert.strictEqual(upserteadas(c, 'materia').length, 0);
+});
+
+test('un registro que está en la base y ya no en el state NO se borra por ausencia (solo idsABorrar borra, V0)', async () => {
+  const c = fakeClient({ materia: [filaViva('m2', BASE.materia[1])] });
+  const state = copia(BASE);
+  state.materia = state.materia.filter(m => m.id !== 'm2');
+  await Sync.push(c, state, undefined, BASE);
+  assert.ok(!c.calls.some(x => x.op === 'update'));
+  assert.strictEqual(c.tablas.materia[0].deleted_at, null);
+});
+
+test('CRITERIO: sin base, sube todo (lo que necesita la migración única)', async () => {
+  const c = fakeClient();
+  const r = await Sync.push(c, copia(BASE));
+  assert.strictEqual(r.ok, true);
+  assert.deepStrictEqual(upserteadas(c, 'materia').map(f => f.id), ['m1', 'm2']);
+  assert.deepStrictEqual(upserteadas(c, 'ventas').map(f => f.id), ['v1', 'v2']);
+  assert.ok(c.calls.some(x => x.tabla === 'config' && x.op === 'upsert'));
+});
+
+test('CRITERIO: config sin cambios respecto de la base no se escribe', async () => {
+  const c = fakeClient();
+  const state = copia(BASE);
+  state.ventas.push({ id: 'v3', total: 300 });
+  await Sync.push(c, state, undefined, BASE);
+  assert.ok(!c.calls.some(x => x.tabla === 'config'));
+});
+
+test('config con una clave cambiada sí se escribe', async () => {
+  const c = fakeClient();
+  const state = copia(BASE);
+  state.config.factorPrestacional = 1.5;
+  await Sync.push(c, state, undefined, BASE);
+  const up = c.calls.find(x => x.tabla === 'config' && x.op === 'upsert');
+  assert.ok(up);
+  assert.strictEqual(up.filas.data.config.factorPrestacional, 1.5);
+});
+
+test('schemaVersion distinto al de la base también escribe config', async () => {
+  const c = fakeClient();
+  const state = copia(BASE);
+  state.schemaVersion = 10;
+  await Sync.push(c, state, undefined, BASE);
+  assert.strictEqual(c.calls.find(x => x.tabla === 'config' && x.op === 'upsert').filas.schema_version, 10);
+});
+
+test('nada cambió → ninguna escritura, ok:true', async () => {
+  const c = fakeClient();
+  const r = await Sync.push(c, copia(BASE), undefined, BASE);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(c.calls.length, 0);
+});
+
+test('idsABorrar sigue funcionando con base', async () => {
+  const c = fakeClient({ ventas: [filaViva('v1', BASE.ventas[0])] });
+  const state = copia(BASE);
+  state.ventas = state.ventas.filter(v => v.id !== 'v1');
+  await Sync.push(c, state, { ventas: ['v1'] }, BASE);
+  assert.ok(c.tablas.ventas[0].deleted_at);
+});
+
+group('migrarDesdeState');
+
+function stateMigracion() {
+  return {
+    schemaVersion: 9,
+    materia: [{ id: 'm1', nombre: 'Harina' }, { id: 'm2', nombre: 'Azúcar' }],
+    ventas: [{ id: 'v1' }, { id: 'v2' }, { id: 'v3' }],
+    gastos: [{ id: 'g1' }],
+    config: { email: 'x@x.com' }
+  };
+}
+
+test('CRITERIO: camino feliz — sube todo, cuenta en Supabase, ok:true sin diferencias', async () => {
+  const c = fakeClient();
+  const r = await Sync.migrarDesdeState(c, stateMigracion());
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+  assert.deepStrictEqual(r.diferencias, []);
+  assert.deepStrictEqual(r.conteos.materia, { local: 2, remoto: 2 });
+  assert.deepStrictEqual(r.conteos.ventas, { local: 3, remoto: 3 });
+  assert.deepStrictEqual(r.conteos.productos, { local: 0, remoto: 0 });
+  assert.strictEqual(Object.keys(r.conteos).length, 12);
+  // y un pull devuelve lo mismo
+  const p = await Sync.pull(c);
+  assert.strictEqual(p.state.ventas.length, 3);
+  assert.strictEqual(p.state.schemaVersion, 9);
+  assert.strictEqual(p.state.config.email, 'x@x.com');
+});
+
+test('CRITERIO: si un conteo no coincide → ok:false con la diferencia', async () => {
+  const c = fakeClient();
+  // un upsert que "pierde" una venta (ej. RLS/trigger que la filtra)
+  const fromReal = c.from;
+  c.from = function (nombre) {
+    const t = fromReal(nombre);
+    if (nombre === 'ventas') {
+      const upReal = t.upsert;
+      t.upsert = filas => upReal(filas.slice(0, filas.length - 1));
+    }
+    return t;
+  };
+  const r = await Sync.migrarDesdeState(c, stateMigracion());
+  assert.strictEqual(r.ok, false);
+  assert.deepStrictEqual(r.diferencias, [{ coleccion: 'ventas', local: 3, remoto: 2 }]);
+  assert.deepStrictEqual(r.conteos.materia, { local: 2, remoto: 2 });
+});
+
+test('CRITERIO: se niega si Supabase ya tiene filas vivas — y no escribe nada', async () => {
+  const c = fakeClient({ gastos: [filaViva('gX', { id: 'gX' })] });
+  const r = await Sync.migrarDesdeState(c, stateMigracion());
+  assert.strictEqual(r.ok, false);
+  assert.ok(/ya tiene datos/.test(r.error) && /gastos \(1\)/.test(r.error) && /forzar/.test(r.error), r.error);
+  assert.ok(!c.calls.some(x => x.op === 'upsert' || x.op === 'update'));
+});
+
+test('filas ya borradas (deleted_at) no cuentan como "tiene datos"', async () => {
+  const c = fakeClient({ gastos: [{ id: 'gX', data: { id: 'gX' }, deleted_at: '2026-01-01T00:00:00Z' }] });
+  const r = await Sync.migrarDesdeState(c, stateMigracion());
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+});
+
+test('CRITERIO: { forzar: true } la corre igual — y los conteos dicen la verdad', async () => {
+  const c = fakeClient({ gastos: [filaViva('gX', { id: 'gX' })] });
+  const r = await Sync.migrarDesdeState(c, stateMigracion(), { forzar: true });
+  assert.ok(upserteadas(c, 'materia').length === 2);
+  // gX ya estaba y no está en el state: 1 local vs 2 remotos — se reporta, no se esconde
+  assert.strictEqual(r.ok, false);
+  assert.deepStrictEqual(r.diferencias, [{ coleccion: 'gastos', local: 1, remoto: 2 }]);
+});
+
+test('forzar sobre la misma data ya migrada (re-correrla) queda ok', async () => {
+  const c = fakeClient();
+  await Sync.migrarDesdeState(c, stateMigracion());
+  const r = await Sync.migrarDesdeState(c, stateMigracion(), { forzar: true });
+  assert.strictEqual(r.ok, true, JSON.stringify(r));
+});
+
+test('registro sin id o id repetido → cancela antes de escribir nada', async () => {
+  const c = fakeClient();
+  const s = stateMigracion();
+  s.ventas.push({ total: 5 });
+  s.materia.push({ id: 'm1', nombre: 'Harina duplicada' });
+  const r = await Sync.migrarDesdeState(c, s);
+  assert.strictEqual(r.ok, false);
+  assert.ok(/ventas\[3\] no tiene id/.test(r.error) && /materia: id "m1" repetido/.test(r.error), r.error);
+  assert.strictEqual(c.calls.length, 0);
+});
+
+test('si la fila de config no quedó con el schemaVersion → ok:false (el próximo pull re-aplicaría la corrección v9)', async () => {
+  const c = fakeClient();
+  const fromReal = c.from;
+  c.from = function (nombre) {
+    const t = fromReal(nombre);
+    if (nombre === 'config') t.upsert = () => Promise.resolve({ data: null, error: null }); // "escribe" pero no persiste
+    return t;
+  };
+  const r = await Sync.migrarDesdeState(c, stateMigracion());
+  assert.strictEqual(r.ok, false);
+  assert.deepStrictEqual(r.diferencias, [{ coleccion: 'config', local: 9, remoto: null }]);
+});
+
+test('si la subida falla, ok:false con el error', async () => {
+  const c = fakeClient();
+  const fromReal = c.from;
+  c.from = function (nombre) {
+    const t = fromReal(nombre);
+    if (nombre === 'ventas') t.upsert = () => Promise.resolve({ data: null, error: { message: 'RLS violada' } });
+    return t;
+  };
+  const r = await Sync.migrarDesdeState(c, stateMigracion());
+  assert.strictEqual(r.ok, false);
+  assert.ok(/RLS violada/.test(r.error));
 });
 
 group('isConfigured');
