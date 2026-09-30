@@ -88,6 +88,19 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 
 /* ─── Cards / pills / chips ─── */
 .card{background:var(--white);border:1px solid var(--line);border-radius:16px;padding:18px}
+.info{display:inline-block;position:relative;vertical-align:middle;margin-left:3px}
+.info summary{list-style:none;cursor:pointer;color:var(--muted);display:inline-flex;align-items:center;font-size:15px;line-height:1;padding:2px}
+.info summary::-webkit-details-marker{display:none}
+.info[open] summary{color:var(--ink)}
+.info p{position:absolute;z-index:20;left:-8px;top:calc(100% + 6px);width:min(260px,70vw);margin:0;padding:10px 12px;background:var(--ink);color:var(--white);border-radius:10px;font-size:var(--fs-xs);font-weight:var(--fw-medium);line-height:1.45;text-transform:none;letter-spacing:0;white-space:normal;box-shadow:0 8px 24px rgba(0,0,0,.18)}
+.info.derecha p{left:auto;right:-8px}
+.ins-seccion{font-size:var(--fs-xs);font-weight:var(--fw-bold);color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin:16px 0 8px;padding-top:12px;border-top:1px solid var(--line);display:flex;align-items:center}
+.ins-dato{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--bg);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:var(--fs-sm)}
+.ins-mas{border-top:1px solid var(--line);margin-top:8px;padding-top:10px}
+.ins-mas > summary{cursor:pointer;font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--ink);padding:4px 0 8px;list-style:none;display:flex;align-items:center;gap:6px}
+.ins-mas > summary::-webkit-details-marker{display:none}
+.ins-mas > summary::after{content:'▾';color:var(--muted)}
+.ins-mas[open] > summary::after{content:'▴'}
 .adiciones-lista{width:100%;border:1px solid var(--line);border-radius:12px;background:var(--white)}
 .adiciones-lista summary{display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--ink);list-style:none}
 .adiciones-lista summary::-webkit-details-marker{display:none}
@@ -663,106 +676,122 @@ textarea.field{height:auto}
       <span class="modal-title" id="ins-modal-title">Agregar insumo</span>
       <button class="modal-close" onclick="closeModal('modal-insumo')"><i class="ph ph-x"></i></button>
     </div>
+
+    <div class="ins-seccion" style="border-top:none;padding-top:0;margin-top:4px">Datos</div>
     <div class="modal-field">
-      <label class="field-label">Nombre</label>
+      <div class="field-label">Nombre</div>
       <input type="text" id="ins-nombre" class="field" placeholder="Ej: Chocolate en polvo">
     </div>
-    <div class="modal-field">
-      <label class="field-label">Tipo de insumo</label>
-      <select id="ins-tipo-insumo" class="field">
-        <option value="materia">Materia prima (ingrediente — se usa en recetas)</option>
-        <option value="empaques">Empaque (cajas, vasos, tapas, etc.)</option>
-        <option value="toppings" disabled>Topping (solo lectura acá — se crean desde el menú)</option>
-      </select>
-      <p class="item-sub" id="ins-tipo-insumo-nota" style="display:none;margin-top:4px">Cambiarlo mueve el insumo de categoría sin perder las recetas que lo usan (el id no cambia). Si es empaque ↔ materia prima, también cambia cómo se reparte su costo entre comida y empaque en los reportes — el costo total del producto no cambia.</p>
-    </div>
     <div style="display:flex;gap:10px">
-      <div class="modal-field" style="flex:1">
-        <label class="field-label">Categoría (escribe para crear una nueva)</label>
-        <input type="text" id="ins-categoria" class="field" placeholder="Ej: Frutas">
-        <!-- Z1 (Ronda 7): en el estado real son diez categorías —
-             mostrarlas siempre alargaba el modal. Colapsadas por
-             defecto, con un botón que las despliega. -->
-        <button type="button" style="background:transparent;border:none;color:var(--muted);font-size:var(--fs-xs);font-weight:var(--fw-medium);cursor:pointer;padding:6px 0;display:flex;align-items:center;gap:4px" onclick="toggleInsCategoriasChips()">
-          Ver categorías existentes <i class="ph ph-caret-down" id="ins-categorias-caret"></i>
-        </button>
-        <div id="ins-categorias-chips" style="display:none;flex-wrap:wrap;gap:6px;margin-top:2px"></div>
+      <div class="modal-field" style="flex:1;min-width:0">
+        <div class="field-label">Tipo
+          <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p><b>Materia prima:</b> ingredientes de las recetas. <b>Empaque:</b> cajas, vasos, tapas. Cambiar el tipo no rompe las recetas que lo usan; solo cambia cómo se reparte su costo entre comida y empaque en los reportes. Los toppings se crean desde el menú.</p></details>
+        </div>
+        <select id="ins-tipo-insumo" class="field">
+          <option value="materia">Materia prima</option>
+          <option value="empaques">Empaque</option>
+          <option value="toppings" disabled>Topping</option>
+        </select>
       </div>
-      <div class="modal-field" style="flex:1">
-        <label class="field-label">Tipo de medición</label>
-        <select id="ins-tipo-medicion" class="field">
+      <div class="modal-field" style="flex:1;min-width:0">
+        <div class="field-label">Medición
+          <details class="info derecha"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Cómo lo medís en las recetas y en el stock. Algo que viene por unidad (como los huevos) igual puede ser materia prima.</p></details>
+        </div>
+        <select id="ins-tipo-medicion" class="field" onchange="actualizarEtiquetasUnidad_()">
           <option value="" id="ins-tipo-medicion-pendiente" style="display:none">— Sin definir (corregir) —</option>
           <option value="gramos">Gramos</option>
           <option value="mililitros">Mililitros</option>
           <option value="kilogramos">Kilogramos</option>
           <option value="unidad">Unidad</option>
         </select>
-        <p class="item-sub" style="margin-top:4px">Cómo lo medís (aunque venga por unidad, como los huevos, puede ser Materia prima)</p>
       </div>
     </div>
     <div class="modal-field">
-      <label class="field-label">Cantidad disponible (inicial)</label>
-      <input type="number" id="ins-cantidad" class="field" placeholder="0" min="0" step="0.01">
-      <!-- B2: la cantidad de un insumo YA CREADO no se edita a mano acá
-           (era la única vía de ajuste y no dejaba rastro) — se corrige
-           con una compra, una venta/merma, o el Conteo físico, que sí
-           quedan trazados. Solo es editable al crear el insumo (el stock
-           inicial no es un "ajuste" de nada, es el primer dato). -->
-      <p class="item-sub" id="ins-cantidad-nota" style="display:none;margin-top:4px">No se edita acá — usa <b>Inventario → Conteo físico</b> para corregir la cantidad con motivo y trazabilidad.</p>
+      <div class="field-label">Categoría</div>
+      <input type="text" id="ins-categoria" class="field" placeholder="Ej: Frutas — escribí una nueva o elegí">
+      <!-- Z1 (Ronda 7): colapsadas por defecto (son unas diez). -->
+      <button type="button" style="background:transparent;border:none;color:var(--muted);font-size:var(--fs-xs);font-weight:var(--fw-medium);cursor:pointer;padding:6px 0;display:flex;align-items:center;gap:4px" onclick="toggleInsCategoriasChips()">
+        Ver categorías existentes <i class="ph ph-caret-down" id="ins-categorias-caret"></i>
+      </button>
+      <div id="ins-categorias-chips" style="display:none;flex-wrap:wrap;gap:6px;margin-top:2px"></div>
     </div>
-    <!-- Bug real: acá se cargaba el precio del PAQUETE completo directo
-         como si fuera el costo de una sola unidad/gramo — un waffle que
-         usa 400g terminaba costando el precio de muchos paquetes. Ahora
-         lo que se pide primero es justamente el precio total y el
-         contenido (lo que la persona realmente tiene a mano, la
-         etiqueta del paquete) — "Costo por unidad" se calcula solo y
-         nunca es lo primero que hay que llenar. -->
+
+    <div class="ins-seccion">Stock</div>
+    <!-- B2: la cantidad de un insumo YA CREADO no se edita acá (no dejaba
+         rastro): al editar se muestra como dato y se corrige con compra,
+         merma o Conteo físico. Solo al crear se carga el stock inicial. -->
+    <div class="ins-dato" id="ins-cantidad-actual" style="display:none">
+      <span id="ins-cantidad-texto"></span>
+      <details class="info derecha"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>La cantidad no se edita acá: sube con las compras, baja con ventas y mermas, y se corrige desde <b>Inventario → Conteo físico</b>, que deja registrado el motivo.</p></details>
+    </div>
     <div style="display:flex;gap:10px">
-      <div class="modal-field" style="flex:1">
-        <label class="field-label">Precio del paquete ($)</label>
+      <div class="modal-field" style="flex:1;min-width:0" id="ins-cantidad-wrap">
+        <div class="field-label">Cantidad inicial</div>
+        <input type="number" id="ins-cantidad" class="field" placeholder="0" min="0" step="0.01">
+      </div>
+      <div class="modal-field" style="flex:1;min-width:0">
+        <div class="field-label">Alerta de mínimo
+          <details class="info derecha"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Cuando el stock baja de esta cantidad, el insumo aparece en las alertas (la campanita) como "por agotarse".</p></details>
+        </div>
+        <input type="number" id="ins-minimo" class="field" placeholder="0" min="0">
+      </div>
+    </div>
+
+    <div class="ins-seccion">Costo
+      <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Cargá el precio y el contenido del paquete tal como dice la etiqueta (ej. $10.500 por 1000 g) y el costo por unidad se calcula solo. Así se evita cargar el precio del paquete entero como si fuera el de un gramo.</p></details>
+    </div>
+    <div style="display:flex;gap:10px">
+      <div class="modal-field" style="flex:1;min-width:0">
+        <div class="field-label">Precio del paquete</div>
         <input type="number" id="ins-calc-precio" class="field" placeholder="Ej: 10500" min="0" oninput="calcularCostoInsumo()">
       </div>
-      <div class="modal-field" style="flex:1">
-        <label class="field-label">Contenido del paquete</label>
+      <div class="modal-field" style="flex:1;min-width:0">
+        <div class="field-label">Contenido (<span id="ins-unidad-contenido">g</span>)</div>
         <input type="number" id="ins-calc-contenido" class="field" placeholder="Ej: 1000" min="0" oninput="calcularCostoInsumo()">
       </div>
     </div>
     <div class="modal-field">
-      <label class="field-label">Costo por unidad (se calcula solo — ajustalo si hace falta)</label>
+      <div class="field-label" id="ins-costo-label">Costo por gramo</div>
       <input type="number" id="ins-costo" class="field" placeholder="$" min="0" step="0.001" oninput="actualizarMargenAdicion()">
     </div>
-    <div class="modal-field">
-      <label class="field-label">Alerta de stock mínimo</label>
-      <input type="number" id="ins-minimo" class="field" placeholder="0" min="0">
-    </div>
-    <label class="checkbox-row">
-      <input type="checkbox" id="ins-precio-variable" style="width:18px;height:18px;accent-color:var(--ink)">
-      <span style="font-size:var(--fs-sm);color:var(--text)">Precio variable (solo informativo — ya no recarga el costo de inventario, ver "Reportes")</span>
-    </label>
-    <label class="checkbox-row">
-      <input type="checkbox" id="ins-es-adicion" style="width:18px;height:18px;accent-color:var(--ink)" onchange="document.getElementById('ins-adicion-fields').style.display=this.checked?'block':'none'; actualizarMargenAdicion()">
-      <span style="font-size:var(--fs-sm);color:var(--text)">Disponible como adición en ventas</span>
-    </label>
-    <div id="ins-adicion-fields" style="display:none">
-      <div class="modal-field">
-        <label class="field-label">Nombre de la adición (opcional)</label>
-        <input type="text" id="ins-nombre-adicion" class="field" placeholder="Ej: Chantilly">
+
+    <details class="ins-mas" id="ins-mas-opciones">
+      <summary>Más opciones</summary>
+      <div style="display:flex;align-items:center;gap:2px">
+        <label class="checkbox-row">
+          <input type="checkbox" id="ins-precio-variable" style="width:18px;height:18px;accent-color:var(--ink)">
+          <span style="font-size:var(--fs-sm);color:var(--text)">Precio variable</span>
+        </label>
+        <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Solo informativo: lo marca en Reportes como un insumo cuyo precio cambia seguido. No modifica el costo.</p></details>
       </div>
-      <div style="display:flex;gap:10px">
-        <div class="modal-field" style="flex:1">
-          <label class="field-label">Precio de venta como adición</label>
-          <input type="number" id="ins-precio-adicion" class="field" placeholder="$" min="0" oninput="actualizarMargenAdicion()">
+      <label class="checkbox-row">
+        <input type="checkbox" id="ins-es-adicion" style="width:18px;height:18px;accent-color:var(--ink)" onchange="document.getElementById('ins-adicion-fields').style.display=this.checked?'block':'none'; actualizarMargenAdicion()">
+        <span style="font-size:var(--fs-sm);color:var(--text)">Disponible como adición en ventas</span>
+      </label>
+      <div id="ins-adicion-fields" style="display:none">
+        <div class="modal-field">
+          <div class="field-label">Nombre de la adición (opcional)</div>
+          <input type="text" id="ins-nombre-adicion" class="field" placeholder="Ej: Chantilly">
         </div>
-        <div class="modal-field" style="flex:1">
-          <label class="field-label">Porción consumida por venta (obligatoria, mayor a 0)</label>
-          <input type="number" id="ins-porcion" class="field" placeholder="0" min="0" step="0.01" oninput="actualizarMargenAdicion()">
+        <div style="display:flex;gap:10px">
+          <div class="modal-field" style="flex:1;min-width:0">
+            <div class="field-label">Precio de venta</div>
+            <input type="number" id="ins-precio-adicion" class="field" placeholder="$" min="0" oninput="actualizarMargenAdicion()">
+          </div>
+          <div class="modal-field" style="flex:1;min-width:0">
+            <div class="field-label">Porción
+              <details class="info derecha"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Cuánto se descuenta del stock cada vez que se vende como adición, en la unidad de medición del insumo. Obligatoria, mayor a 0.</p></details>
+            </div>
+            <input type="number" id="ins-porcion" class="field" placeholder="0" min="0" step="0.01" oninput="actualizarMargenAdicion()">
+          </div>
         </div>
+        <p class="item-sub" id="ins-adicion-margen" style="font-weight:var(--fw-bold);margin-top:-6px;margin-bottom:10px"></p>
       </div>
-      <p class="item-sub" id="ins-adicion-margen" style="font-weight:var(--fw-bold);margin-top:-6px;margin-bottom:10px"></p>
-    </div>
+    </details>
+
     <input type="hidden" id="ins-edit-id">
     <input type="hidden" id="ins-edit-tipo">
-    <button class="btn btn-block" style="margin-top:4px" onclick="saveInsumo()" id="ins-save-btn">Guardar insumo</button>
+    <button class="btn btn-block" style="margin-top:12px" onclick="saveInsumo()" id="ins-save-btn">Guardar insumo</button>
     <button class="btn-cancel" onclick="deleteInsumo()" id="ins-delete-btn" style="display:none">Eliminar insumo</button>
   </div>
 </div>
@@ -2981,6 +3010,15 @@ function clearInventarioFiltros() {
   renderInventario();
 }
 
+// "Costo por kilogramo", "Contenido (kg)": las etiquetas siguen a la
+// medición elegida, para que quede claro en qué unidad va cada número.
+function actualizarEtiquetasUnidad_() {
+  const med = document.getElementById('ins-tipo-medicion').value;
+  const nombre = { gramos: 'gramo', mililitros: 'mililitro', kilogramos: 'kilogramo', unidad: 'unidad' }[med] || 'unidad';
+  const corta = { gramos: 'g', mililitros: 'ml', kilogramos: 'kg', unidad: 'unidades' }[med] || 'unidades';
+  document.getElementById('ins-costo-label').textContent = 'Costo por ' + nombre;
+  document.getElementById('ins-unidad-contenido').textContent = corta;
+}
 function openInsumoModal(id) {
   document.getElementById('ins-edit-id').value = id || '';
   if (id) {
@@ -2997,7 +3035,6 @@ function openInsumoModal(id) {
     // fuera de este modal) así que un insumo que YA es topping se queda
     // con el selector bloqueado, sin cambios respecto a antes.
     document.getElementById('ins-tipo-insumo').disabled = (found.tipo === 'toppings');
-    document.getElementById('ins-tipo-insumo-nota').style.display = 'block';
     document.getElementById('ins-modal-title').textContent = 'Editar insumo';
     document.getElementById('ins-nombre').value = item.nombre;
     document.getElementById('ins-categoria').value = item.categoria || '';
@@ -3014,7 +3051,9 @@ function openInsumoModal(id) {
     document.getElementById('ins-tipo-medicion').value = unidadValida ? UNIDAD_TIPO_MEDICION[item.unidad] : '';
     document.getElementById('ins-cantidad').value = item.cantidad;
     document.getElementById('ins-cantidad').disabled = true;
-    document.getElementById('ins-cantidad-nota').style.display = 'block';
+    document.getElementById('ins-cantidad-wrap').style.display = 'none';
+    document.getElementById('ins-cantidad-actual').style.display = 'flex';
+    document.getElementById('ins-cantidad-texto').innerHTML = 'Disponible: <b>' + (Number(item.cantidad) || 0).toLocaleString('es-CO', { maximumFractionDigits: 2 }) + ' ' + esc(item.unidad || '') + '</b>';
     document.getElementById('ins-costo').value = item.costo;
     document.getElementById('ins-minimo').value = item.minimo || 0;
     document.getElementById('ins-precio-variable').checked = !!item.margenVariable;
@@ -3027,11 +3066,11 @@ function openInsumoModal(id) {
     document.getElementById('ins-edit-tipo').value = '';
     document.getElementById('ins-tipo-insumo').value = 'materia';
     document.getElementById('ins-tipo-insumo').disabled = false;
-    document.getElementById('ins-tipo-insumo-nota').style.display = 'none';
     document.getElementById('ins-modal-title').textContent = 'Agregar insumo';
     ['ins-nombre','ins-categoria','ins-cantidad','ins-costo','ins-nombre-adicion','ins-precio-adicion','ins-porcion'].forEach(x => document.getElementById(x).value = '');
     document.getElementById('ins-cantidad').disabled = false;
-    document.getElementById('ins-cantidad-nota').style.display = 'none';
+    document.getElementById('ins-cantidad-wrap').style.display = '';
+    document.getElementById('ins-cantidad-actual').style.display = 'none';
     document.getElementById('ins-tipo-medicion-pendiente').style.display = 'none';
     document.getElementById('ins-tipo-medicion').value = 'gramos';
     document.getElementById('ins-minimo').value = 0;
@@ -3040,6 +3079,10 @@ function openInsumoModal(id) {
     document.getElementById('ins-delete-btn').style.display = 'none';
   }
   document.getElementById('ins-adicion-fields').style.display = document.getElementById('ins-es-adicion').checked ? 'block' : 'none';
+  // "Más opciones" se abre sola si el insumo ya usa alguna (para que se vea).
+  document.getElementById('ins-mas-opciones').open = document.getElementById('ins-es-adicion').checked || document.getElementById('ins-precio-variable').checked;
+  document.querySelectorAll('#modal-insumo details.info').forEach(d => { d.open = false; });
+  actualizarEtiquetasUnidad_();
   document.getElementById('ins-categorias-chips').innerHTML = insumoCategorias().map(c =>
     `<button type="button" class="chip" onclick="document.getElementById('ins-categoria').value='${esc(c)}'">${esc(c)}</button>`
   ).join('');
@@ -5748,6 +5791,10 @@ function openModal(id) {
     renderReporteIntegridad(); renderCategoriasComportamiento();
   }
 }
+// Íconos (i): <details class="info">. Tocar afuera cierra la burbuja abierta.
+document.addEventListener('click', e => {
+  document.querySelectorAll('details.info[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; });
+});
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 // ─── Z5 (Ronda 7): tocar el fondo oscuro cierra el modal ────────────────
 // En el celular, con el pulgar, la X es el objetivo más chico y más
