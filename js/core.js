@@ -444,7 +444,7 @@
     var costoPorGramo = 0;
     Object.keys(composicion).forEach(function (mid) {
       var m = (state.materia || []).find(function (x) { return x.id === mid; });
-      if (m) costoPorGramo += composicion[mid] * (Number(m.costo) || 0);
+      if (m) costoPorGramo += composicion[mid] * costoPorGramoInsumo_(m);
     });
     var prep = getPreparacion(state, prepId);
     var gramosTotal = 0;
@@ -525,7 +525,11 @@
     (componentes || []).forEach(function (c) {
       var cantidad = (Number(c.gramos) || 0) * qty;
       if (c.tipo === 'empaques' || c.tipo === 'toppings') {
-        apply(c.tipo, c.refId, cantidad);
+        // Ronda 9: `cantidad` viene en la escala de receta (gramos/unidad
+        // literales) — convertir a la unidad real del insumo antes de
+        // tocar su stock (ver costoPorGramoInsumo_ más abajo, mismo bug).
+        var insDirecto = (state[c.tipo] || []).find(function (x) { return x.id === c.refId; });
+        apply(c.tipo, c.refId, cantidadEnUnidadInsumo_(insDirecto, cantidad));
       } else if (c.tipo === 'preparacion' && modo === 'stock') {
         var prep = getPreparacion(state, c.refId);
         var yaReservado = reservas ? (reservas[c.refId] || 0) : 0;
@@ -538,11 +542,17 @@
         }
         if (resto > 0) {
           var expandidoResto = expandGramosAMateria(state, c.tipo, c.refId, resto);
-          Object.keys(expandidoResto).forEach(function (mid) { apply('materia', mid, expandidoResto[mid]); });
+          Object.keys(expandidoResto).forEach(function (mid) {
+            var mResto = (state.materia || []).find(function (x) { return x.id === mid; });
+            apply('materia', mid, cantidadEnUnidadInsumo_(mResto, expandidoResto[mid]));
+          });
         }
       } else {
         var expandido = expandGramosAMateria(state, c.tipo, c.refId, cantidad);
-        Object.keys(expandido).forEach(function (mid) { apply('materia', mid, expandido[mid]); });
+        Object.keys(expandido).forEach(function (mid) {
+          var mExp = (state.materia || []).find(function (x) { return x.id === mid; });
+          apply('materia', mid, cantidadEnUnidadInsumo_(mExp, expandido[mid]));
+        });
       }
     });
   }
@@ -785,6 +795,39 @@
   // materia ni preparación. Rediseño (DISENO_HANDOFF.md): la "Fórmula" de
   // un producto puede referenciar cualquier insumo, no solo materia prima.
   var COLECCION_POR_TIPO = { empaques: 'empaques', toppings: 'toppings' };
+
+  // ─── Ronda 9 (hallazgo de producción): kg no es lo mismo que g ────────
+  //
+  // Un componente de receta expresa su consumo en GRAMOS/unidad literales
+  // (o "1 unidad" para un insumo contado — ver A1) sin importar en qué
+  // unidad se compra el insumo. `insumo.costo`/`insumo.cantidad`, en
+  // cambio, SÍ están en la unidad que declara `insumo.unidad` — uno carga
+  // harina por kilo porque así la compra, no porque las recetas la
+  // consuman en kilos. Ningún cálculo de costo ni de descuento de stock
+  // convertía entre las dos escalas: un insumo en 'kg' costaba y
+  // descontaba stock 1000× de más en CUALQUIER receta que lo usara.
+  //
+  // Encontrado en el Sheet real: la preparación "Waffle belga" consume
+  // 350g de "Harina fuerza" ($4.720/KG = $4,72/g, un precio normal). El
+  // costeo hacía 350 × 4720 = $1.652.000 en vez de 350 × 4,72 = $1.652 —
+  // inflaba el costo de los cuatro productos Belga (Caramelo, New York,
+  // Brasil, London) en más de 2000% del precio de venta.
+  //
+  // `costoPorGramoInsumo_`/`cantidadEnUnidadInsumo_` son el único punto
+  // que conoce esta conversión — todo cálculo de costo y todo descuento
+  // de stock pasa por acá, nunca por `Number(insumo.costo)` ni por la
+  // cantidad de receta directa. Con `unidad` en 'g'/'ml'/'unidad' (o sin
+  // definir) el factor es 1: no cambia nada de lo que ya funcionaba.
+  function factorUnidadAGramos_(unidad) {
+    return unidad === 'kg' ? 1000 : 1;
+  }
+  function costoPorGramoInsumo_(insumo) {
+    return insumo ? (Number(insumo.costo) || 0) / factorUnidadAGramos_(insumo.unidad) : 0;
+  }
+  function cantidadEnUnidadInsumo_(insumo, cantidadEnGramos) {
+    return insumo ? (Number(cantidadEnGramos) || 0) / factorUnidadAGramos_(insumo.unidad) : 0;
+  }
+
   function getCostoProducto(producto, state) {
     if (!producto) return 0;
     var costo = Number(producto.empaqueManual) || 0;
@@ -794,15 +837,15 @@
         costo += gramos * getPreparacionCosto(state, c.refId).costoPorGramo;
       } else if (COLECCION_POR_TIPO[c.tipo]) {
         var ins = (state[COLECCION_POR_TIPO[c.tipo]] || []).find(function (x) { return x.id === c.refId; });
-        if (ins) costo += gramos * (Number(ins.costo) || 0);
+        if (ins) costo += gramos * costoPorGramoInsumo_(ins);
       } else {
         var m = (state.materia || []).find(function (x) { return x.id === c.refId; });
-        if (m) costo += gramos * (Number(m.costo) || 0);
+        if (m) costo += gramos * costoPorGramoInsumo_(m);
       }
     });
     (producto.empaquesUsados || []).forEach(function (e) {
       var m = (state.empaques || []).find(function (x) { return x.id === e.empaqueId; });
-      if (m) costo += (Number(m.costo) || 0) * (Number(e.cantidad) || 0);
+      if (m) costo += costoPorGramoInsumo_(m) * (Number(e.cantidad) || 0);
     });
     return costo;
   }
@@ -812,7 +855,7 @@
     var total = Number(producto.empaqueManual) || 0;
     (producto.empaquesUsados || []).forEach(function (e) {
       var m = (state.empaques || []).find(function (x) { return x.id === e.empaqueId; });
-      if (m) total += (Number(m.costo) || 0) * (Number(e.cantidad) || 0);
+      if (m) total += costoPorGramoInsumo_(m) * (Number(e.cantidad) || 0);
     });
     return total;
   }
@@ -857,21 +900,21 @@
         costoAlimento += gramos * getPreparacionCosto(state, c.refId).costoPorGramo;
       } else if (c.tipo === 'empaques') {
         var emp = (state.empaques || []).find(function (x) { return x.id === c.refId; });
-        if (emp) costoEmpaque += gramos * (Number(emp.costo) || 0);
+        if (emp) costoEmpaque += gramos * costoPorGramoInsumo_(emp);
       } else if (c.tipo === 'toppings') {
         // Un topping es comestible — food cost, no paper cost — aunque
         // esté modelado en la misma colección que empaques a nivel de
         // COLECCION_POR_TIPO.
         var top = (state.toppings || []).find(function (x) { return x.id === c.refId; });
-        if (top) costoAlimento += gramos * (Number(top.costo) || 0);
+        if (top) costoAlimento += gramos * costoPorGramoInsumo_(top);
       } else {
         var m = (state.materia || []).find(function (x) { return x.id === c.refId; });
-        if (m) costoAlimento += gramos * (Number(m.costo) || 0);
+        if (m) costoAlimento += gramos * costoPorGramoInsumo_(m);
       }
     });
     (producto.empaquesUsados || []).forEach(function (e) {
       var m = (state.empaques || []).find(function (x) { return x.id === e.empaqueId; });
-      if (m) costoEmpaque += (Number(m.costo) || 0) * (Number(e.cantidad) || 0);
+      if (m) costoEmpaque += costoPorGramoInsumo_(m) * (Number(e.cantidad) || 0);
     });
     return { costoAlimento: costoAlimento, costoEmpaque: costoEmpaque, costoTotal: costoAlimento + costoEmpaque };
   }
@@ -893,11 +936,15 @@
 
     function lineaInsumo(tipo, coleccion, refId, cantidad, grupo) {
       var ins = (state[coleccion] || []).find(function (x) { return x.id === refId; });
+      // costoUnitario se muestra tal como el insumo lo tiene cargado (ej.
+      // "$4.720/kg", igual que en Inventario) — subtotal, en cambio, usa
+      // el costo reexpresado por gramo (Ronda 9: kg ≠ g), porque `cantidad`
+      // acá siempre viene en la escala de la receta, nunca en kilos.
       var costoUnitario = ins ? (Number(ins.costo) || 0) : 0;
       var sospechoso = !!(ins && ins.unidad && checkCostoSospechoso(state, ins.unidad, costoUnitario, ins.id));
       lineas.push({
         tipo: tipo, refId: refId, nombre: ins ? ins.nombre : '(insumo eliminado)',
-        cantidad: cantidad, costoUnitario: costoUnitario, subtotal: cantidad * costoUnitario,
+        cantidad: cantidad, costoUnitario: costoUnitario, subtotal: cantidad * costoPorGramoInsumo_(ins),
         grupo: grupo, sospechoso: sospechoso
       });
     }
@@ -1381,10 +1428,10 @@
       var productosAfectados = usoDirecto.productos.map(function (p) {
         var aporte = 0;
         (p.componentes || []).forEach(function (c) {
-          if (c.refId === i.id && c.tipo === 'empaques') aporte += (Number(c.gramos) || 0) * (Number(i.costo) || 0);
+          if (c.refId === i.id && c.tipo === 'empaques') aporte += (Number(c.gramos) || 0) * costoPorGramoInsumo_(i);
         });
         (p.empaquesUsados || []).forEach(function (e) {
-          if (e.empaqueId === i.id) aporte += (Number(e.cantidad) || 0) * (Number(i.costo) || 0);
+          if (e.empaqueId === i.id) aporte += (Number(e.cantidad) || 0) * costoPorGramoInsumo_(i);
         });
         var precio = Number(p.precio) || 0;
         return { productoId: p.id, productoNombre: p.nombre, aporte: aporte, pctDelPrecio: precio > 0 ? aporte / precio : null };
@@ -1545,21 +1592,24 @@
         // inventario si se confirma la venta.
         aplicarComponentes(state, p.componentes, qty, add, { modo: 'stock', reservas: reservasPreparaciones });
         (p.empaquesUsados || []).forEach(function (e) {
-          add('empaques', e.empaqueId, (Number(e.cantidad) || 0) * qty);
+          var mEmp = (state.empaques || []).find(function (x) { return x.id === e.empaqueId; });
+          add('empaques', e.empaqueId, cantidadEnUnidadInsumo_(mEmp, (Number(e.cantidad) || 0) * qty));
         });
       }
       (line.toppings || []).forEach(function (t) {
         var totQty = (Number(t.qty) || 0) * qty;
-        if (totQty > 0) add('toppings', t.toppingId, totQty);
+        var topLinea = (state.toppings || []).find(function (x) { return x.id === t.toppingId; });
+        if (totQty > 0) add('toppings', t.toppingId, cantidadEnUnidadInsumo_(topLinea, totQty));
       });
       (line.adiciones || []).forEach(function (adId) {
         var found = findInsumoConTipo(state, adId);
-        if (found && found.item.esAdicion) add(found.tipo, adId, (Number(found.item.porcion) || 0) * qty);
+        if (found && found.item.esAdicion) add(found.tipo, adId, cantidadEnUnidadInsumo_(found.item, (Number(found.item.porcion) || 0) * qty));
       });
     });
     (toppingsSueltos || []).forEach(function (t) {
       var q = Number(t.qty) || 0;
-      if (q > 0) add('toppings', t.toppingId, q);
+      var topSuelto = (state.toppings || []).find(function (x) { return x.id === t.toppingId; });
+      if (q > 0) add('toppings', t.toppingId, cantidadEnUnidadInsumo_(topSuelto, q));
     });
     return consumo;
   }
@@ -1625,14 +1675,16 @@
             // materia prima hace falta en 15 días.
             aplicarComponentes(state, p.componentes, item.qty, add, { modo: 'crudo' });
             (p.empaquesUsados || []).forEach(function (e) {
-              add('empaques', e.empaqueId, (Number(e.cantidad) || 0) * item.qty);
+              var mEmp = (state.empaques || []).find(function (x) { return x.id === e.empaqueId; });
+              add('empaques', e.empaqueId, cantidadEnUnidadInsumo_(mEmp, (Number(e.cantidad) || 0) * item.qty));
             });
           }
         } else if (item.toppingId) {
-          add('toppings', item.toppingId, Number(item.qty) || 0);
+          var topItem = (state.toppings || []).find(function (x) { return x.id === item.toppingId; });
+          add('toppings', item.toppingId, cantidadEnUnidadInsumo_(topItem, Number(item.qty) || 0));
         } else if (item.adicionId) {
           var found = findInsumoConTipo(state, item.adicionId);
-          if (found) add(found.tipo, item.adicionId, (Number(found.item.porcion) || 0) * (Number(item.qty) || 0));
+          if (found) add(found.tipo, item.adicionId, cantidadEnUnidadInsumo_(found.item, (Number(found.item.porcion) || 0) * (Number(item.qty) || 0)));
         }
       });
     });
@@ -1751,7 +1803,8 @@
           // realmente sale del inventario.
           aplicarComponentes(state, p.componentes, qty, function (bucket, id, cant) { deduct(bucket, state[bucket], id, cant); }, { modo: 'stock' });
           (p.empaquesUsados || []).forEach(function (e) {
-            deduct('empaques', state.empaques, e.empaqueId, (Number(e.cantidad) || 0) * qty);
+            var mEmp = (state.empaques || []).find(function (x) { return x.id === e.empaqueId; });
+            deduct('empaques', state.empaques, e.empaqueId, cantidadEnUnidadInsumo_(mEmp, (Number(e.cantidad) || 0) * qty));
           });
         }
       }
@@ -1764,7 +1817,7 @@
           items.push({ toppingId: top.id, nombre: top.nombre + ' (topping)', qty: totQty, precio: top.precio, costo: top.costo, costoAlimento: top.costo, costoEmpaque: 0 });
           total += top.precio * totQty;
           ganancia += (top.precio - top.costo) * totQty;
-          deduct('toppings', state.toppings, top.id, totQty);
+          deduct('toppings', state.toppings, top.id, cantidadEnUnidadInsumo_(top, totQty));
         }
       });
       // Adiciones (rediseño): insumo de cualquier tipo marcado esAdicion,
@@ -1774,12 +1827,12 @@
         if (!found || !found.item.esAdicion) return;
         var precio = Number(found.item.precioAdicion) || 0;
         var porcion = Number(found.item.porcion) || 0;
-        var costoUnit = (Number(found.item.costo) || 0) * porcion;
+        var costoUnit = costoPorGramoInsumo_(found.item) * porcion;
         // Una adición tampoco tiene empaque propio.
         items.push({ adicionId: adId, nombre: (found.item.nombreAdicion || found.item.nombre) + ' (adición)', qty: qty, precio: precio, costo: costoUnit, costoAlimento: costoUnit, costoEmpaque: 0 });
         total += precio * qty;
         ganancia += (precio - costoUnit) * qty;
-        deduct(found.tipo, found.list, adId, porcion * qty);
+        deduct(found.tipo, found.list, adId, cantidadEnUnidadInsumo_(found.item, porcion * qty));
       });
     });
 
@@ -1855,15 +1908,15 @@
             });
             (p.empaquesUsados || []).forEach(function (e) {
               var m = (state.empaques || []).find(function (x) { return x.id === e.empaqueId; });
-              if (m) m.cantidad += (Number(e.cantidad) || 0) * item.qty;
+              if (m) m.cantidad += cantidadEnUnidadInsumo_(m, (Number(e.cantidad) || 0) * item.qty);
             });
           }
         } else if (item.toppingId) {
           var t = (state.toppings || []).find(function (x) { return x.id === item.toppingId; });
-          if (t) t.cantidad += item.qty;
+          if (t) t.cantidad += cantidadEnUnidadInsumo_(t, item.qty);
         } else if (item.adicionId) {
           var found = findInsumoConTipo(state, item.adicionId);
-          if (found) found.item.cantidad += (Number(found.item.porcion) || 0) * (Number(item.qty) || 0);
+          if (found) found.item.cantidad += cantidadEnUnidadInsumo_(found.item, (Number(found.item.porcion) || 0) * (Number(item.qty) || 0));
         }
       });
     }
@@ -2083,7 +2136,8 @@
       // preparación que ya tenía adentro (si había stock de sobra).
       aplicarComponentes(state, origen.componentes, cantidad, deduct, { modo: 'stock' });
       (origen.empaquesUsados || []).forEach(function (e) {
-        deduct('empaques', e.empaqueId, (Number(e.cantidad) || 0) * cantidad);
+        var mEmp = (state.empaques || []).find(function (x) { return x.id === e.empaqueId; });
+        deduct('empaques', e.empaqueId, cantidadEnUnidadInsumo_(mEmp, (Number(e.cantidad) || 0) * cantidad));
       });
     } else if (origenTipo === 'preparacion') {
       // B4: se merma el WIP ya producido (descuento directo 1:1, NO se

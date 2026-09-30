@@ -3684,6 +3684,80 @@ test('getReporteIntegridad expone insumosDuplicadosEntreBuckets (integrado, no u
   assert.strictEqual(r.insumosDuplicadosEntreBuckets.length, 1);
 });
 
+console.log('\n== B4 (hallazgo de producción, Ronda 9): kg no es lo mismo que g ==');
+
+test('CRITERIO: un insumo en kg cuesta lo mismo por gramo que su equivalente en g — no 1000x más', () => {
+  const s = C.emptyState();
+  s.materia.push({ id: 'harina-kg', nombre: 'Harina fuerza', unidad: 'kg', costo: 4720, cantidad: 410, minimo: 10 }); // $4.720/kg = $4,72/g
+  s.materia.push({ id: 'harina-g', nombre: 'Harina control', unidad: 'g', costo: 4.72, cantidad: 410000, minimo: 10 }); // mismo precio real, expresado en g
+  s.productos.push({ id: 'p-kg', nombre: 'Con harina en kg', precio: 20000, componentes: [{ tipo: 'materia', refId: 'harina-kg', gramos: 350 }] });
+  s.productos.push({ id: 'p-g', nombre: 'Con harina en g', precio: 20000, componentes: [{ tipo: 'materia', refId: 'harina-g', gramos: 350 }] });
+  const costoKg = C.getCostoProducto(s.productos[0], s);
+  const costoG = C.getCostoProducto(s.productos[1], s);
+  assert.ok(Math.abs(costoKg - 1652) < 0.01, 'esperado 350g × $4,72/g = $1.652, no $1.652.000 — dio ' + costoKg);
+  assert.ok(Math.abs(costoKg - costoG) < 0.01, 'el mismo precio real da el mismo costo, sea cual sea la unidad en que se cargó');
+});
+
+test('CRITERIO (caso real): "Waffle belga" — preparación con Harina fuerza en kg ya no infla el costo del producto', () => {
+  const s = C.emptyState();
+  s.materia.push({ id: 'harina', nombre: 'Harina fuerza', unidad: 'kg', costo: 4720, cantidad: 410, minimo: 10 });
+  s.materia.push({ id: 'azucar', nombre: 'Azúcar', unidad: 'g', costo: 4, cantidad: 1000, minimo: 100 });
+  s.preparaciones.push({
+    id: 'waffle-belga', nombre: 'Waffle belga', modo: 'directo', rendimientoPct: 100,
+    componentes: [{ tipo: 'materia', refId: 'harina', gramos: 350 }, { tipo: 'materia', refId: 'azucar', gramos: 40 }]
+  });
+  s.productos.push({ id: 'belga-brasil', nombre: 'Belga Brasil', precio: 18000, componentes: [{ tipo: 'preparacion', refId: 'waffle-belga', gramos: 150 }] });
+  const prepCosto = C.getPreparacionCosto(s, 'waffle-belga');
+  // costoPorGramo esperado: (350*4,72 + 40*4) / 390 ≈ (1652+160)/390 ≈ 4,646
+  assert.ok(prepCosto.costoPorGramo < 10, 'costoPorGramo de la preparación debe ser un número chico (~$4,6/g), no ~$2.500/g — dio ' + prepCosto.costoPorGramo);
+  const costoProducto = C.getCostoProducto(s.productos[0], s);
+  assert.ok(costoProducto < 1000, 'el producto entero debe costar unos pocos cientos de pesos, no $378.523 — dio ' + costoProducto);
+});
+
+test('CRITERIO: un empaque en kg también se corrige, tanto en componentes directos como en empaquesUsados', () => {
+  const s = C.emptyState();
+  s.empaques.push({ id: 'caja-kg', nombre: 'Cartón para caja', unidad: 'kg', costo: 8000, cantidad: 50, minimo: 5 });
+  s.productos.push({
+    id: 'p1', nombre: 'Con cartón', precio: 5000,
+    componentes: [{ tipo: 'empaques', refId: 'caja-kg', gramos: 20 }],
+    empaquesUsados: [{ empaqueId: 'caja-kg', cantidad: 20 }]
+  });
+  // cada línea: 20g × $8/g (8000/1000) = $160 — dos líneas = $320
+  assert.ok(Math.abs(C.getCostoProducto(s.productos[0], s) - 320) < 0.01);
+});
+
+test('CRITERIO: el desglose alimento/empaque (C1) también convierte kg correctamente', () => {
+  const s = C.emptyState();
+  s.materia.push({ id: 'harina', nombre: 'Harina', unidad: 'kg', costo: 5000, cantidad: 100, minimo: 10 });
+  s.productos.push({ id: 'p1', nombre: 'P', precio: 9000, componentes: [{ tipo: 'materia', refId: 'harina', gramos: 200 }] });
+  const d = C.getCostoProductoDesglosado(s.productos[0], s);
+  assert.ok(Math.abs(d.costoAlimento - 1000) < 0.01, '200g × $5/g (5000/1000) = $1.000 — dio ' + d.costoAlimento);
+});
+
+test('CRITERIO: el descuento de stock también convierte — vender un producto con un insumo en kg descuenta kg, no gramos crudos', () => {
+  const s = C.emptyState();
+  s.materia.push({ id: 'harina', nombre: 'Harina', unidad: 'kg', costo: 5, cantidad: 10, minimo: 1 }); // 10 kg en stock
+  s.productos.push({ id: 'p1', nombre: 'P', precio: 5000, componentes: [{ tipo: 'materia', refId: 'harina', gramos: 350 }] });
+  const consumo = C.computeSaleConsumption([{ productoId: 'p1', qty: 1 }], [], s);
+  // 350g consumidos de un insumo en kg = 0,35 kg — NO 350 kg (que ni cabría en el stock)
+  assert.ok(Math.abs(consumo.materia['harina'] - 0.35) < 0.0001, 'esperado 0,35 kg consumidos — dio ' + consumo.materia['harina']);
+
+  const venta = C.applyVenta(s, [{ productoId: 'p1', qty: 1 }], []);
+  const harinaDespues = s.materia.find(x => x.id === 'harina');
+  assert.ok(Math.abs(harinaDespues.cantidad - 9.65) < 0.0001, 'stock tras la venta: 10 - 0,35 = 9,65 kg — dio ' + harinaDespues.cantidad);
+
+  C.revertVenta(s, venta);
+  const harinaRevertida = s.materia.find(x => x.id === 'harina');
+  assert.ok(Math.abs(harinaRevertida.cantidad - 10) < 0.0001, 'revertVenta debe devolver exactamente los 0,35 kg descontados — dio ' + harinaRevertida.cantidad);
+});
+
+test('un insumo en g/ml/unidad (o sin unidad) no cambia de comportamiento — factor 1, sin conversión', () => {
+  const s = C.emptyState();
+  s.materia.push({ id: 'sin-unidad', nombre: 'X', costo: 10, cantidad: 100, minimo: 10 }); // unidad undefined
+  s.productos.push({ id: 'p1', nombre: 'P', precio: 500, componentes: [{ tipo: 'materia', refId: 'sin-unidad', gramos: 5 }] });
+  assert.strictEqual(C.getCostoProducto(s.productos[0], s), 50);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);
