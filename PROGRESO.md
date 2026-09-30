@@ -97,3 +97,13 @@ A1 documentó el riesgo, B0 lo confirmó real: `getCostoProducto`/`getCostoProdu
 **Confirmado**: no se hizo merge a main. No se desplegó al Apps Script de producción. No se corrió ninguna migración contra el Sheet real — todo el trabajo de esta ronda es local (Node + navegador contra estados de prueba, nunca `script.google.com`).
 
 **X2 (sincronización incremental) sigue abierta** — cinco rondas ya, sin retomarse en esta. El punto de partida sigue siendo `PROGRESO_R5.md` § V4 / `PROGRESO_R6.md` § X2.
+
+## Después del cierre (sobre `main`)
+
+- **B3** (`e36f8b2`): detecta el mismo insumo cargado en dos buckets distintos (ej. materia y empaques a la vez).
+- **B4** (`6b6794a` + `ed1b4ba`): un insumo en `kg` costaba y descontaba stock 1000x de más — todo cálculo hacía `gramos_de_receta × costo` sin convertir la escala. Encontrado en el sitio real (Waffle Belga a $378.523). Arreglado con `costoPorGramoInsumo_`/`cantidadEnUnidadInsumo_` en `js/core.js`.
+- **Arreglos a mano sobre los datos reales** (no código): typo 3520g→35g en "Caramelo salado" (Croffle caramel); 4 insumos reclasificados empaques→materia (Huevos, Banano, Croissants, Belga preparados); 5 pares de duplicados resueltos (Mantequilla/D1, Leche/Lecherita, Mermelada maracuyá/pulpa entera, Crema de leche/1lt, Tapas 16oz/domo); 6 insumos sin unidad pasados a gramos; Mantequilla a $24/g.
+- **Pendiente de la pasada de precios**: Azúcar quedó en `unidad: g, costo: 4` (revisar si `cantidad: 1636.8` estaba en kg); Harina de arroz, Fécula y Arequipe Colanta siguen mal cargados en kg y disparan el diálogo de "costo sospechoso" — hacerlos a mano en la app; Nutella, Yogurt griego, Helado Colanta, Almidón agrio, Harina de trigo, Marañón, Maní y Miel sin actualizar.
+- **Sin decidir**: Huevos x30 (triple duplicado, ninguna copia en uso), Pistacho ↔ Pistacho paranice (ambos en uso, podrían ser distintos), Malteada frutos rojos (preparación duplicada).
+
+La migración a Supabase se sigue en `HANDOFF_SESION_SUPABASE.md`.
