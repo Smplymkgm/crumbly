@@ -1930,7 +1930,11 @@ function decir_(texto) {
     const voz = voces.find(v => /^es[-_]CO/i.test(v.lang)) || voces.find(v => /^es/i.test(v.lang));
     if (voz) u.voice = voz;
     u.lang = voz ? voz.lang : 'es-CO';
-    speechSynthesis.cancel(); // dos pedidos seguidos: no se encolan avisos
+    u.onerror = () => pitido_();
+    // Dos pedidos seguidos: no se encolan avisos. Solo si ya está hablando:
+    // en Safari (iPhone), un cancel() justo antes de speak() a veces
+    // descarta también la frase nueva.
+    if (speechSynthesis.speaking) speechSynthesis.cancel();
     speechSynthesis.speak(u);
     return true;
   } catch (e) { return false; }
