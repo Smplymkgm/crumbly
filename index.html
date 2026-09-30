@@ -88,6 +88,18 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 
 /* ─── Cards / pills / chips ─── */
 .card{background:var(--white);border:1px solid var(--line);border-radius:16px;padding:18px}
+.adiciones-lista{width:100%;border:1px solid var(--line);border-radius:12px;background:var(--white)}
+.adiciones-lista summary{display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--ink);list-style:none}
+.adiciones-lista summary::-webkit-details-marker{display:none}
+.adiciones-lista summary::after{content:'▾';margin-left:auto;color:var(--muted);transition:transform .15s}
+.adiciones-lista[open] summary::after{transform:rotate(180deg)}
+.adiciones-resumen{font-weight:var(--fw-medium);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.adiciones-opciones{border-top:1px solid var(--line);max-height:260px;overflow-y:auto}
+.adicion-opcion{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);font-size:var(--fs-sm);cursor:pointer}
+.adicion-opcion:last-child{border-bottom:none}
+.adicion-opcion input{width:18px;height:18px;flex-shrink:0;accent-color:var(--ink)}
+.adicion-nombre{flex:1;color:var(--text)}
+.adicion-precio{color:var(--muted);white-space:nowrap}
 .pedidos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin-bottom:10px}
 .pedido-card{display:flex;flex-direction:column;gap:10px}
 .pedido-card.listo{border-color:var(--success);box-shadow:inset 4px 0 0 var(--success)}
@@ -3983,10 +3995,25 @@ function renderDraftAdiciones() {
   const wrap = document.getElementById('venta-draft-adiciones');
   if (!ventaDraftSelected || ventaDraftSelected.tipo !== 'producto') { wrap.innerHTML = ''; return; }
   const adiciones = CrumblyCore.getAdiciones(state);
-  wrap.innerHTML = adiciones.map(a => {
-    const active = ventaDraftAdiciones.includes(a.id);
-    return `<button type="button" class="chip ${active ? 'active' : ''}" onclick="toggleDraftAdicion('${a.id}')">${esc(a.nombreAdicion || a.nombre)} +${fmt(a.precioAdicion)}</button>`;
-  }).join('');
+  if (!adiciones.length) { wrap.innerHTML = ''; return; }
+  // Lista desplegable (antes: una nube de chips difícil de leer). Se
+  // re-dibuja en cada toque, así que se conserva si estaba abierta.
+  const abierta = !!(wrap.querySelector('details') && wrap.querySelector('details').open);
+  const nombre = a => esc(a.nombreAdicion || a.nombre);
+  const elegidas = adiciones.filter(a => ventaDraftAdiciones.includes(a.id));
+  const resumen = elegidas.length
+    ? elegidas.map(nombre).join(', ') + ' · +' + fmt(elegidas.reduce((t, a) => t + (Number(a.precioAdicion) || 0), 0))
+    : 'ninguna';
+  wrap.innerHTML = `<details class="adiciones-lista"${abierta ? ' open' : ''}>
+    <summary><span>Adiciones</span><span class="adiciones-resumen">${resumen}</span></summary>
+    <div class="adiciones-opciones">${adiciones.map(a => `
+      <label class="adicion-opcion">
+        <input type="checkbox" ${ventaDraftAdiciones.includes(a.id) ? 'checked' : ''} onchange="toggleDraftAdicion('${a.id}')">
+        <span class="adicion-nombre">${nombre(a)}</span>
+        <span class="adicion-precio">+${fmt(a.precioAdicion)}</span>
+      </label>`).join('')}
+    </div>
+  </details>`;
 }
 // Buscador único de "Agregar producto o complemento" — reemplaza el
 // <input list="datalist"> nativo (poco confiable en navegadores móviles,
