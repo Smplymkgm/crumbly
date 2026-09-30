@@ -76,6 +76,7 @@ begin
   ]
   loop
     execute format('alter table %I enable row level security', t);
+    execute format('drop policy if exists %I on %I', t || '_usuarios_activos', t);
     execute format($f$
       create policy %I on %I for all
       using (exists (select 1 from usuarios u where u.email = auth.jwt() ->> 'email' and u.activo))
@@ -88,5 +89,6 @@ end $$;
 -- que el propio login pueda chequear "¿estoy activo?"), pero nadie la edita
 -- desde el cliente — se administra a mano (mismo criterio que hoy: editar la
 -- hoja `usuarios` del Sheet a mano, sin UI para eso en la app).
+drop policy if exists usuarios_lectura on usuarios;
 create policy usuarios_lectura on usuarios for select
   using (auth.jwt() ->> 'email' is not null);
