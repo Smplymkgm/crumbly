@@ -3926,6 +3926,70 @@ test('CRITERIO: un topping en kg vendido DENTRO de una línea de producto tambi�
   assert.ok(Math.abs(totalTopping - 1500) < 0.01, '50g × $30/g = $1.500 por el topping — dio ' + totalTopping);
 });
 
+console.log('\n== Fechas en hora de Colombia (UTC-5), no en UTC ==');
+
+// Corre `fn` con el reloj en hora de Colombia, sin importar el huso de la
+// máquina que corre los tests (Node relee process.env.TZ al cambiarlo).
+function enColombia(fn) {
+  const antes = process.env.TZ;
+  process.env.TZ = 'America/Bogota';
+  try { fn(); } finally { if (antes === undefined) delete process.env.TZ; else process.env.TZ = antes; }
+}
+
+test('fechaLocalISO: una venta a las 8:30 pm del 30 de sept (2026-10-01T01:30Z en UTC) es del 30 de sept en Colombia', () => {
+  enColombia(() => {
+    assert.strictEqual(C.fechaLocalISO('2026-10-01T01:30:00Z'), '2026-09-30');
+    assert.strictEqual(C.fechaLocalISO('2026-10-01T05:00:00Z'), '2026-10-01'); // medianoche local
+    assert.strictEqual(C.fechaLocalISO(new Date(2026, 8, 30, 23, 59)), '2026-09-30');
+  });
+});
+
+test('rango con fin = new Date().toISOString() de noche NO gana un día de más (antes cortaba el día UTC)', () => {
+  enColombia(() => {
+    // "Hoy" = 30 sept, consultado a las 8:30 pm: inicio = medianoche local
+    // en ISO, fin = ahora en ISO (ya es 1 de oct en UTC).
+    const inicio = new Date(2026, 8, 30).toISOString();   // 2026-09-30T05:00:00.000Z
+    const fin = '2026-10-01T01:30:00.000Z';
+    const ventas = [
+      { fecha: '2026-10-01T01:00:00.000Z', total: 100 },  // 8 pm del 30 — cuenta
+      { fecha: '2026-10-01T15:00:00.000Z', total: 999 }   // 10 am del 1 de oct — NO es de "hoy"
+    ];
+    const r = C.getVentasByRange(ventas, inicio, fin);
+    assert.deepStrictEqual(r.map(v => v.total), [100]);
+    const s = C.migrateState({});
+    s.ventas = ventas.map((v, i) => ({ id: 'v' + i, items: [], ganancia: 0, ...v }));
+    assert.strictEqual(C.getCascadaUtilidadRango(s, inicio, fin).ingresos, 100);
+  });
+});
+
+test('rango con fechas de <input type="date"> (YYYY-MM-DD) sigue siendo el día local completo', () => {
+  enColombia(() => {
+    const ventas = [
+      { fecha: '2026-09-30T05:00:00.000Z', total: 1 },  // 00:00 del 30
+      { fecha: '2026-10-01T04:59:00.000Z', total: 2 },  // 23:59 del 30
+      { fecha: '2026-10-01T05:00:00.000Z', total: 4 }   // 00:00 del 1 de oct
+    ];
+    assert.deepStrictEqual(C.getVentasByRange(ventas, '2026-09-30', '2026-09-30').map(v => v.total), [1, 2]);
+  });
+});
+
+test('getBreakEven "Hoy": el arriendo se reparte en 30 días — la meta diaria no se dispara el día que se paga ni cae a $0 al siguiente', () => {
+  const s = stateBreakEven();
+  C.applyVenta(s, [{ productoId: 'p1', qty: 10, toppings: [] }], [], { fecha: '2026-03-10T12:00:00' });
+  C.applyVenta(s, [{ productoId: 'p1', qty: 10, toppings: [] }], [], { fecha: '2026-03-11T12:00:00' });
+  C.registrarGasto(s, { tipo: 'operativo', categoria: 'Arriendo', monto: 30000, fecha: '2026-03-10T09:00:00' });
+  const diaPago = C.getBreakEven(s, '2026-03-10', '2026-03-10');
+  const diaSiguiente = C.getBreakEven(s, '2026-03-11', '2026-03-11');
+  // (30000 / 30) × ~1 día = ~1000 de fijos; CM ratio 0,5 → ~2000 diarios
+  assert.ok(Math.abs(diaPago.costosFijos - 1000) < 1, 'fijos del día de pago: ' + diaPago.costosFijos);
+  assert.ok(Math.abs(diaSiguiente.costosFijos - 1000) < 1, 'fijos del día siguiente: ' + diaSiguiente.costosFijos);
+  assert.ok(Math.abs(diaPago.bepDiarioContable - 2000) < 2, 'meta diaria: ' + diaPago.bepDiarioContable);
+  // 31 días después el arriendo ya salió de la ventana de 30 días
+  assert.strictEqual(C.getBreakEven(s, '2026-04-10', '2026-04-10').costosFijos, 0);
+  // un mes completo sigue usando lo anotado dentro del mes (sin cambios)
+  assert.strictEqual(C.getBreakEven(s, '2026-03-01', '2026-03-31').costosFijos, 30000);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);

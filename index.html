@@ -159,7 +159,7 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
   .kpi-value{grid-column:2;grid-row:1;margin-top:0;font-size:var(--fs-h3)}
   .kpi-label{grid-column:2;grid-row:2;margin-top:1px}
 }
-.kpi-card{background:var(--white);border:1px solid var(--line);border-radius:16px;padding:16px}
+.kpi-card{position:relative;background:var(--white);border:1px solid var(--line);border-radius:16px;padding:16px} /* ancla de la burbuja (i) */
 .kpi-icon{width:30px;height:30px;border-radius:10px;background:var(--bg);border:1px solid var(--line);display:flex;align-items:center;justify-content:center}
 .kpi-value{font-size:var(--fs-h2);line-height:var(--lh-tight);font-weight:var(--fw-bold);color:var(--ink);letter-spacing:.02em;margin-top:11px}
 .kpi-label{font-size:var(--fs-xs);color:var(--muted);margin-top:3px}
@@ -355,12 +355,12 @@ textarea.field{height:auto}
               <div class="kpi-icon"><i class="ph ph-trend-up"></i></div>
             </div>
             <div class="kpi-value" id="r-ganancias">$0</div>
-            <div class="kpi-label">Margen neto</div>
+            <div class="kpi-label">Ganancia neta <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Lo que de verdad te quedó en el período: lo vendido menos lo que costó hacerlo (ingredientes, empaques y mermas), menos los gastos del período (arriendo, nómina, servicios…) y el desgaste de los equipos. Es la misma "Utilidad neta" del cierre de caja.</p></details></div>
           </div>
         </div>
 
         <!-- V3.4 (auditoría Ronda 5): si el período tiene ventas con costo
-             CONGELADO inválido (superó lo vendido), el margen de arriba no
+             CONGELADO inválido (superó lo vendido), la ganancia de arriba no
              significa nada — nunca se excluyen del cálculo en silencio
              (mismo principio que la guarda de varianza de la Ronda 2):
              mejor decir que el número no sirve que mostrar uno limpio que
@@ -1850,7 +1850,7 @@ function renderPedidos() {
   // Historial de HOY (entregados), el más reciente arriba. Las ventas de
   // antes de Pedidos no tienen `estado` y no aparecen.
   const hoy = todayLocalISO();
-  const esDeHoy = v => { const d = new Date(v.fecha); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') === hoy; };
+  const esDeHoy = v => CrumblyCore.fechaLocalISO(v.fecha) === hoy;
   const hora = iso => new Date(iso).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
   const entregados = state.ventas.filter(v => v.estado === 'entregado' && esDeHoy(v))
     .sort((a, b) => new Date(b.entregadoEn || b.estadoFecha || b.fecha) - new Date(a.entregadoEn || a.estadoFecha || a.fecha));
@@ -4103,10 +4103,9 @@ let ventaDraftSelected = null; // { tipo: 'producto'|'topping', id }
 let ventaMetodoPago = 'efectivo';
 let ventaComprobante = '';
 
-function todayLocalISO() {
-  const n = new Date();
-  return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0');
-}
+// Día de HOY en hora de Colombia (YYYY-MM-DD). Nunca `toISOString().slice(0, 10)`:
+// eso es el día UTC, que después de las 7 pm ya es "mañana".
+function todayLocalISO() { return CrumblyCore.fechaLocalISO(); }
 function openSaleModal() {
   ventaCart = []; ventaDraftQty = 1; ventaDraftAdiciones = []; ventaDraftSelected = null; adicionesFiltro = '';
   ventaMetodoPago = 'efectivo'; ventaComprobante = '';
@@ -4429,8 +4428,9 @@ function getReportRangeLabel() { return hasCustomRange() ? (reportRangeStart + '
 // eligió la persona arriba (período estándar o personalizado).
 function getReportRangeISO() {
   if (hasCustomRange()) return { inicio: reportRangeStart, fin: reportRangeEnd };
-  const inicio = CrumblyCore.getDateStart(reportPeriod).toISOString();
-  return { inicio, fin: new Date().toISOString() };
+  // Días locales (YYYY-MM-DD), no ISO en UTC: `new Date().toISOString()`
+  // después de las 7 pm ya es "mañana" y el rango ganaba un día de más.
+  return { inicio: CrumblyCore.fechaLocalISO(CrumblyCore.getDateStart(reportPeriod)), fin: todayLocalISO() };
 }
 // Ranking de productos por ganancia del período — usado por el reporte PDF
 // de ventas y por la card "Detalle financiero" del Dashboard, para no
@@ -4451,11 +4451,24 @@ function setReportPeriod(p, el) {
   el.parentElement.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
   el.classList.add('active');
   document.getElementById('reportes-rango-custom').style.display = p === 'custom' ? 'flex' : 'none';
+  if (p === 'custom') { onReportRangeChange(); return; } // rellena las fechas y renderiza
   renderReportes();
 }
+// "Personalizado" sin fechas mostraba todo en $0 y el PDF decía "custom":
+// una fecha vacía se rellena (inicio = día 1 del mes, fin = hoy, hora
+// local) y un inicio posterior al fin se rechaza con aviso, dejando el
+// último rango válido.
 function onReportRangeChange() {
-  reportRangeStart = document.getElementById('r-rango-inicio').value || null;
-  reportRangeEnd = document.getElementById('r-rango-fin').value || null;
+  const ini = document.getElementById('r-rango-inicio'), fin = document.getElementById('r-rango-fin');
+  if (!ini.value) ini.value = CrumblyCore.fechaLocalISO(CrumblyCore.getDateStart('mes'));
+  if (!fin.value) fin.value = todayLocalISO();
+  if (ini.value > fin.value) {
+    showToast('La fecha de inicio no puede ser posterior a la de fin');
+    if (reportRangeStart && reportRangeEnd) { ini.value = reportRangeStart; fin.value = reportRangeEnd; }
+    return;
+  }
+  reportRangeStart = ini.value;
+  reportRangeEnd = fin.value;
   renderReportes();
 }
 
@@ -4545,9 +4558,13 @@ function renderDashboardAlerts() {
 function renderReportes() {
   const ventas = getReportVentas();
   const ingresos = ventas.reduce((a, v) => a + v.total, 0);
-  const ganancias = ventas.reduce((a, v) => a + v.ganancia, 0);
+  // Ganancia NETA del período — la misma cifra que la cascada (cierre de
+  // caja / detalle financiero / PDF): ventas − costo de lo vendido −
+  // mermas − gastos operativos − depreciación. Antes sumaba v.ganancia
+  // (solo la ganancia bruta de las ventas) y en la misma pantalla había
+  // dos "netas" distintas.
   document.getElementById('r-ingresos').textContent = fmt(ingresos);
-  document.getElementById('r-ganancias').textContent = fmt(ganancias);
+  document.getElementById('r-ganancias').textContent = fmt(getReportCascada().utilidadNeta);
   document.getElementById('r-ticket-promedio').textContent = fmt(CrumblyCore.getTicketPromedio(ventas));
   document.getElementById('r-num-ventas').textContent = ventas.length;
   renderVentasCostoInvalidoStripe_(ventas);
@@ -4558,7 +4575,7 @@ function renderReportes() {
   renderDetalleFinanciero();
   renderReportesCosteo();
 }
-// V3.4: franja de advertencia + marca "no confiable" en el margen neto —
+// V3.4: franja de advertencia + marca "no confiable" en la ganancia neta —
 // NUNCA se excluyen estas ventas del cálculo de arriba, solo se avisa.
 let ventasCostoInvalidoDelPeriodo_ = [];
 function renderVentasCostoInvalidoStripe_(ventasDelPeriodo) {
@@ -4573,9 +4590,9 @@ function renderVentasCostoInvalidoStripe_(ventasDelPeriodo) {
   }
   stripe.style.display = 'flex';
   document.getElementById('dash-costo-invalido-texto').textContent =
-    '⚠ ' + ventasCostoInvalidoDelPeriodo_.length + ' venta(s) de este período tienen un costo congelado que supera lo vendido — el margen neto de abajo NO es confiable.';
+    '⚠ ' + ventasCostoInvalidoDelPeriodo_.length + (ventasCostoInvalidoDelPeriodo_.length === 1 ? ' venta tiene' : ' ventas tienen') + ' un costo mal guardado (de antes de un arreglo) — la ganancia de este período no es confiable.';
   ganNeto.style.color = 'var(--danger)';
-  ganNeto.title = 'No confiable: ' + ventasCostoInvalidoDelPeriodo_.length + ' venta(s) del período tienen costo inválido (ver la franja de arriba)';
+  ganNeto.title = 'No confiable: ' + ventasCostoInvalidoDelPeriodo_.length + ' venta(s) del período tienen un costo mal guardado (ver el aviso rojo)';
 }
 function renderVentasCostoInvalido_() {
   let overlay = document.getElementById('modal-ventas-costo-invalido');
@@ -4632,23 +4649,27 @@ function renderReportesCosteo() {
   document.getElementById('costeo-bep-caja').textContent = isFinite(be.bepDiarioCaja) ? fmt(be.bepDiarioCaja) : '—';
 
   // 2. Prime cost
+  // Sin ventas en el período no hay porcentaje que calcular: se muestra
+  // "—" neutro. Antes salía "0.0% Dentro del techo" en verde aunque se
+  // hubiera pagado nómina — un 0% ahí se lee como "todo bien".
   const pc = CrumblyCore.getPrimeCost(state, inicio, fin);
-  document.getElementById('costeo-primecost-pct').textContent = (pc.primeCostPct * 100).toFixed(1) + '%';
+  const sinVentas = !(pc.ingresos > 0);
+  const pctTxt = x => sinVentas ? '—' : (x * 100).toFixed(1) + '%';
+  document.getElementById('costeo-primecost-pct').textContent = pctTxt(pc.primeCostPct);
   const semaforo = document.getElementById('costeo-primecost-semaforo');
   const sobreTecho = pc.primeCostPct > PRIME_COST_TECHO;
-  semaforo.textContent = sobreTecho ? 'Sobre el techo' : 'Dentro del techo';
-  semaforo.style.background = sobreTecho ? 'var(--danger)' : 'var(--success, #1a7f4e)';
-  semaforo.style.color = '#fff';
+  semaforo.textContent = sinVentas ? 'Sin ventas' : sobreTecho ? 'Sobre el techo' : 'Dentro del techo';
+  semaforo.style.background = sinVentas ? 'var(--bg)' : sobreTecho ? 'var(--danger)' : 'var(--success, #1a7f4e)';
+  semaforo.style.color = sinVentas ? 'var(--muted)' : '#fff';
   document.getElementById('costeo-primecost-cogs').textContent = fmt(pc.cogs);
   document.getElementById('costeo-primecost-laboral').textContent = fmt(pc.costoLaboral);
   document.getElementById('costeo-primecost-nomina').textContent = fmt(pc.nominaRegistrada);
 
   // 3. Food cost % / Paper cost % / COGS total % — tres líneas separadas, NUNCA sumadas.
-  document.getElementById('costeo-foodcost-pct').textContent = (CrumblyCore.getFoodCostPctRango(state, inicio, fin) * 100).toFixed(1) + '%';
-  document.getElementById('costeo-papercost-pct').textContent = (CrumblyCore.getPaperCostPctRango(state, inicio, fin) * 100).toFixed(1) + '%';
+  document.getElementById('costeo-foodcost-pct').textContent = pctTxt(CrumblyCore.getFoodCostPctRango(state, inicio, fin));
+  document.getElementById('costeo-papercost-pct').textContent = pctTxt(CrumblyCore.getPaperCostPctRango(state, inicio, fin));
   const cascRango = CrumblyCore.getCascadaUtilidadRango(state, inicio, fin);
-  const cogsTotalPct = cascRango.ingresos > 0 ? (cascRango.costoVentas / cascRango.ingresos) * 100 : 0;
-  document.getElementById('costeo-cogstotal-pct').textContent = cogsTotalPct.toFixed(1) + '%';
+  document.getElementById('costeo-cogstotal-pct').textContent = pctTxt(cascRango.ingresos > 0 ? cascRango.costoVentas / cascRango.ingresos : 0);
 
   // 4. Menu engineering
   const ventasRango = CrumblyCore.getVentasByRange(state.ventas, inicio, fin);
@@ -4804,7 +4825,7 @@ function generateCierreCajaPDF() {
   }
 
   pdfFooter(doc);
-  doc.save('crumbly-cierre-caja-' + new Date().toISOString().slice(0, 10) + '.pdf');
+  doc.save('crumbly-cierre-caja-' + todayLocalISO() + '.pdf');
   showToast('Cierre de caja descargado');
 }
 
@@ -4957,7 +4978,7 @@ function generateSalesReportPDF() {
   }
 
   pdfFooter(doc);
-  doc.save('crumbly-ventas-' + reportPeriod + '-' + new Date().toISOString().slice(0, 10) + '.pdf');
+  doc.save('crumbly-ventas-' + reportPeriod + '-' + todayLocalISO() + '.pdf');
   showToast('Reporte de ventas descargado');
 }
 function generateInventoryReportPDF() {
@@ -5015,7 +5036,7 @@ function generateInventoryReportPDF() {
   // reporte, P1-2) — visibles aquí como categoría propia de salida de
   // inventario, separada de ventas y compras.
   const hace7 = new Date(); hace7.setDate(hace7.getDate() - 7);
-  const mermasSemana = CrumblyCore.getMermasByRange(state.mermas, hace7.toISOString().slice(0, 10), new Date().toISOString().slice(0, 10));
+  const mermasSemana = CrumblyCore.getMermasByRange(state.mermas, CrumblyCore.fechaLocalISO(hace7), todayLocalISO());
   y = pdfCheckPageBreak(doc, y);
   pdfSectionLabel(doc, 'Mermas (últimos 7 días)', y); y += 7;
   const porMotivoInv = CrumblyCore.agruparMermasPorMotivo(mermasSemana);
@@ -5028,7 +5049,7 @@ function generateInventoryReportPDF() {
   });
 
   pdfFooter(doc);
-  doc.save('crumbly-inventario-semana-' + new Date().toISOString().slice(0, 10) + '.pdf');
+  doc.save('crumbly-inventario-semana-' + todayLocalISO() + '.pdf');
   showToast('Reporte de inventario descargado');
 }
 function generateMermasReportPDF() {
@@ -5086,7 +5107,7 @@ function generateMermasReportPDF() {
   });
 
   pdfFooter(doc);
-  doc.save('crumbly-mermas-' + mermaPeriodo + '-' + new Date().toISOString().slice(0, 10) + '.pdf');
+  doc.save('crumbly-mermas-' + mermaPeriodo + '-' + todayLocalISO() + '.pdf');
   showToast('Reporte de mermas descargado');
 }
 
@@ -5168,7 +5189,7 @@ function generateRecetarioPDF() {
   }
 
   pdfFooter(doc);
-  doc.save('crumbly-recetario-' + new Date().toISOString().slice(0, 10) + '.pdf');
+  doc.save('crumbly-recetario-' + todayLocalISO() + '.pdf');
   showToast('Recetario descargado');
 }
 
@@ -5254,7 +5275,7 @@ function exportVentasCSV() {
     const productos = v.items.map(i => i.nombre + ' x' + i.qty).join(' | ');
     rows.push([fecha, productos, v.total.toFixed(0), v.ganancia.toFixed(0)]);
   });
-  downloadCSV('crumbly-ventas-' + reportPeriod + '-' + new Date().toISOString().slice(0,10) + '.csv', rows);
+  downloadCSV('crumbly-ventas-' + reportPeriod + '-' + todayLocalISO() + '.csv', rows);
   showToast('CSV de ventas exportado — súbelo a tu Google Sheet');
 }
 function exportInventarioCSV() {
@@ -5262,7 +5283,7 @@ function exportInventarioCSV() {
   state.materia.forEach(m => rows.push(['Materia prima', m.nombre, m.cantidad.toFixed(0), 'g', m.costo.toFixed(3), '', m.minimo, m.cantidad <= m.minimo ? 'Urgente' : 'OK']));
   state.empaques.forEach(m => rows.push(['Empaque', m.nombre, m.cantidad.toFixed(0), m.unidad, m.costo.toFixed(2), '', m.minimo, m.cantidad <= m.minimo ? 'Urgente' : 'OK']));
   state.toppings.forEach(m => rows.push(['Topping', m.nombre, m.cantidad.toFixed(0), 'unidad', m.costo.toFixed(2), m.precio.toFixed(2), m.minimo, m.cantidad <= m.minimo ? 'Urgente' : 'OK']));
-  downloadCSV('crumbly-inventario-' + new Date().toISOString().slice(0,10) + '.csv', rows);
+  downloadCSV('crumbly-inventario-' + todayLocalISO() + '.csv', rows);
   showToast('CSV de inventario exportado — súbelo a tu Google Sheet');
 }
 function exportGastosCSV() {
@@ -5273,7 +5294,7 @@ function exportGastosCSV() {
     const fecha = d.toLocaleDateString('es-CO') + ' ' + d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
     rows.push([fecha, g.tipo, g.categoria, g.descripcion, g.monto.toFixed(0), g.proveedor || '']);
   });
-  downloadCSV('crumbly-gastos-' + reportPeriod + '-' + new Date().toISOString().slice(0,10) + '.csv', rows);
+  downloadCSV('crumbly-gastos-' + reportPeriod + '-' + todayLocalISO() + '.csv', rows);
   showToast('CSV de gastos exportado — súbelo a tu Google Sheet');
 }
 function shareReportByEmail() {
@@ -5776,7 +5797,7 @@ function renderCaja() {
   let movs = CrumblyCore.getMovimientos(state.ventas, state.gastos);
   if (cajaFiltroTipo !== 'todos') movs = movs.filter(m => m.tipo === cajaFiltroTipo);
   if (cajaFiltroCategoria !== 'todas') movs = movs.filter(m => m.categoria === cajaFiltroCategoria);
-  if (fechaFiltro) movs = movs.filter(m => m.fecha.slice(0, 10) === fechaFiltro);
+  if (fechaFiltro) movs = movs.filter(m => CrumblyCore.fechaLocalISO(m.fecha) === fechaFiltro); // día local, no UTC
   const activos = (cajaFiltroTipo !== 'todos' ? 1 : 0) + (cajaFiltroCategoria !== 'todas' ? 1 : 0) + (fechaFiltro ? 1 : 0);
   document.getElementById('caja-filtros-activos').textContent = activos ? String(activos) : '';
   const el = document.getElementById('caja-movimientos');
