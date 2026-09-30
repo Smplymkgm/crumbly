@@ -1763,6 +1763,7 @@ function renderReporteIntegridad() {
   // (B2.2) y reclasificar un lote de ingredientes (B2.1), las dos con
   // vista previa obligatoria del efecto en costo antes de aplicar nada.
   document.getElementById('reporte-integridad').innerHTML = generico + renderSeccionDuplicados_(r.insumosDuplicados) +
+    renderSeccionDuplicadosEntreBuckets_(r.insumosDuplicadosEntreBuckets) +
     `<div>
       <div style="display:flex;justify-content:space-between;align-items:center">
         <span class="item-sub" style="color:${r.insumosHuerfanos.length ? 'var(--danger)' : 'var(--muted)'}">Insumos huérfanos (sin ninguna receta que los use)</span>
@@ -1783,7 +1784,26 @@ function renderSeccionDuplicados_(duplicados) {
     ${duplicados.length ? '<div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">' + duplicados.map((d, i) => `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:var(--fs-sm);color:var(--muted)">
         <span>${d.severidad === 'alta' ? '⚠ ' : ''}${esc(d.a.nombre)} (${fmt(d.a.costo)}, ${d.a.usos} uso(s)) ↔ ${esc(d.b.nombre)} (${fmt(d.b.costo)}, ${d.b.usos} uso(s))</span>
-        <button class="btn-secondary" style="flex-shrink:0;padding:4px 10px;font-size:var(--fs-xs)" onclick="abrirResolverDuplicado_('${d.tipo}','${d.a.id}','${d.b.id}')">Resolver</button>
+        <button class="btn-secondary" style="flex-shrink:0;padding:4px 10px;font-size:var(--fs-xs)" onclick="abrirResolverDuplicado_('${d.a.id}','${d.b.id}')">Resolver</button>
+      </div>`).join('') + '</div>' : ''}
+  </div>`;
+}
+// B3 (hallazgo de producción, Ronda 9): el mismo nombre cargado en DOS
+// buckets distintos (ej. "Huevos x30" en empaques Y en materia, con dos
+// costos distintos) — A2 nunca lo detecta a propósito (compara solo
+// dentro del mismo bucket). Siempre severidad alta: reusa el mismo
+// flujo de repunte de A2 (abrirResolverDuplicado_ ya no asume un bucket
+// compartido, ver más abajo).
+function renderSeccionDuplicadosEntreBuckets_(pares) {
+  return `<div>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span class="item-sub" style="color:${pares.length ? 'var(--danger)' : 'var(--muted)'}">Mismo insumo en dos buckets distintos (empaques/materia/toppings)</span>
+      <span class="badge" style="background:${pares.length ? 'var(--danger)' : 'var(--soft)'}">${pares.length}</span>
+    </div>
+    ${pares.length ? '<div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">' + pares.map(d => `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:var(--fs-sm);color:var(--muted)">
+        <span>⚠ ${esc(d.a.nombre)} (${TIPO_INSUMO_LABEL[d.a.tipo] || d.a.tipo}, ${fmt(d.a.costo)}, ${d.a.usos} uso(s)) ↔ ${esc(d.b.nombre)} (${TIPO_INSUMO_LABEL[d.b.tipo] || d.b.tipo}, ${fmt(d.b.costo)}, ${d.b.usos} uso(s))</span>
+        <button class="btn-secondary" style="flex-shrink:0;padding:4px 10px;font-size:var(--fs-xs)" onclick="abrirResolverDuplicado_('${d.a.id}','${d.b.id}')">Resolver</button>
       </div>`).join('') + '</div>' : ''}
   </div>`;
 }
@@ -1896,9 +1916,15 @@ function showModalResultado_(titulo, resumenTexto, htmlDetalle) {
 // deja que la persona elija (el que tiene el dato correcto no es
 // deducible: en los casos reales es el huérfano, pero es coincidencia de
 // cómo se corrigió, no una regla).
-function abrirResolverDuplicado_(tipo, idA, idB) {
-  const a = state[tipo].find(x => x.id === idA), b = state[tipo].find(x => x.id === idB);
-  if (!a || !b) { showToast('Uno de los dos insumos ya no existe — el reporte puede estar desactualizado'); renderReporteIntegridad(); return; }
+// B3 (Ronda 9): ya no recibe `tipo` — usa CrumblyCore.findInsumoConTipo
+// para ubicar cada id en su propio bucket, así el mismo flujo sirve
+// tanto para un par del mismo bucket (A2) como para un par ENTRE
+// buckets (B3, ej. "Huevos x30" cargado a la vez en empaques y materia)
+// sin ninguna rama especial — repuntarReferenciasInsumo/intentarEliminarInsumo_
+// ya eran agnósticos de bucket, solo la UI asumía uno compartido.
+function abrirResolverDuplicado_(idA, idB) {
+  const fa = CrumblyCore.findInsumoConTipo(state, idA), fb = CrumblyCore.findInsumoConTipo(state, idB);
+  if (!fa || !fb) { showToast('Uno de los dos insumos ya no existe — el reporte puede estar desactualizado'); renderReporteIntegridad(); return; }
   const usoA = CrumblyCore.findProductosUsandoInsumo(state, idA), usoB = CrumblyCore.findProductosUsandoInsumo(state, idB);
   let overlay = document.getElementById('modal-resolver-duplicado');
   if (!overlay) {
@@ -1908,22 +1934,24 @@ function abrirResolverDuplicado_(tipo, idA, idB) {
     overlay.innerHTML = '<div class="modal"><div class="modal-title-row"><span class="modal-title">¿Cuál insumo es el correcto?</span><button class="modal-close" onclick="closeModal(\'modal-resolver-duplicado\')"><i class="ph ph-x"></i></button></div><div id="resolver-duplicado-contenido" style="display:flex;flex-direction:column;gap:10px"></div></div>';
     document.body.appendChild(overlay);
   }
-  const tarjeta = (ins, uso, idConservar, idDescartar) => `
+  const tarjeta = (f, uso, idConservar, idDescartar) => `
     <div style="padding:10px 12px;border-radius:8px;background:var(--bg);flex:1">
-      <div style="font-size:var(--fs-sm);color:var(--ink);margin-bottom:4px">${esc(ins.nombre)}</div>
-      <div style="font-size:var(--fs-xs);color:var(--muted)">Costo: ${fmt(ins.costo)}/${esc(ins.unidad || '')}</div>
-      <div style="font-size:var(--fs-xs);color:var(--muted)">Stock: ${ins.cantidad}</div>
+      <div style="font-size:var(--fs-sm);color:var(--ink);margin-bottom:4px">${esc(f.item.nombre)}</div>
+      <div style="font-size:var(--fs-xs);color:var(--muted)">Bucket: ${TIPO_INSUMO_LABEL[f.tipo] || f.tipo}</div>
+      <div style="font-size:var(--fs-xs);color:var(--muted)">Costo: ${fmt(f.item.costo)}/${esc(f.item.unidad || '')}</div>
+      <div style="font-size:var(--fs-xs);color:var(--muted)">Stock: ${f.item.cantidad}</div>
       <div style="font-size:var(--fs-xs);color:var(--muted);margin-bottom:8px">Usos: ${uso.productos.length} producto(s), ${uso.preparaciones.length} preparación(es)</div>
-      <button class="btn-primary" style="width:100%" onclick="previewRepunte_('${tipo}','${idDescartar}','${idConservar}')">Conservar este</button>
+      <button class="btn-primary" style="width:100%" onclick="previewRepunte_('${idDescartar}','${idConservar}')">Conservar este</button>
     </div>`;
   document.getElementById('resolver-duplicado-contenido').innerHTML =
-    '<div style="display:flex;gap:10px">' + tarjeta(a, usoA, idA, idB) + tarjeta(b, usoB, idB, idA) + '</div>' +
+    '<div style="display:flex;gap:10px">' + tarjeta(fa, usoA, idA, idB) + tarjeta(fb, usoB, idB, idA) + '</div>' +
+    (fa.tipo !== fb.tipo ? '<div style="font-size:var(--fs-xs);color:var(--danger)">Están en buckets distintos (' + (TIPO_INSUMO_LABEL[fa.tipo] || fa.tipo) + ' / ' + (TIPO_INSUMO_LABEL[fb.tipo] || fb.tipo) + ') — conservar uno no cambia su clasificación, solo repunta las referencias del otro hacia este.</div>' : '') +
     '<div style="font-size:var(--fs-xs);color:var(--muted)">El que elijas se conserva; el otro pierde sus referencias (se repuntan al que elegiste) y queda disponible para borrar aparte.</div>';
   openModal('modal-resolver-duplicado');
 }
-function previewRepunte_(tipo, idDescartado, idConservado) {
+function previewRepunte_(idDescartado, idConservado) {
   const preview = CrumblyCore.previsualizarRepunte(state, idDescartado, idConservado);
-  const conservado = state[tipo].find(x => x.id === idConservado);
+  const conservado = CrumblyCore.findInsumoConTipo(state, idConservado).item;
   let overlay = document.getElementById('modal-preview-repunte');
   if (!overlay) {
     overlay = document.createElement('div');
@@ -1937,15 +1965,15 @@ function previewRepunte_(tipo, idDescartado, idConservado) {
     ${preview.productos.length ? preview.productos.map(p => desgloseFila_(p.productoNombre, p.desgloseAntes, p.desgloseDespues)).join('') : '<div style="font-size:var(--fs-xs);color:var(--muted)">Ninguna receta usa el insumo descartado — no hay nada que repuntar, pero igual queda huérfano y se puede borrar.</div>'}
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn-secondary" onclick="closeModal('modal-preview-repunte')">Cancelar</button>
-      <button class="btn-primary" onclick="confirmarRepunte_('${tipo}','${idDescartado}','${idConservado}')">Confirmar repunte</button>
+      <button class="btn-primary" onclick="confirmarRepunte_('${idDescartado}','${idConservado}')">Confirmar repunte</button>
     </div>`;
   closeModal('modal-resolver-duplicado');
   openModal('modal-preview-repunte');
 }
-function confirmarRepunte_(tipo, idDescartado, idConservado) {
+function confirmarRepunte_(idDescartado, idConservado) {
   const preview = CrumblyCore.previsualizarRepunte(state, idDescartado, idConservado);
-  const descartado = state[tipo].find(x => x.id === idDescartado);
-  const conservado = state[tipo].find(x => x.id === idConservado);
+  const descartado = CrumblyCore.findInsumoConTipo(state, idDescartado).item;
+  const conservado = CrumblyCore.findInsumoConTipo(state, idConservado).item;
   CrumblyCore.repuntarReferenciasInsumo(state, idDescartado, idConservado);
   saveState();
   closeModal('modal-preview-repunte');
@@ -2034,6 +2062,18 @@ function getAlertasCentro_() {
     alertas.push({
       sev: 3, texto: '"' + enUso.nombre + '" y "' + huerfano.nombre + '" parecen el mismo insumo — el costeo usa "' + enUso.nombre + '" (' + fmt(enUso.costo) + '), "' + huerfano.nombre + '" quedó sin ninguna receta',
       accion: () => { closeModal('modal-alertas'); navTo('inventario'); openInsumoModal(huerfano.id); }
+    });
+  });
+  // 3 — B3: el mismo insumo cargado en DOS buckets distintos, cada copia
+  // con su propio costo — más grave que un duplicado normal de A2 (ahí
+  // arriba), porque acá food cost/paper cost ya están leyendo cada copia
+  // de un lado distinto del reporte. Siempre severidad alta (no hay caso
+  // "media" como en A2 — un mismo insumo en dos buckets SIEMPRE es un
+  // problema, nunca solo información).
+  r.insumosDuplicadosEntreBuckets.forEach(d => {
+    alertas.push({
+      sev: 3, texto: '"' + d.a.nombre + '" está en dos buckets a la vez: ' + (TIPO_INSUMO_LABEL[d.a.tipo] || d.a.tipo) + ' (' + fmt(d.a.costo) + ') y ' + (TIPO_INSUMO_LABEL[d.b.tipo] || d.b.tipo) + ' (' + fmt(d.b.costo) + ') — cada copia cuenta su costo distinto',
+      accion: () => { closeModal('modal-alertas'); navTo('inventario'); openInsumoModal(d.a.id); }
     });
   });
   // 3 — B1: referencia rota — el costo de esa receta no significa nada.

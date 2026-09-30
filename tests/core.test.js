@@ -3640,6 +3640,50 @@ test('después de repuntar, el insumo descartado queda sin ningún uso — borra
   assert.strictEqual(usado.preparaciones.length, 0);
 });
 
+console.log('\n== B3 (hallazgo de producción, Ronda 9): duplicados ENTRE buckets ==');
+
+test('CRITERIO: el mismo nombre en dos buckets distintos se reporta como duplicado entre buckets, con severidad alta y el costo/uso de cada copia', () => {
+  const s = C.emptyState();
+  s.empaques.push({ id: 'h30-empaques', nombre: 'Huevos x30', unidad: 'unidad', costo: 1065, cantidad: 10, minimo: 1, categoria: 'Lacteos' });
+  s.materia.push({ id: 'h30-materia', nombre: 'Huevos x30', unidad: 'unidad', costo: 11183, cantidad: 5, minimo: 1 });
+  const r = C.getInsumosDuplicadosYHuerfanos(s);
+  assert.strictEqual(r.duplicadosEntreBuckets.length, 1);
+  const par = r.duplicadosEntreBuckets[0];
+  assert.strictEqual(par.severidad, 'alta');
+  const porTipo = { [par.a.tipo]: par.a, [par.b.tipo]: par.b };
+  assert.strictEqual(porTipo.empaques.costo, 1065);
+  assert.strictEqual(porTipo.materia.costo, 11183);
+  // el par entre buckets NO debe aparecer también como duplicado normal
+  // (ese bloque compara solo dentro del mismo bucket) ni como huérfano
+  // (cada uno vive en su propia lista, aunque ninguno esté "en uso" acá).
+  assert.strictEqual(r.duplicados.length, 0);
+});
+
+test('nombres similares en el MISMO bucket no se reportan acá (eso ya lo cubre el chequeo normal, arriba)', () => {
+  const s = C.emptyState();
+  s.materia.push({ id: 'a', nombre: 'Mantequilla', unidad: 'g', costo: 52, cantidad: 100, minimo: 10 });
+  s.materia.push({ id: 'b', nombre: 'Mantequilla D1', unidad: 'g', costo: 91, cantidad: 100, minimo: 10 });
+  const r = C.getInsumosDuplicadosYHuerfanos(s);
+  assert.strictEqual(r.duplicadosEntreBuckets.length, 0);
+  assert.strictEqual(r.duplicados.length, 1, 'este caso lo reporta el chequeo de mismo bucket, no el nuevo');
+});
+
+test('un estado sin nombres repetidos entre buckets no reporta nada', () => {
+  const s = C.emptyState();
+  s.materia.push({ id: 'a', nombre: 'Harina', unidad: 'g', costo: 5, cantidad: 100, minimo: 10 });
+  s.empaques.push({ id: 'b', nombre: 'Caja', unidad: 'unidad', costo: 500, cantidad: 100, minimo: 10 });
+  const r = C.getInsumosDuplicadosYHuerfanos(s);
+  assert.deepStrictEqual(r.duplicadosEntreBuckets, []);
+});
+
+test('getReporteIntegridad expone insumosDuplicadosEntreBuckets (integrado, no un cálculo aparte)', () => {
+  const s = C.emptyState();
+  s.empaques.push({ id: 'x', nombre: 'Pistacho', unidad: 'g', costo: 95, cantidad: 100, minimo: 10 });
+  s.materia.push({ id: 'y', nombre: 'Pistacho', unidad: 'g', costo: 224, cantidad: 100, minimo: 10 });
+  const r = C.getReporteIntegridad(s);
+  assert.strictEqual(r.insumosDuplicadosEntreBuckets.length, 1);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);

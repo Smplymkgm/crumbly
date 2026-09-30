@@ -1220,6 +1220,7 @@
       productosCostoMayorAPrecio: productosCostoMayorAPrecio,
       insumosDuplicados: dyh.duplicados,
       insumosHuerfanos: dyh.huerfanos,
+      insumosDuplicadosEntreBuckets: dyh.duplicadosEntreBuckets,
       ingredientesEnEmpaques: ingredientesEnEmpaques,
       referenciasRotas: referenciasRotas
     };
@@ -1293,7 +1294,34 @@
       .filter(function (i) { return usoPorId[i.id] === 0 && !enUnPar[i.id]; })
       .map(function (i) { return { tipo: i.tipo, id: i.id, nombre: i.nombre, costo: Number(i.costo) || 0, severidad: 'baja' }; });
 
-    return { duplicados: duplicados, huerfanos: huerfanos };
+    // B3 (hallazgo de producción, Ronda 9): el bucle de arriba compara
+    // nombres SOLO dentro del mismo bucket, a propósito (evita falsos
+    // positivos entre cosas legítimamente distintas que comparten un
+    // nombre genérico — ver el test "nombres similares en buckets
+    // DISTINTOS no se reportan como duplicados"). Pero eso deja un caso
+    // real sin cubrir, encontrado revisando el Sheet de producción: el
+    // MISMO insumo cargado dos veces, en dos buckets DISTINTOS, cada
+    // copia con su propio costo ("Huevos x30" a $1.065 en empaques y a
+    // $11.183 en materia) — más grave que un duplicado normal, porque
+    // food cost/paper cost dependen del bucket, así que cada copia
+    // cuenta ese costo de un lado distinto del reporte. Severidad
+    // siempre 'alta': a diferencia de un duplicado normal, acá SIEMPRE
+    // hay dos clasificaciones compitiendo por el mismo nombre real.
+    var duplicadosEntreBuckets = [];
+    for (var x = 0; x < insumos.length; x++) {
+      for (var y = x + 1; y < insumos.length; y++) {
+        var j1 = insumos[x], j2 = insumos[y];
+        if (j1.tipo === j2.tipo) continue; // eso ya lo cubre el bloque de arriba
+        if (!nombresSimilares_(normalizarNombreInsumo_(j1.nombre), normalizarNombreInsumo_(j2.nombre))) continue;
+        duplicadosEntreBuckets.push({
+          a: { id: j1.id, nombre: j1.nombre, tipo: j1.tipo, costo: Number(j1.costo) || 0, usos: usoPorId[j1.id] },
+          b: { id: j2.id, nombre: j2.nombre, tipo: j2.tipo, costo: Number(j2.costo) || 0, usos: usoPorId[j2.id] },
+          severidad: 'alta'
+        });
+      }
+    }
+
+    return { duplicados: duplicados, huerfanos: huerfanos, duplicadosEntreBuckets: duplicadosEntreBuckets };
   }
 
   // ─── A3 (auditoría Ronda 8): ingredientes clasificados como empaque
