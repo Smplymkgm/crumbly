@@ -3780,6 +3780,17 @@ test('CRITERIO: un topping en kg vendido DENTRO de una línea de producto tambi�
   assert.ok(Math.abs(totalTopping - 1500) < 0.01, '50g × $30/g = $1.500 por el topping — dio ' + totalTopping);
 });
 
+console.log('\n== Helpers de unidad exportados (margen de adición y carrito de venta en index.html) ==');
+
+test('costoPorGramoInsumo/precioPorGramoInsumo/factorUnidadAGramos convierten kg → g y dejan g/ml/unidad igual', () => {
+  assert.strictEqual(C.factorUnidadAGramos('kg'), 1000);
+  assert.strictEqual(C.factorUnidadAGramos('g'), 1);
+  assert.strictEqual(C.costoPorGramoInsumo({ unidad: 'kg', costo: 24000 }), 24);
+  assert.strictEqual(C.costoPorGramoInsumo({ unidad: 'g', costo: 24 }), 24);
+  assert.strictEqual(C.precioPorGramoInsumo({ unidad: 'kg', precio: 30000 }), 30);
+  assert.strictEqual(C.precioPorGramoInsumo({ unidad: 'unidad', precio: 2000 }), 2000);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);

@@ -756,7 +756,8 @@ textarea.field{height:auto}
     </div>
     <div class="modal-field">
       <div class="field-label" id="ins-costo-label">Costo por gramo</div>
-      <input type="number" id="ins-costo" class="field" placeholder="$" min="0" step="0.001" oninput="actualizarMargenAdicion()">
+      <input type="number" id="ins-costo" class="field" placeholder="$" min="0" step="0.001" oninput="actualizarMargenAdicion(); actualizarAvisoCostoInsumo_()">
+      <p class="item-sub" id="ins-costo-aviso" style="color:var(--danger);font-weight:var(--fw-bold);margin-top:6px" hidden></p>
     </div>
 
     <details class="ins-mas" id="ins-mas-opciones">
@@ -784,7 +785,7 @@ textarea.field{height:auto}
           </div>
           <div class="modal-field" style="flex:1;min-width:0">
             <div class="field-label">Porción
-              <details class="info derecha"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Cuánto se descuenta del stock cada vez que se vende como adición, en la unidad de medición del insumo. Obligatoria, mayor a 0.</p></details>
+              <details class="info derecha"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Cuánto se descuenta del stock cada vez que se vende como adición: en gramos (aunque el insumo se mida en kilos), en ml o en unidades según el insumo. Obligatoria, mayor a 0.</p></details>
             </div>
             <input type="number" id="ins-porcion" class="field" placeholder="0" min="0" step="0.01" oninput="actualizarMargenAdicion()">
           </div>
@@ -1005,24 +1006,25 @@ textarea.field{height:auto}
           </select>
         </div>
         <div class="modal-field" style="flex:2;margin-bottom:0">
-          <select id="g-insumo-id"></select>
+          <select id="g-insumo-id" onchange="onGastoInsumoChange()"></select>
         </div>
       </div>
       <div class="modal-field">
-        <label>Cantidad comprada (unidades individuales)</label>
+        <div class="field-label">Cantidad comprada (<span id="g-cantidad-unidad">unidades</span>)
+          <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Escribila en la medida del insumo (la que está entre paréntesis): si compraste 5 kg y el insumo se mide en gramos, escribí 5000. Si compraste una caja de 100 unidades, escribí 100 — no 1. El costo del insumo se recalcula solo, como promedio con el stock que ya tenías.</p></details>
+        </div>
         <input type="number" id="g-cantidad" placeholder="2000" min="0" step="0.01" oninput="updateGastoCostoPreview()">
-        <p class="item-sub">Si compraste una caja de 100, escribí 100 — no 1. El precio es del insumo suelto, no del paquete.</p>
       </div>
       <p class="item-sub" id="g-costo-preview" style="margin-bottom:10px;font-weight:var(--fw-bold)"></p>
-      <p class="item-sub" style="margin-bottom:10px">El costo por unidad del insumo se recalcula automáticamente como promedio ponderado con el stock que ya tenías.</p>
     </div>
 
     <div id="g-campos-capex" style="display:none">
       <div class="modal-field">
-        <label>Vida útil (meses)</label>
+        <div class="field-label">Vida útil (meses)
+          <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>El gasto no resta de golpe de la utilidad — se reparte (deprecia) a lo largo de estos meses.</p></details>
+        </div>
         <input type="number" id="g-vida-util" placeholder="36" min="1" step="1">
       </div>
-      <p class="item-sub" style="margin-bottom:10px">El gasto no resta de golpe de la utilidad — se reparte (deprecia) a lo largo de estos meses.</p>
     </div>
 
     <div style="display:flex;gap:10px">
@@ -1063,7 +1065,7 @@ textarea.field{height:auto}
     <div class="modal-field">
       <label class="field-label">Comprobante (opcional)</label>
       <label class="dropzone">
-        <input type="file" accept="image/*,.pdf" onchange="onComprobanteChange(event,'g-comprobante-label')">
+        <input type="file" id="g-comprobante-input" accept="image/*,.pdf" onchange="onComprobanteChange(event,'g-comprobante-label')">
         <i class="ph ph-upload-simple" style="font-size:var(--fs-h3);color:var(--muted)"></i>
         <span id="g-comprobante-label" style="font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--text)">Subir comprobante</span>
       </label>
@@ -1224,7 +1226,7 @@ textarea.field{height:auto}
       <div id="venta-comprobante-wrap" style="display:none">
         <label class="field-label">Comprobante</label>
         <label class="dropzone">
-          <input type="file" accept="image/*,.pdf" onchange="onComprobanteChange(event,'venta-comprobante-label')">
+          <input type="file" id="venta-comprobante-input" accept="image/*,.pdf" onchange="onComprobanteChange(event,'venta-comprobante-label')">
           <i class="ph ph-upload-simple" style="font-size:var(--fs-h3);color:var(--muted)"></i>
           <span id="venta-comprobante-label" style="font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--text)">Subir comprobante</span>
         </label>
@@ -1427,6 +1429,11 @@ const esc = CrumblyCore.escapeHtml;
 function fmtGramoCosto(n) {
   if (!n) return '$0';
   return '$' + n.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+}
+// Costo por unidad de medida (g, kg, ml o unidad): decimales cuando es
+// chico ($4.72/g), separador de miles cuando es grande ($4.720/kg).
+function fmtCostoUnitario_(n) {
+  return Math.abs(Number(n) || 0) >= 1000 ? fmt(n) : fmtGramoCosto(Number(n) || 0);
 }
 
 // T0.1 (auditoría, Ronda 3): `conteoEnProgreso` es a propósito
@@ -3025,6 +3032,25 @@ function actualizarEtiquetasUnidad_() {
   const corta = { gramos: 'g', mililitros: 'ml', kilogramos: 'kg', unidad: 'unidades' }[med] || 'unidades';
   document.getElementById('ins-costo-label').textContent = 'Costo por ' + nombre;
   document.getElementById('ins-unidad-contenido').textContent = corta;
+  actualizarMargenAdicion();
+  actualizarAvisoCostoInsumo_();
+}
+// Aviso suave (no bloquea guardar): un costo que no cuadra con la
+// medición elegida. Caso real: insumos con precio por gramo ($24) pero
+// medición en kilogramos — en las recetas quedaban 1000× más baratos.
+function actualizarAvisoCostoInsumo_() {
+  const el = document.getElementById('ins-costo-aviso');
+  const unidad = TIPO_MEDICION_UNIDAD[document.getElementById('ins-tipo-medicion').value];
+  const costo = parseFloat(document.getElementById('ins-costo').value) || 0;
+  let msg = '';
+  if (unidad === 'kg' && costo > 0 && costo < 500) {
+    msg = '¿Ese precio es por gramo? Con la medición en kilogramos, ' + fmtGramoCosto(costo) + ' sería ' + fmtGramoCosto(costo) + ' el kilo.';
+  } else if ((unidad === 'g' || unidad === 'ml') && costo > 1000) {
+    const nombre = unidad === 'g' ? 'gramo' : 'mililitro';
+    msg = '¿Ese precio es por kilo o por paquete? Con la medición en ' + nombre + 's, ' + fmt(costo) + ' sería ' + fmt(costo) + ' cada ' + nombre + '.';
+  }
+  el.textContent = msg;
+  el.hidden = !msg;
 }
 function openInsumoModal(id) {
   document.getElementById('ins-edit-id').value = id || '';
@@ -3141,7 +3167,10 @@ function actualizarMargenAdicion() {
   const precio = parseFloat(document.getElementById('ins-precio-adicion').value) || 0;
   const porcion = parseFloat(document.getElementById('ins-porcion').value) || 0;
   const costo = parseFloat(document.getElementById('ins-costo').value) || 0;
-  const costoPorcion = porcion * costo;
+  // La porción va en gramos (igual que en applyVenta); el costo, en la
+  // unidad del insumo — en kg hay que pasarlo a $/g o sale 1000× de más.
+  const unidad = TIPO_MEDICION_UNIDAD[document.getElementById('ins-tipo-medicion').value];
+  const costoPorcion = porcion * CrumblyCore.costoPorGramoInsumo({ costo, unidad });
   const margen = precio - costoPorcion;
   const margenPct = precio > 0 ? (margen / precio * 100) : 0;
   el.style.color = margen <= 0 ? 'var(--danger)' : 'var(--muted)';
@@ -3152,6 +3181,8 @@ function calcularCostoInsumo() {
   const contenido = parseFloat(document.getElementById('ins-calc-contenido').value) || 0;
   if (precio > 0 && contenido > 0) {
     document.getElementById('ins-costo').value = (precio / contenido).toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+    actualizarMargenAdicion();
+    actualizarAvisoCostoInsumo_();
   }
 }
 function saveInsumo() {
@@ -3183,11 +3214,47 @@ function saveInsumo() {
   };
   const editId = document.getElementById('ins-edit-id').value;
   const editTipo = document.getElementById('ins-edit-tipo').value;
+  const unidadElegida = TIPO_MEDICION_UNIDAD[tipoMedicion];
+  const itemAntes = editId ? state[editTipo].find(x => x.id === editId) : null;
+  // Cambiar la medición g ↔ kg de un insumo existente antes solo cambiaba
+  // la etiqueta: 5000 g quedaban "5000 kg" y $10/g pasaba a $10/kg (en las
+  // recetas, 1000× más barato). Así se llegó a varios insumos reales con
+  // precio por gramo y medición en kg. Ahora se pregunta: Aceptar convierte
+  // stock, mínimo y costo (el insumo es el mismo, solo cambia la medida);
+  // Cancelar deja los números tal cual (para quien está CORRIGIENDO una
+  // medición que estaba mal puesta). No hay litros en la app, así que el
+  // único par convertible es g ↔ kg.
+  let conversionUnidad = null; // factor por el que se multiplica el costo (g→kg: 1000)
+  if (itemAntes && itemAntes.unidad !== unidadElegida &&
+      ['g', 'kg'].includes(itemAntes.unidad) && ['g', 'kg'].includes(unidadElegida)) {
+    const f = CrumblyCore.factorUnidadAGramos(unidadElegida) / CrumblyCore.factorUnidadAGramos(itemAntes.unidad);
+    const num = n => (Number(n) || 0).toLocaleString('es-CO', { maximumFractionDigits: 4 });
+    const redondear = n => Math.round(n * 1e6) / 1e6; // 4,72 × 1000 sin colas de coma flotante
+    const cantidadAntes = Number(itemAntes.cantidad) || 0;
+    const precioAntes = Number(itemAntes.precio) || 0; // toppings: precio de venta suelto, misma unidad que el costo
+    const u1 = itemAntes.unidad, u2 = unidadElegida;
+    const lineas = [
+      'Stock: ' + num(cantidadAntes) + ' ' + u1 + ' → ' + num(cantidadAntes / f) + ' ' + u2,
+      'Mínimo: ' + num(datos.minimo) + ' ' + u1 + ' → ' + num(datos.minimo / f) + ' ' + u2,
+      'Costo: $' + num(datos.costo) + '/' + u1 + ' → $' + num(datos.costo * f) + '/' + u2
+    ];
+    if (precioAntes) lineas.push('Precio de venta: $' + num(precioAntes) + '/' + u1 + ' → $' + num(precioAntes * f) + '/' + u2);
+    const convertir = confirm(
+      'Cambiaste la medición de "' + nombre + '" de ' + (u1 === 'g' ? 'gramos a kilogramos' : 'kilogramos a gramos') + '.\n\n' +
+      '¿Convertir los números a la nueva medición?\n' + lineas.join('\n') + '\n\n' +
+      'Aceptar: convertir (el insumo sigue siendo el mismo, solo cambia cómo se mide).\n' +
+      'Cancelar: dejar los números como están (si estabas corrigiendo una medición que estaba mal puesta).'
+    );
+    if (convertir) {
+      conversionUnidad = f;
+      datos.costo = redondear(datos.costo * f);
+      datos.minimo = redondear(datos.minimo / f);
+    }
+  }
   // T2: guard de sensatez de costo — advertencia, no bloqueo (igual que el
   // aviso de stock insuficiente: se puede confirmar y seguir). Caso real
   // que esto habría atajado: harina de fuerza cargada a $10.500 por GRAMO
   // (era el precio del paquete completo).
-  const unidadElegida = TIPO_MEDICION_UNIDAD[tipoMedicion];
   const sospecha = CrumblyCore.checkCostoSospechoso(state, unidadElegida, datos.costo, editId || undefined);
   if (sospecha) {
     const seguir = confirm(
@@ -3205,17 +3272,21 @@ function saveInsumo() {
   // avisar (la mayoría de las ediciones son nombre/categoría/mínimo).
   let productosAfectados = null, margenAntesPorProducto = null;
   if (editId) {
-    const costoAntes = Number(state[editTipo].find(x => x.id === editId).costo) || 0;
-    if (costoAntes !== datos.costo) {
+    // Se compara el costo POR GRAMO: convertir g ↔ kg cambia el número
+    // pero no lo que cuesta cada receta (y cambiar solo la medición, sin
+    // convertir, sí lo cambia aunque el número quede igual).
+    const costoAntes = CrumblyCore.costoPorGramoInsumo(itemAntes);
+    if (Math.abs(costoAntes - CrumblyCore.costoPorGramoInsumo({ costo: datos.costo, unidad: unidadElegida })) > 1e-9) {
       productosAfectados = CrumblyCore.findProductosAfectadosPorInsumo(state, editId);
       margenAntesPorProducto = {};
       productosAfectados.forEach(p => { margenAntesPorProducto[p.id] = CrumblyCore.getMargenProducto(p, state); });
     }
   }
   if (editId) {
-    // Edición: actualiza sus campos + reetiqueta la unidad (no convierte
-    // cantidades entre medidas). B2: `cantidad` NUNCA se toca acá (el
-    // campo está deshabilitado en el modal) — se corrige con Inventario →
+    // Edición: actualiza sus campos + la unidad (g ↔ kg convierte solo si
+    // la persona aceptó arriba, ver `conversionUnidad`). B2: `cantidad` no
+    // se edita acá, salvo esa conversión de medida (el campo está
+    // deshabilitado en el modal) — se corrige con Inventario →
     // Conteo físico, que sí deja rastro (motivo, usuario, ajuste). Editarla
     // a mano era la única vía de ajuste y no dejaba ninguno.
     //
@@ -3248,6 +3319,12 @@ function saveInsumo() {
     const list = state[editTipo];
     const idx = list.findIndex(x => x.id === editId);
     list[idx] = { ...list[idx], ...datos, unidad: TIPO_MEDICION_UNIDAD[tipoMedicion] };
+    if (conversionUnidad) {
+      // Misma cantidad física expresada en otra medida — no es un ajuste
+      // de stock (B2), por eso no pasa por Conteo físico.
+      list[idx].cantidad = Math.round((Number(list[idx].cantidad) || 0) / conversionUnidad * 1e6) / 1e6;
+      if (Number(list[idx].precio)) list[idx].precio = Math.round(Number(list[idx].precio) * conversionUnidad * 1e6) / 1e6;
+    }
     // moverInsumoDeTipo (A1, js/core.js) hace la otra mitad: mueve el
     // registro de colección Y reescribe el `tipo` de cada componente de
     // receta que lo referencia — sin eso, las recetas seguirían
@@ -3517,10 +3594,27 @@ function populatePrepComponenteRefSelect(rowId, selectedId) {
   const editId = document.getElementById('prep-edit-id').value;
   const sel = row.querySelector('.prep-comp-ref');
   const list = tipo === 'materia' ? state.materia : state.preparaciones.filter(p => p.id !== editId);
-  sel.innerHTML = list.length
+  sel.innerHTML = opcionRefPerdida_(list, selectedId, tipo) + (list.length
     ? list.map(x => `<option value="${x.id}" ${x.id === selectedId ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('')
-    : '<option value="">-- No hay --</option>';
+    : '<option value="">-- No hay --</option>');
 }
+// Receta que apunta a un insumo/preparación que ya no existe: antes el
+// <select> mostraba en silencio la PRIMERA opción de la lista, y guardar
+// el producto (aunque fuera solo para cambiar el precio) reemplazaba el
+// ingrediente por ese otro sin que nadie lo notara. Ahora la fila queda
+// marcada y no se puede guardar hasta elegir otro o quitarla con ✕.
+function opcionRefPerdida_(list, selectedId, tipo) {
+  if (!selectedId || list.some(x => x.id === selectedId)) return '';
+  const texto = tipo === 'preparacion' ? '— (preparación no encontrada) —' : '— (insumo no encontrado) —';
+  return `<option value="" data-perdido="1" selected>${texto}</option>`;
+}
+function hayFilaConRefPerdida_(wrapId) {
+  return Array.from(document.querySelectorAll('#' + wrapId + ' select')).some(sel => {
+    const opt = sel.options[sel.selectedIndex];
+    return !!(opt && opt.dataset.perdido);
+  });
+}
+const MSG_REF_PERDIDA_ = 'Hay un ingrediente que ya no existe (dice "no encontrado"). Elegí otro en esa fila o quitala con ✕ antes de guardar.';
 function addPrepComponenteRow(tipo, refId, valor) {
   tipo = tipo || 'materia';
   const rowId = 'pcr' + (++prepComponenteRowCount);
@@ -3587,6 +3681,7 @@ function calcPrepCosto() {
   }
 }
 function savePreparacionUI() {
+  if (hayFilaConRefPerdida_('prep-componentes-wrap')) { alert(MSG_REF_PERDIDA_); return; }
   const editId = document.getElementById('prep-edit-id').value;
   const input = {
     id: editId || undefined,
@@ -3843,7 +3938,8 @@ function openModalProducto(id) {
 function addEmpRow(empaqueId = '', cantidad = '') {
   const rowId = 'er' + (++empRowCount);
   empRows.push(rowId);
-  const opts = state.empaques.map(m => `<option value="${m.id}" ${m.id === empaqueId ? 'selected' : ''}>${esc(m.nombre)}</option>`).join('');
+  const opts = opcionRefPerdida_(state.empaques, empaqueId, 'empaques') +
+    state.empaques.map(m => `<option value="${m.id}" ${m.id === empaqueId ? 'selected' : ''}>${esc(m.nombre)}</option>`).join('');
   const html = `<div class="ing-row" id="${rowId}">
     <select onchange="calcProdCost()"><option value="">-- Empaque --</option>${opts}</select>
     <input type="number" placeholder="cant." value="${cantidad}" min="0" step="0.1" oninput="calcProdCost()">
@@ -3896,9 +3992,9 @@ function populateProdComponenteRefSelect(rowId, selectedId) {
   const tipo = row.querySelector('.prod-comp-tipo').value;
   const sel = row.querySelector('.prod-comp-ref');
   const list = state[PROD_COMP_LIST_POR_TIPO[tipo]] || [];
-  sel.innerHTML = list.length
+  sel.innerHTML = opcionRefPerdida_(list, selectedId, tipo) + (list.length
     ? list.map(x => `<option value="${x.id}" ${x.id === selectedId ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('')
-    : '<option value="">-- No hay --</option>';
+    : '<option value="">-- No hay --</option>');
 }
 function onProdComponenteTipoChange(rowId) {
   populateProdComponenteRefSelect(rowId, null);
@@ -3955,6 +4051,7 @@ function saveProducto() {
   const empaquesUsados = getEmpRowData();
   if (!nombre) { showToast('Ingresa el nombre del producto'); return; }
   if (!precio) { showToast('Ingresa el precio de venta'); return; }
+  if (hayFilaConRefPerdida_('prod-ings-wrap') || hayFilaConRefPerdida_('prod-emp-wrap')) { alert(MSG_REF_PERDIDA_); return; }
   // P0-2: ya NO se guarda "costo" como snapshot congelado. El costo del
   // producto se calcula siempre en vivo con CrumblyCore.getCostoProducto,
   // así que si cambia el precio de un ingrediente (o de una preparación que
@@ -4100,7 +4197,7 @@ function openSaleModal() {
   document.getElementById('venta-buscar-sugerencias').style.display = 'none';
   document.getElementById('venta-fecha').value = todayLocalISO();
   document.getElementById('venta-fecha').max = todayLocalISO(); // I3: no se puede elegir una fecha futura
-  document.getElementById('venta-comprobante-label').textContent = 'Subir comprobante';
+  reiniciarComprobante_('venta-comprobante-label', 'venta-comprobante-input');
   document.getElementById('clientes-datalist').innerHTML = state.clientes.map(c => `<option value="${esc(c.nombre)}">`).join('');
   renderVentaMetodoPago();
   renderDraftAdiciones();
@@ -4119,6 +4216,22 @@ function renderVentaMetodoPago() {
   document.getElementById('venta-comprobante-wrap').style.display = ventaMetodoPago !== 'efectivo' ? 'block' : 'none';
 }
 function setVentaMetodoPago(m) { ventaMetodoPago = m; renderVentaMetodoPago(); }
+// Subida de comprobante en curso, por modal. Bug real: confirmar mientras
+// decía "Subiendo…" guardaba la venta sin comprobante, y cuando la subida
+// terminaba escribía la URL igual — pegándosela a la venta SIGUIENTE. Cada
+// selección de archivo (y cada vez que se abre el modal) sube el número:
+// una subida que termina con un número viejo se descarta.
+const comprobanteSubida_ = {
+  'venta-comprobante-label': { token: 0, subiendo: false },
+  'g-comprobante-label': { token: 0, subiendo: false }
+};
+function reiniciarComprobante_(labelId, inputId) {
+  comprobanteSubida_[labelId].token++;
+  comprobanteSubida_[labelId].subiendo = false;
+  setComprobanteValor(labelId, '');
+  document.getElementById(labelId).textContent = 'Subir comprobante';
+  document.getElementById(inputId).value = ''; // así se puede volver a elegir el mismo archivo
+}
 function setComprobanteValor(labelId, valor) {
   if (labelId === 'venta-comprobante-label') ventaComprobante = valor;
   if (labelId === 'g-comprobante-label') gastoComprobanteNombre = valor;
@@ -4139,6 +4252,9 @@ function fileToBase64(file) {
 async function onComprobanteChange(e, labelId) {
   const f = e.target.files && e.target.files[0];
   const label = document.getElementById(labelId);
+  const subida = comprobanteSubida_[labelId];
+  const token = ++subida.token; // invalida cualquier subida anterior todavía en curso
+  subida.subiendo = false;
   if (!f) { label.textContent = 'Subir comprobante'; setComprobanteValor(labelId, ''); return; }
 
   if (!auth.isAuthenticated()) {
@@ -4155,16 +4271,22 @@ async function onComprobanteChange(e, labelId) {
   }
 
   label.textContent = 'Subiendo ' + f.name + '...';
+  setComprobanteValor(labelId, '');
+  subida.subiendo = true;
   try {
     const base64 = await fileToBase64(f);
     const res = await CrumblySync.uploadFile(auth.getBackendUrl(), auth.getToken(), f.name, f.type, base64);
+    if (token !== subida.token) return; // el modal se reinició o se eligió otro archivo: se descarta
     if (!res.ok) throw new Error(res.error || 'error desconocido');
     label.textContent = f.name + ' ✓';
     setComprobanteValor(labelId, res.url);
   } catch (err) {
+    if (token !== subida.token) return;
     label.textContent = 'Subir comprobante';
     setComprobanteValor(labelId, '');
     showToast('No se pudo subir el comprobante: ' + mensajeErrorSubida_(err));
+  } finally {
+    if (token === subida.token) subida.subiendo = false;
   }
 }
 function decDraftQty() { ventaDraftQty = Math.max(1, ventaDraftQty - 1); document.getElementById('venta-draft-qty').textContent = ventaDraftQty; }
@@ -4226,10 +4348,17 @@ function filtrarAdiciones_(q) {
 // propia. Combina productos y toppings/complementos vendibles en una sola
 // búsqueda — un complemento se agrega como su propia línea de venta, igual
 // que un producto (CrumblyCore.applyVenta ya soporta toppingsSueltos).
+// Solo complementos con precio de venta: sin él salían a $0 y se vendían
+// a $0. El texto del precio lleva la medida si no es por unidad ($/kg).
+function precioVentaTexto_(tipo, item) {
+  const u = tipo === 'topping' ? unidadCortaInsumo_(item) : 'unidad';
+  return fmt(item.precio) + (u === 'unidad' ? '' : '/' + u);
+}
 function getVentaBuscables() {
   return [
-    ...state.productos.map(p => ({ id: p.id, tipo: 'producto', nombre: p.nombre, precio: p.precio })),
-    ...state.toppings.map(t => ({ id: t.id, tipo: 'topping', nombre: t.nombre, precio: t.precio }))
+    ...state.productos.map(p => ({ id: p.id, tipo: 'producto', nombre: p.nombre, precio: p.precio, precioTexto: precioVentaTexto_('producto', p) })),
+    ...state.toppings.filter(t => Number(t.precio) > 0)
+      .map(t => ({ id: t.id, tipo: 'topping', nombre: t.nombre, precio: t.precio, precioTexto: precioVentaTexto_('topping', t) }))
   ];
 }
 function onVentaBuscarInput() {
@@ -4239,7 +4368,7 @@ function onVentaBuscarInput() {
   if (!q) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
   const matches = getVentaBuscables().filter(x => x.nombre.toLowerCase().includes(q)).slice(0, 30);
   wrap.innerHTML = matches.length
-    ? matches.map(m => `<button type="button" class="venta-sugerencia" onclick="selectVentaBuscado('${m.tipo}','${m.id}')" style="display:block;width:100%;text-align:left;padding:9px 12px;border:none;border-bottom:1px solid var(--line);background:transparent;cursor:pointer;font-size:var(--fs-sm);color:var(--text)">${esc(m.nombre)} — ${fmt(m.precio)}</button>`).join('')
+    ? matches.map(m => `<button type="button" class="venta-sugerencia" onclick="selectVentaBuscado('${m.tipo}','${m.id}')" style="display:block;width:100%;text-align:left;padding:9px 12px;border:none;border-bottom:1px solid var(--line);background:transparent;cursor:pointer;font-size:var(--fs-sm);color:var(--text)">${esc(m.nombre)} — ${m.precioTexto}</button>`).join('')
     : '<div style="padding:10px 12px;font-size:var(--fs-sm);color:var(--muted)">Sin resultados</div>';
   wrap.style.display = 'block';
 }
@@ -4247,7 +4376,7 @@ function selectVentaBuscado(tipo, id) {
   const item = (tipo === 'producto' ? state.productos : state.toppings).find(x => x.id === id);
   if (!item) return;
   ventaDraftSelected = { tipo, id };
-  document.getElementById('venta-draft-producto').value = item.nombre + ' — ' + fmt(item.precio);
+  document.getElementById('venta-draft-producto').value = item.nombre + ' — ' + precioVentaTexto_(tipo, item);
   document.getElementById('venta-buscar-sugerencias').style.display = 'none';
   renderDraftAdiciones();
 }
@@ -4265,9 +4394,14 @@ function addLineToCart() {
   } else {
     const t = state.toppings.find(x => x.id === ventaDraftSelected.id);
     if (!t) { showToast('Complemento no encontrado'); return; }
+    // qty de un topping suelto va en escala de receta (gramos si el
+    // topping se mide en g/kg, ml, o unidades) y applyVenta cobra
+    // precioPorGramoInsumo × qty — el carrito muestra exactamente eso
+    // (antes mostraba precio × qty: en kg, 1000× lo que se cobraba).
     ventaCart.push({
       id: 'line-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-      toppingId: t.id, nombre: t.nombre, precio: t.precio, qty: ventaDraftQty,
+      toppingId: t.id, nombre: t.nombre, precio: CrumblyCore.precioPorGramoInsumo(t), qty: ventaDraftQty,
+      unidadQty: t.unidad === 'kg' ? 'g' : (t.unidad === 'g' || t.unidad === 'ml' ? t.unidad : ''),
       adiciones: []
     });
   }
@@ -4286,7 +4420,7 @@ function renderCartLines() {
     ? '<div style="display:flex;flex-direction:column;align-items:center;gap:6px;border:1px dashed var(--soft);border-radius:10px;padding:22px;color:var(--muted)"><i class="ph ph-shopping-cart" style="font-size:var(--fs-h1);color:var(--soft)"></i><span style="font-size:var(--fs-sm)">Aún no has agregado productos.</span></div>'
     : ventaCart.map(l => `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:10px;background:var(--bg)">
         <div style="display:flex;align-items:center;gap:10px;min-width:0">
-          <div style="width:30px;height:30px;border-radius:8px;background:var(--white);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:var(--fs-xs);font-weight:var(--fw-bold);color:var(--ink)">${l.qty}×</div>
+          <div style="min-width:30px;height:30px;padding:0 4px;box-sizing:border-box;white-space:nowrap;border-radius:8px;background:var(--white);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:var(--fs-xs);font-weight:var(--fw-bold);color:var(--ink)">${l.unidadQty ? l.qty + ' ' + l.unidadQty : l.qty + '×'}</div>
           <div style="min-width:0"><div style="font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--ink)">${esc(l.nombre)}</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:1px">${l.adiciones.length ? esc(l.adiciones.map(a => a.label).join(', ')) : (l.toppingId ? 'Topping suelto' : 'Sin adiciones')}</div></div>
         </div>
         <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
@@ -4299,6 +4433,11 @@ function renderCartLines() {
 
 function registrarVenta() {
   if (!ventaCart.length) { showToast('Agrega al menos un producto'); return; }
+  const conComprobante = ventaMetodoPago !== 'efectivo'; // en efectivo el campo ni se muestra
+  if (conComprobante && comprobanteSubida_['venta-comprobante-label'].subiendo) {
+    showToast('Esperá a que termine de subir el comprobante');
+    return;
+  }
   const lineas = ventaCart.filter(l => l.productoId).map(l => ({ productoId: l.productoId, qty: l.qty, adiciones: l.adiciones.map(a => a.id) }));
   const toppingsSueltos = ventaCart.filter(l => l.toppingId).map(l => ({ toppingId: l.toppingId, qty: l.qty }));
 
@@ -4331,7 +4470,7 @@ function registrarVenta() {
     document.getElementById('venta-cliente-direccion').value
   );
   const fechaInput = document.getElementById('venta-fecha').value;
-  const opts = { stockInsuficiente, clienteId, metodoPago: ventaMetodoPago, comprobante: ventaComprobante };
+  const opts = { stockInsuficiente, clienteId, metodoPago: ventaMetodoPago, comprobante: conComprobante ? ventaComprobante : '' };
   if (fechaInput && fechaInput !== todayLocalISO()) {
     const [y, m, d] = fechaInput.split('-').map(Number);
     const now = new Date();
@@ -5275,8 +5414,7 @@ function openModalGasto() {
   document.getElementById('g-metodo-pago').value = 'efectivo';
   document.getElementById('g-monto-efectivo').value = '';
   document.getElementById('g-monto-transferencia').value = '';
-  gastoComprobanteNombre = '';
-  document.getElementById('g-comprobante-label').textContent = 'Subir comprobante';
+  reiniciarComprobante_('g-comprobante-label', 'g-comprobante-input');
   onGastoTipoChange();
   onGastoMetodoPagoChange();
   updateGastoCostoPreview();
@@ -5306,14 +5444,35 @@ function updateGastoDivididoPreview() {
 // dispara el costo unitario 100x. Bug real reportado por el usuario:
 // productos con margen de -1.354.057% por un costo de insumo así de
 // inflado.
+// La cantidad va en la medida del insumo elegido (g, kg, ml o unidades):
+// antes decía "unidades individuales" y quien compraba 5 kg de un insumo
+// en gramos escribía 5 → el costo por gramo quedaba 1000× de más.
+function gastoInsumoSeleccionado_() {
+  const tipo = document.getElementById('g-insumo-tipo').value;
+  const id = document.getElementById('g-insumo-id').value;
+  return (state[tipo] || []).find(x => x.id === id) || null;
+}
+function unidadCortaInsumo_(insumo) {
+  const u = insumo && insumo.unidad;
+  return u === 'g' || u === 'kg' || u === 'ml' ? u : 'unidad';
+}
+function onGastoInsumoChange() {
+  const insumo = gastoInsumoSeleccionado_();
+  const u = unidadCortaInsumo_(insumo);
+  document.getElementById('g-cantidad-unidad').textContent = u === 'unidad' ? 'unidades' : u;
+  updateGastoCostoPreview();
+}
 function updateGastoCostoPreview() {
   const el = document.getElementById('g-costo-preview');
   const cantidad = parseFloat(document.getElementById('g-cantidad').value) || 0;
   const monto = parseFloat(document.getElementById('g-monto').value) || 0;
   if (cantidad <= 0 || monto <= 0) { el.textContent = ''; return; }
   const unitario = monto / cantidad;
-  el.textContent = 'Costo por unidad: ' + fmt(unitario);
-  el.style.color = unitario > 50000 ? 'var(--danger)' : 'var(--muted)';
+  const u = unidadCortaInsumo_(gastoInsumoSeleccionado_());
+  el.textContent = 'Costo por ' + u + ': ' + fmtCostoUnitario_(unitario);
+  // En g/ml un costo de más de $1.000 casi siempre es la cantidad escrita
+  // en kilos (o en paquetes) — mismo umbral que el aviso del insumo.
+  el.style.color = unitario > ((u === 'g' || u === 'ml') ? 1000 : 50000) ? 'var(--danger)' : 'var(--muted)';
 }
 function onGastoTipoChange() {
   const tipo = document.getElementById('g-tipo').value;
@@ -5328,10 +5487,12 @@ function populateGastoInsumoSelect() {
   const list = tipo === 'materia' ? state.materia : tipo === 'empaques' ? state.empaques : state.toppings;
   const sel = document.getElementById('g-insumo-id');
   sel.innerHTML = list.length
-    ? list.map(x => `<option value="${x.id}">${esc(x.nombre)} (actual: ${fmt(x.costo)}/u)</option>`).join('')
+    ? list.map(x => `<option value="${x.id}">${esc(x.nombre)} (actual: ${fmtCostoUnitario_(x.costo)}/${unidadCortaInsumo_(x)})</option>`).join('')
     : '<option value="">-- No hay insumos de este tipo --</option>';
+  onGastoInsumoChange();
 }
 function saveGasto() {
+  if (comprobanteSubida_['g-comprobante-label'].subiendo) { showToast('Esperá a que termine de subir el comprobante'); return; }
   const tipo = document.getElementById('g-tipo').value;
   const categoria = document.getElementById('g-categoria').value;
   const monto = Math.round(parseFloat(document.getElementById('g-monto').value) || 0);
@@ -5605,12 +5766,17 @@ function onConteoCantidadInput(id, value) {
   } else {
     state.conteoEnProgreso[key] = Object.assign({ cantidad: 0, motivo: '', observaciones: '' }, state.conteoEnProgreso[key], { cantidad: parseFloat(value) || 0 });
   }
+  // Se guarda en cada tecla (solo en este dispositivo, sin push): antes
+  // vivía solo en memoria hasta "Guardar", y cerrar con la X o que iOS
+  // matara la app perdía todo lo contado.
+  saveConteoEnProgresoLocal();
   actualizarFilaConteo(id);
   actualizarDiferenciaTotal();
 }
 function onConteoMotivoInput(id, motivo) {
   const key = conteoKey(conteoTipoActivo, id);
   if (state.conteoEnProgreso[key]) state.conteoEnProgreso[key].motivo = motivo;
+  saveConteoEnProgresoLocal();
   actualizarFilaConteo(id);
   actualizarDiferenciaTotal();
 }
