@@ -106,18 +106,27 @@
   // punto trae la fecha local (YYYY-MM-DD) para no repetir el cálculo de
   // huso horario que ya rompió rangeBounds() una vez (ver parseLocalDate).
   var DIAS_LABEL = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+
+  // Día LOCAL (YYYY-MM-DD, hora del dispositivo — Colombia, UTC-5) de una
+  // fecha. Las fechas se guardan como ISO en UTC: `iso.slice(0, 10)` da el
+  // día UTC, que después de las 7 pm en Colombia ya es "mañana". Toda
+  // comparación contra un día que ve la persona pasa por aquí.
+  function fechaLocalISO(fecha) {
+    var d = fecha === undefined ? new Date() : new Date(fecha);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
   function getIngresosPorDia(ventas, days, ref) {
     var end = ref ? new Date(ref) : new Date();
     var out = [];
     for (var i = (days || 7) - 1; i >= 0; i--) {
       var d = new Date(end.getFullYear(), end.getMonth(), end.getDate() - i);
-      out.push({ fecha: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'), dayLabel: DIAS_LABEL[d.getDay()], total: 0, esHoy: i === 0 });
+      out.push({ fecha: fechaLocalISO(d), dayLabel: DIAS_LABEL[d.getDay()], total: 0, esHoy: i === 0 });
     }
     var byDate = {};
     out.forEach(function (o) { byDate[o.fecha] = o; });
     (ventas || []).forEach(function (v) {
-      var f = new Date(v.fecha);
-      var key = f.getFullYear() + '-' + String(f.getMonth() + 1).padStart(2, '0') + '-' + String(f.getDate()).padStart(2, '0');
+      var key = fechaLocalISO(v.fecha);
       if (byDate[key]) byDate[key].total += v.total;
     });
     return out;
@@ -2480,8 +2489,19 @@
     if (!fecha) return;
     if (new Date(fecha).getTime() > Date.now()) throw new Error('La fecha no puede ser futura');
   }
+  // Acepta 'YYYY-MM-DD' (el valor de un <input type="date">, ya es un
+  // día local) o un ISO completo con hora ('...T01:30:00Z'). Para el
+  // segundo NO basta con cortar en la 'T': eso da el día UTC — el fin
+  // de un período calculado con `new Date().toISOString()` después de
+  // las 7 pm en Colombia caía en "mañana" y el rango ganaba un día
+  // entero de más. Un instante con hora se convierte a su día local.
   function parseLocalDate(dateStr) {
-    var parts = String(dateStr).split('T')[0].split('-').map(Number);
+    var str = String(dateStr);
+    if (str.indexOf('T') !== -1) {
+      var d = new Date(str);
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+    var parts = str.split('-').map(Number);
     return new Date(parts[0], parts[1] - 1, parts[2]);
   }
   function rangeBounds(startISO, endISO) {
@@ -2734,13 +2754,21 @@
   // costos operativos/ventas); si es rentable, el atajo SOBREestima. Ver
   // el test con los dos escenarios — no hay ninguna heurística acá que
   // asuma una dirección fija.
+  //
+  // Rangos cortos (< 30 días, p. ej. "Hoy"): los costos fijos y el capex
+  // NO salen solo de lo anotado dentro del rango — el día que se paga el
+  // arriendo la meta diaria salía absurda y al día siguiente en $0. Se
+  // toman los de los últimos 30 días (terminando en el fin del rango) y
+  // se prorratean a los días del rango: (fijos de 30 días / 30) × días.
+  var BEP_VENTANA_FIJOS_DIAS = 30;
   function getBreakEven(state, startISO, endISO) {
     var b = rangeBounds(startISO, endISO);
     var dias = Math.max(1, (b.end - b.start) / (1000 * 60 * 60 * 24));
     var ventas = getVentasByRange(state.ventas, startISO, endISO);
     var gastosRango = getGastosByRange(state.gastos, startISO, endISO);
     var operativos = gastosRango.filter(function (g) { return g.tipo === 'operativo'; });
-    var capexPeriodo = gastosRango.filter(function (g) { return g.tipo === 'capex'; }).reduce(function (a, g) { return a + g.monto; }, 0);
+    var capexDe = function (gs) { return gs.filter(function (g) { return g.tipo === 'capex'; }).reduce(function (a, g) { return a + g.monto; }, 0); };
+    var capexPeriodo = capexDe(gastosRango);
     var depreciacion = getDepreciacionRango(state, startISO, endISO);
 
     var cm = getCMPonderado(state, ventas);
@@ -2748,14 +2776,24 @@
     var variableOpexRate = cm.ingresosTotal > 0 ? clasif.variableMonto / cm.ingresosTotal : 0;
     var cmRatioAjustado = cm.cmPromedioRatio - variableOpexRate;
 
-    var fijosContable = clasif.fijo + depreciacion;
-    var fijosCaja = clasif.fijo + capexPeriodo;
+    var costosFijos = clasif.fijo;
+    var capexBase = capexPeriodo;
+    if (dias < BEP_VENTANA_FIJOS_DIAS) {
+      var ini30 = new Date(b.end.getFullYear(), b.end.getMonth(), b.end.getDate() - (BEP_VENTANA_FIJOS_DIAS - 1));
+      var gastos30 = (state.gastos || []).filter(function (g) { var f = new Date(g.fecha); return f >= ini30 && f <= b.end; });
+      var prorrateo = dias / BEP_VENTANA_FIJOS_DIAS;
+      costosFijos = getCostosFijosYVariables(state, gastos30.filter(function (g) { return g.tipo === 'operativo'; })).fijo * prorrateo;
+      capexBase = capexDe(gastos30) * prorrateo;
+    }
+
+    var fijosContable = costosFijos + depreciacion;
+    var fijosCaja = costosFijos + capexBase;
     var bepContable = cmRatioAjustado > 0 ? fijosContable / cmRatioAjustado : Infinity;
     var bepCaja = cmRatioAjustado > 0 ? fijosCaja / cmRatioAjustado : Infinity;
 
     return {
       cmRatioAjustado: cmRatioAjustado,
-      costosFijos: clasif.fijo,
+      costosFijos: costosFijos,
       costosVariablesOperativos: clasif.variableMonto,
       depreciacion: depreciacion,
       capexPeriodo: capexPeriodo,
@@ -3507,6 +3545,7 @@
     findPreparacionesUsandoMateria: findPreparacionesUsandoMateria,
     getMargenProducto: getMargenProducto,
     getIngresosPorDia: getIngresosPorDia,
+    fechaLocalISO: fechaLocalISO,
     getInsumosUnificados: getInsumosUnificados,
     UNIDADES_VALIDAS: UNIDADES_VALIDAS,
     esUnidadValida: esUnidadValida,
