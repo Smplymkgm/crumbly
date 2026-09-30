@@ -827,6 +827,14 @@
   function cantidadEnUnidadInsumo_(insumo, cantidadEnGramos) {
     return insumo ? (Number(cantidadEnGramos) || 0) / factorUnidadAGramos_(insumo.unidad) : 0;
   }
+  // Un topping se vende él mismo (no como parte de la fórmula de un
+  // producto) — su `precio` está en la misma unidad que su `costo`
+  // ($/kg si `unidad` es 'kg'), y se multiplica por una cantidad en
+  // escala de receta igual que el costo. Sin este helper, vender un
+  // topping en kg cobraría 1000× de más, no solo costearlo mal.
+  function precioPorGramoInsumo_(insumo) {
+    return insumo ? (Number(insumo.precio) || 0) / factorUnidadAGramos_(insumo.unidad) : 0;
+  }
 
   function getCostoProducto(producto, state) {
     if (!producto) return 0;
@@ -1814,9 +1822,15 @@
         var top = (state.toppings || []).find(function (x) { return x.id === t.toppingId; });
         if (top) {
           // Un topping es 100% alimento — no tiene empaque propio (mismo criterio que C1).
-          items.push({ toppingId: top.id, nombre: top.nombre + ' (topping)', qty: totQty, precio: top.precio, costo: top.costo, costoAlimento: top.costo, costoEmpaque: 0 });
-          total += top.precio * totQty;
-          ganancia += (top.precio - top.costo) * totQty;
+          // Ronda 9: precio/costo del topping están en SU unidad (ej.
+          // $/kg) — totQty está en escala de receta, igual que en el
+          // resto de este bug. costoPorGramoInsumo_/precioPorGramoInsumo_
+          // convierten los dos, no solo el costo.
+          var precioUnit = precioPorGramoInsumo_(top);
+          var costoUnit = costoPorGramoInsumo_(top);
+          items.push({ toppingId: top.id, nombre: top.nombre + ' (topping)', qty: totQty, precio: precioUnit, costo: costoUnit, costoAlimento: costoUnit, costoEmpaque: 0 });
+          total += precioUnit * totQty;
+          ganancia += (precioUnit - costoUnit) * totQty;
           deduct('toppings', state.toppings, top.id, cantidadEnUnidadInsumo_(top, totQty));
         }
       });
@@ -1841,10 +1855,12 @@
       if (q <= 0) return;
       var top = (state.toppings || []).find(function (x) { return x.id === t.toppingId; });
       if (top) {
-        items.push({ toppingId: top.id, nombre: top.nombre + ' (topping suelto)', qty: q, precio: top.precio, costo: top.costo, costoAlimento: top.costo, costoEmpaque: 0 });
-        total += top.precio * q;
-        ganancia += (top.precio - top.costo) * q;
-        deduct('toppings', state.toppings, top.id, q);
+        var precioUnitSuelto = precioPorGramoInsumo_(top);
+        var costoUnitSuelto = costoPorGramoInsumo_(top);
+        items.push({ toppingId: top.id, nombre: top.nombre + ' (topping suelto)', qty: q, precio: precioUnitSuelto, costo: costoUnitSuelto, costoAlimento: costoUnitSuelto, costoEmpaque: 0 });
+        total += precioUnitSuelto * q;
+        ganancia += (precioUnitSuelto - costoUnitSuelto) * q;
+        deduct('toppings', state.toppings, top.id, cantidadEnUnidadInsumo_(top, q));
       }
     });
 

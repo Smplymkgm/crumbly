@@ -3453,7 +3453,7 @@ function abrirDesgloseCosto(productoId) {
     <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:8px 10px;border-radius:8px;background:${l.sospechoso || anomalo ? 'rgba(200,60,60,0.1)' : 'var(--bg)'}">
       <div>
         <div style="font-size:var(--fs-sm);color:var(--ink)">${esc(l.nombre)}${l.sospechoso ? ' <strong style="color:var(--danger)">⚠ costo sospechoso</strong>' : ''}</div>
-        <div style="font-size:var(--fs-xs);color:var(--muted)">${grupoLabel[l.grupo] || l.grupo} · ${l.tipo === 'manual' ? 'monto fijo' : (l.cantidad + 'g × ' + fmt(l.costoUnitario) + '/g')}</div>
+        <div style="font-size:var(--fs-xs);color:var(--muted)">${grupoLabel[l.grupo] || l.grupo} · ${l.tipo === 'manual' ? 'monto fijo' : (l.cantidad + 'g × ' + fmt(l.cantidad ? l.subtotal / l.cantidad : 0) + '/g')}</div>
       </div>
       <div style="text-align:right;white-space:nowrap">
         <div style="font-size:var(--fs-sm);color:var(--ink)">${fmt(l.subtotal)}</div>

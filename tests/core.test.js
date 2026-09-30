@@ -3758,6 +3758,28 @@ test('un insumo en g/ml/unidad (o sin unidad) no cambia de comportamiento — fa
   assert.strictEqual(C.getCostoProducto(s.productos[0], s), 50);
 });
 
+console.log('\n== B4 (revisión de código): faltó el topping suelto y el precio del topping ==');
+
+test('CRITERIO: vender un topping SUELTO en kg descuenta stock en kg, no en gramos crudos (revisión encontró este sitio sin convertir)', () => {
+  const s = C.emptyState();
+  s.toppings.push({ id: 'granola', nombre: 'Granola a granel', unidad: 'kg', costo: 20000, precio: 30000, cantidad: 5, minimo: 0.5 });
+  const venta = C.applyVenta(s, [], [{ toppingId: 'granola', qty: 100 }]); // 100g sueltos
+  const despues = s.toppings.find(x => x.id === 'granola');
+  assert.ok(Math.abs(despues.cantidad - 4.9) < 0.0001, 'esperado 5 - 0,1kg = 4,9 kg — dio ' + despues.cantidad + ' (el bug original clampeaba a 0)');
+  assert.ok(Math.abs(venta.total - 3000) < 0.01, '100g × $30/g (30000/1000) = $3.000 — dio ' + venta.total);
+});
+
+test('CRITERIO: un topping en kg vendido DENTRO de una línea de producto también cobra y descuenta en la unidad correcta', () => {
+  const s = C.emptyState();
+  s.toppings.push({ id: 'granola', nombre: 'Granola', unidad: 'kg', costo: 20000, precio: 30000, cantidad: 5, minimo: 0.5 });
+  s.productos.push({ id: 'p1', nombre: 'Yogurt bowl', precio: 8000, componentes: [] });
+  const venta = C.applyVenta(s, [{ productoId: 'p1', qty: 1, toppings: [{ toppingId: 'granola', qty: 50 }] }], []);
+  const despues = s.toppings.find(x => x.id === 'granola');
+  assert.ok(Math.abs(despues.cantidad - 4.95) < 0.0001, 'esperado 5 - 0,05kg = 4,95 kg — dio ' + despues.cantidad);
+  const totalTopping = venta.total - 8000;
+  assert.ok(Math.abs(totalTopping - 1500) < 0.01, '50g × $30/g = $1.500 por el topping — dio ' + totalTopping);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);
