@@ -586,14 +586,20 @@ console.log('\n== eliminarGasto revierte el snapshot exacto (mismo patrón que r
 test('eliminarGasto de una compra de inventario devuelve el insumo a su costo/cantidad previos', () => {
   const s = stateConGastos();
   const g1 = C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 24000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 2000 });
-  // una segunda compra encima, para simular que ya no se puede "adivinar" el estado antes de g1 sin el snapshot
-  C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 50000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 1000 });
   C.eliminarGasto(s, g1.id);
-  // el snapshot de g1 se tomó ANTES de que existiera, así que revertir g1
-  // vuelve al estado previo a AMBAS compras solamente si se elimina en orden;
-  // aquí solo verificamos que usa el snapshot guardado, no un recálculo:
-  assert.strictEqual(s.materia[0].costo, 10);
+  assert.ok(Math.abs(s.materia[0].costo - 10) < 1e-9);
   assert.strictEqual(s.materia[0].cantidad, 1000);
+  assert.strictEqual(s.gastos.length, 0);
+});
+
+test('eliminarGasto con una compra POSTERIOR encima: saca solo esta compra (antes volvía al snapshot y borraba la segunda)', () => {
+  const s = stateConGastos(); // 1000g a $10
+  const g1 = C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 24000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 2000 }); // 2000g a $12
+  C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 50000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 1000 }); // 1000g a $50
+  C.eliminarGasto(s, g1.id);
+  // queda lo que habría sin g1: 1000g a $10 + 1000g a $50 = 2000g a $30
+  assert.strictEqual(s.materia[0].cantidad, 2000);
+  assert.ok(Math.abs(s.materia[0].costo - 30) < 1e-9, 'costo ' + s.materia[0].costo);
   assert.strictEqual(s.gastos.length, 1);
 });
 
@@ -871,10 +877,150 @@ test('migrateState pone rendimientoPct:100 en preparaciones viejas que no lo ten
 
 test('savePreparacion guarda rendimientoPct (default 100 si no se manda)', () => {
   const s = C.migrateState({});
-  const p1 = C.savePreparacion(s, { nombre: 'Con rendimiento', componentes: [], rendimientoPct: 92 });
+  const p1 = C.savePreparacion(s, { nombre: 'Con rendimiento', modo: 'directo', componentes: [], rendimientoPct: 92 });
   assert.strictEqual(p1.rendimientoPct, 92);
-  const p2 = C.savePreparacion(s, { nombre: 'Sin especificar', componentes: [] });
+  const p2 = C.savePreparacion(s, { nombre: 'Sin especificar', modo: 'directo', componentes: [] });
   assert.strictEqual(p2.rendimientoPct, 100);
+});
+
+console.log('\n== Revisión: clientes, gastos, preparaciones, depreciación y lotes ==');
+
+test('findOrCreateCliente sin teléfono reusa el cliente con el mismo nombre (sin importar mayúsculas/tildes/espacios)', () => {
+  const s = C.emptyState();
+  const id1 = C.findOrCreateCliente(s, 'Ána  María', '3001234567');
+  const id2 = C.findOrCreateCliente(s, '  ana maría ', '');
+  assert.strictEqual(id2, id1);
+  assert.strictEqual(s.clientes.length, 1);
+  assert.strictEqual(s.clientes[0].nombre, 'Ána  María', 'una coincidencia por nombre no pisa el nombre guardado');
+});
+
+test('findOrCreateCliente: un teléfono escrito en el campo de nombre se trata como teléfono', () => {
+  const s = C.emptyState();
+  const idAna = C.findOrCreateCliente(s, 'Ana', '3001234567');
+  assert.strictEqual(C.findOrCreateCliente(s, '300 123-4567', ''), idAna);
+  assert.strictEqual(s.clientes[0].nombre, 'Ana');
+  const idNuevo = C.findOrCreateCliente(s, '+57 310 999 8877', '');
+  const nuevo = s.clientes.find(c => c.id === idNuevo);
+  assert.strictEqual(nuevo.nombre, '(sin nombre)');
+  assert.strictEqual(nuevo.telefono, '+57 310 999 8877');
+  assert.strictEqual(s.clientes.length, 2);
+  assert.strictEqual(C.buscarCliente(s, 'ANA', ''), s.clientes[0]);
+  assert.strictEqual(C.buscarCliente(s, 'Beto', ''), null);
+});
+
+test('eliminarGasto después de una merma: resta solo lo que la compra sumó (antes volvía al snapshot y "des-hacía" la merma)', () => {
+  const s = stateConGastos(); // 1000g a $10
+  const g = C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 24000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 2000 });
+  C.registrarMerma(s, { origenTipo: 'materia', origenId: 'm1', cantidad: 500, motivo: 'Vencido' });
+  C.eliminarGasto(s, g.id);
+  assert.strictEqual(s.materia[0].cantidad, 500, 'antes volvía a 1000 — la merma desaparecía');
+  // se saca la compra del promedio: (2500·11,333 − 2000·12) / 500
+  assert.ok(Math.abs(s.materia[0].costo - (2500 * (34000 / 3000) - 24000) / 500) < 1e-6, 'costo ' + s.materia[0].costo);
+});
+
+test('eliminarGasto cuando ya se consumió parte de la compra: stock en 0, lo que no alcanza queda como faltante (y se devuelve el faltante que saldó)', () => {
+  const s = stateConGastos();
+  s.materia[0].cantidad = 0;
+  s.materia[0].faltante = 250;
+  const g = C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 12000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 1000 }); // salda 250, 750 al stock
+  C.registrarMerma(s, { origenTipo: 'materia', origenId: 'm1', cantidad: 100, motivo: 'Vencido' }); // quedan 650
+  const costoAntesDeBorrar = s.materia[0].costo;
+  C.eliminarGasto(s, g.id);
+  assert.strictEqual(s.materia[0].cantidad, 0);
+  assert.strictEqual(s.materia[0].faltante, 250 + 100);
+  assert.strictEqual(s.materia[0].costo, costoAntesDeBorrar, 'sin stock para sacar la compra del promedio, se deja el costo actual');
+});
+
+test('savePreparacion al editar sin rendimientoPct conserva el configurado (antes volvía a 100%)', () => {
+  const s = C.emptyState();
+  const p = C.savePreparacion(s, { nombre: 'Salsa', modo: 'directo', componentes: [], rendimientoPct: 85 });
+  C.savePreparacion(s, { id: p.id, nombre: 'Salsa editada', modo: 'directo', componentes: [] });
+  assert.strictEqual(s.preparaciones[0].rendimientoPct, 85);
+  C.savePreparacion(s, { id: p.id, nombre: 'Salsa editada', modo: 'directo', componentes: [], rendimientoPct: 90 });
+  assert.strictEqual(s.preparaciones[0].rendimientoPct, 90);
+});
+
+test('savePreparacion en modo porcentaje con base 0 lanza un error claro (antes daba $0/g)', () => {
+  const s = C.emptyState();
+  assert.throws(() => C.savePreparacion(s, { nombre: 'Masa', modo: 'porcentaje', baseGramos: 0, componentes: [{ tipo: 'materia', refId: 'x', porcentaje: 100 }] }), /base/);
+  assert.strictEqual(s.preparaciones.length, 0);
+  C.savePreparacion(s, { nombre: 'Masa', modo: 'porcentaje', baseGramos: 1000, componentes: [{ tipo: 'materia', refId: 'x', porcentaje: 100 }] });
+  assert.strictEqual(s.preparaciones.length, 1);
+});
+
+test('Depreciación: equipo comprado el 1-sep con 12 meses cuenta solo sep en "Año"; uno que terminó en mayo sí aporta ene–may', () => {
+  const s = stateConGastos();
+  C.registrarGasto(s, { tipo: 'capex', categoria: 'Equipos de cocina', monto: 1200000, vidaUtilMeses: 12, fecha: '2026-09-01T00:00:00' }); // 100.000/mes
+  const ref = new Date('2026-09-30T12:00:00');
+  const soloNuevo = C.getDepreciacionPeriodo(s, 'anio', ref);
+  assert.ok(Math.abs(soloNuevo - 100000 * (29.5 / 30)) < 100, 'año: ~1 cuota, no ~9 — dio ' + soloNuevo);
+  assert.ok(Math.abs(C.getDepreciacionPeriodo(s, 'mes', ref) - soloNuevo) < 1e-6);
+  // 50.000/mes; vida = 360 días desde 2025-06-01 → termina ~27-may-2026:
+  // en 2026 le quedan 360 − 214 = 146 días.
+  C.registrarGasto(s, { tipo: 'capex', categoria: 'Tecnología', monto: 600000, vidaUtilMeses: 12, fecha: '2025-06-01T00:00:00' });
+  const anio = C.getDepreciacionPeriodo(s, 'anio', ref);
+  assert.ok(Math.abs((anio - soloNuevo) - 50000 * (146 / 30)) < 100, 'el viejo aporta ene–may — dio ' + (anio - soloNuevo));
+  const rango = C.getDepreciacionRango(s, '2026-01-01', '2026-12-31');
+  assert.ok(Math.abs(rango - (100000 * (122 / 30) + 50000 * (146 / 30))) < 200, 'rango ' + rango);
+});
+
+function statePrepAnidada() {
+  return C.migrateState({
+    materia: [
+      { id: 'harina', nombre: 'Harina', cantidad: 10000, costo: 5, minimo: 0 },
+      { id: 'azucar', nombre: 'Azúcar', cantidad: 10000, costo: 2, minimo: 0 }
+    ],
+    preparaciones: [
+      { id: 'base', nombre: 'Base', modo: 'directo', cantidad: 1000, componentes: [{ tipo: 'materia', refId: 'harina', gramos: 100 }] },
+      { id: 'torta', nombre: 'Torta', modo: 'directo', componentes: [{ tipo: 'preparacion', refId: 'base', gramos: 200 }, { tipo: 'materia', refId: 'azucar', gramos: 50 }] }
+    ]
+  });
+}
+
+test('Producir lote: sin stock el costo del lote es el TEÓRICO de la receta (antes $0), y el déficit queda como faltante', () => {
+  const s = C.migrateState({
+    materia: [{ id: 'harina', nombre: 'Harina', cantidad: 0, costo: 5, minimo: 0 }],
+    preparaciones: [{ id: 'masa', nombre: 'Masa', modo: 'directo', componentes: [{ tipo: 'materia', refId: 'harina', gramos: 100 }] }]
+  });
+  const lote = C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 1, gramosObtenidos: 100 });
+  assert.strictEqual(lote.costoTotal, 500);
+  assert.strictEqual(s.materia[0].cantidad, 0);
+  assert.strictEqual(s.materia[0].faltante, 100);
+});
+
+test('Producir lote: la vista previa sirve para avisar faltante con checkStockShortage (mismo patrón que ventas/mermas)', () => {
+  const s = statePrepAnidada();
+  s.materia[1].cantidad = 30; // la torta pide 50g de azúcar
+  const preview = C.getConsumoTeoricoLote(s, 'torta', 1);
+  const faltantes = C.checkStockShortage(preview.consumo, s);
+  assert.strictEqual(faltantes.length, 1);
+  assert.strictEqual(faltantes[0].id, 'azucar');
+  assert.strictEqual(faltantes[0].faltante, 20);
+});
+
+test('Producir lote con una sub-preparación: sale de SU stock ya producido, no de la materia prima otra vez', () => {
+  const s = statePrepAnidada();
+  const preview = C.getConsumoTeoricoLote(s, 'torta', 1);
+  assert.strictEqual(preview.consumo.preparaciones.base, 200);
+  const lote = C.producirPreparacion(s, { preparacionId: 'torta', multiplicador: 1, gramosObtenidos: 250 });
+  assert.strictEqual(s.preparaciones[0].cantidad, 800, 'se descuentan 200g del stock de la base');
+  assert.strictEqual(s.materia[0].cantidad, 10000, 'la harina ya se descontó cuando se produjo la base');
+  assert.strictEqual(s.materia[1].cantidad, 9950);
+  assert.strictEqual(lote.consumoReal.preparaciones.base, 200);
+  assert.strictEqual(lote.costoTotal, 200 * 5 + 50 * 2);
+  C.eliminarLote(s, lote.id);
+  assert.strictEqual(s.preparaciones[0].cantidad, 1000);
+  assert.strictEqual(s.preparaciones[1].cantidad, 0);
+  assert.strictEqual(s.materia[1].cantidad, 10000);
+});
+
+test('Producir lote con poco stock de la sub-preparación: usa lo que hay y el resto sale de materia prima (como una venta)', () => {
+  const s = statePrepAnidada();
+  s.preparaciones[0].cantidad = 50;
+  const lote = C.producirPreparacion(s, { preparacionId: 'torta', multiplicador: 1, gramosObtenidos: 250 });
+  assert.strictEqual(s.preparaciones[0].cantidad, 0);
+  assert.strictEqual(s.materia[0].cantidad, 10000 - 150);
+  assert.strictEqual(lote.costoTotal, 200 * 5 + 50 * 2);
 });
 
 console.log('\n== Preparaciones — modo directo ==');

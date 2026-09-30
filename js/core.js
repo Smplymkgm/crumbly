@@ -497,7 +497,8 @@
   //   todo-o-nada — salió salsa de la nevera Y ADEMÁS se usó materia
   //   prima). Es lo correcto para todo lo que descuenta stock de verdad:
   //   applyVenta, computeSaleConsumption, checkStockShortage,
-  //   registrarMerma de un producto.
+  //   registrarMerma de un producto, producirPreparacion (y su vista
+  //   previa getConsumoTeoricoLote).
   //
   // LIMITACIÓN DE RONDA 2, CORREGIDA EN T5 (auditoría Ronda 3): en
   // `computeSaleConsumption` (simulación de PRE-venta, de solo lectura),
@@ -587,13 +588,25 @@
     var componentes = (input.componentes || []).map(function (c) {
       return { tipo: c.tipo, refId: c.refId, porcentaje: Number(c.porcentaje) || 0, gramos: Number(c.gramos) || 0 };
     });
+    var baseGramos = Number(input.baseGramos) || 0;
+    // En modo porcentaje los gramos de cada componente son baseGramos × %
+    // — con base 0 la receta pesa 0 g y cuesta $0/g sin ningún aviso.
+    if (modo === 'porcentaje' && baseGramos <= 0) {
+      throw new Error('En modo porcentaje, la base (gramos) debe ser mayor a 0');
+    }
     var id = input.id || genId();
     if (wouldCreateCiclo(state, id, componentes)) {
       throw new Error('Esta combinación crea un ciclo entre preparaciones (una depende de otra que depende de ella).');
     }
-    var rendimientoPct = input.rendimientoPct !== undefined ? Number(input.rendimientoPct) : 100;
-    var prep = { id: id, nombre: nombre, modo: modo, baseGramos: Number(input.baseGramos) || 0, componentes: componentes, rendimientoPct: rendimientoPct };
     var idx = state.preparaciones.findIndex(function (x) { return x.id === id; });
+    // Al EDITAR sin mandar rendimientoPct (el formulario de la receta no
+    // lo tiene), se conserva el configurado — antes volvía a 100% en
+    // silencio y cambiaba el costeo de todo producto que la usa. Solo una
+    // preparación nueva arranca en 100.
+    var rendimientoPct = input.rendimientoPct !== undefined
+      ? Number(input.rendimientoPct)
+      : (idx !== -1 && state.preparaciones[idx].rendimientoPct !== undefined ? state.preparaciones[idx].rendimientoPct : 100);
+    var prep = { id: id, nombre: nombre, modo: modo, baseGramos: baseGramos, componentes: componentes, rendimientoPct: rendimientoPct };
     if (idx === -1) {
       prep.cantidad = 0;
       prep.faltante = 0;
@@ -623,16 +636,20 @@
       return { tipo: c.tipo, refId: c.refId, gramos: gramosDeComponentePreparacion(prep, c) * multiplicador };
     });
     var gramosTeoricos = resueltos.reduce(function (a, c) { return a + c.gramos; }, 0);
-    var consumo = { materia: {}, empaques: {}, toppings: {} };
+    // Mismo modo 'stock' que producirPreparacion: una sub-preparación sale
+    // primero de su stock ya producido (bucket 'preparaciones'). El
+    // formato es el de computeSaleConsumption, así que sirve directo para
+    // checkStockShortage (aviso de faltante antes de producir).
+    var consumo = { materia: {}, empaques: {}, toppings: {}, preparaciones: {} };
     function add(bucket, id, cant) { consumo[bucket][id] = (consumo[bucket][id] || 0) + cant; }
-    aplicarComponentes(state, resueltos, 1, add);
+    aplicarComponentes(state, resueltos, 1, add, { modo: 'stock' });
     return { gramosTeoricos: gramosTeoricos, consumo: consumo };
   }
 
   // Produce un lote de una preparación (B4, WIP): descuenta las materias
   // primas expandidas (reusa aplicarComponentes — mismo motor que
-  // applyVenta/registrarMerma, incluida la recursión si un componente es
-  // otra preparación) y acredita los gramos REALMENTE obtenidos al stock
+  // applyVenta/registrarMerma; si un componente es otra preparación, sale
+  // primero de su stock ya producido, modo 'stock') y acredita los gramos REALMENTE obtenidos al stock
   // de la preparación. rendimientoPct se actualiza con el dato medido de
   // ESTE lote (no un promedio histórico — la fórmula del encargo pide el
   // dato medido, sin especificar un suavizado).
@@ -664,12 +681,22 @@
     });
     var gramosTeoricos = resueltos.reduce(function (a, c) { return a + c.gramos; }, 0);
 
-    var consumoReal = { materia: {}, empaques: {}, toppings: {} };
-    var faltanteGenerado = { materia: {}, empaques: {}, toppings: {} };
+    // 'preparaciones': una sub-preparación usada como componente sale de
+    // SU stock ya producido (modo 'stock', igual que applyVenta/
+    // registrarMerma) — antes se expandía siempre a materia prima, y si
+    // esa sub-preparación ya se había producido (su materia ya descontada
+    // en su propio lote) la materia se descontaba dos veces. Lo que su
+    // stock no cubre se expande a materia prima, como en una venta.
+    var consumoReal = { materia: {}, empaques: {}, toppings: {}, preparaciones: {} };
+    var faltanteGenerado = { materia: {}, empaques: {}, toppings: {}, preparaciones: {} };
+    // Consumo TEÓRICO (lo que pide la receta, alcance o no el stock) —
+    // base del costo del lote, ver abajo.
+    var consumoTeorico = { materia: {}, empaques: {}, toppings: {}, preparaciones: {} };
     function deduct(bucket, id, cant) {
       var m = (state[bucket] || []).find(function (x) { return x.id === id; });
       if (!m || cant <= 0) return;
-      var antes = m.cantidad;
+      consumoTeorico[bucket][id] = (consumoTeorico[bucket][id] || 0) + cant;
+      var antes = Number(m.cantidad) || 0;
       var deficit = Math.max(0, cant - antes); // mismo criterio que A2/applyVenta: nunca se pierde el déficit
       m.cantidad = Math.max(0, antes - cant);
       var real = antes - m.cantidad;
@@ -679,19 +706,29 @@
         faltanteGenerado[bucket][id] = (faltanteGenerado[bucket][id] || 0) + deficit;
       }
     }
-    aplicarComponentes(state, resueltos, 1, deduct);
+    aplicarComponentes(state, resueltos, 1, deduct, { modo: 'stock' });
 
     var rendimientoObservado = gramosTeoricos > 0 ? (gramosObtenidos / gramosTeoricos) * 100 : null;
     prep.cantidad = (Number(prep.cantidad) || 0) + gramosObtenidos;
 
     // Costo del lote a los costos VIGENTES en este momento (mismo
     // criterio que registrarGasto/registrarMerma: costo al momento de la
-    // transacción, no una cifra recalculada después).
+    // transacción, no una cifra recalculada después). Sobre el consumo
+    // TEÓRICO de la receta, no sobre lo que se alcanzó a descontar: sin
+    // stock (todo quedó como faltante) el lote costaba $0, aunque los
+    // insumos sí se usaron. Una sub-preparación se costea a su costo por
+    // gramo (getPreparacionCosto), como en registrarMerma.
     var costoTotal = 0;
-    ['materia', 'empaques', 'toppings'].forEach(function (bucket) {
-      Object.keys(consumoReal[bucket]).forEach(function (iid) {
-        var item = (state[bucket] || []).find(function (x) { return x.id === iid; });
-        if (item) costoTotal += consumoReal[bucket][iid] * (Number(item.costo) || 0);
+    ['materia', 'empaques', 'toppings', 'preparaciones'].forEach(function (bucket) {
+      Object.keys(consumoTeorico[bucket]).forEach(function (iid) {
+        var costoUnit;
+        if (bucket === 'preparaciones') {
+          costoUnit = getPreparacionCosto(state, iid).costoPorGramo;
+        } else {
+          var item = (state[bucket] || []).find(function (x) { return x.id === iid; });
+          costoUnit = item ? (Number(item.costo) || 0) : 0;
+        }
+        costoTotal += consumoTeorico[bucket][iid] * costoUnit;
       });
     });
 
@@ -751,8 +788,10 @@
         if (m) m.faltante = Math.max(0, (Number(m.faltante) || 0) - lote.faltanteGenerado[bucket][iid]);
       });
     }
-    ['materia', 'empaques', 'toppings'].forEach(restore);
-    ['materia', 'empaques', 'toppings'].forEach(restoreFaltante);
+    // 'preparaciones': sub-preparaciones que el lote tomó de su stock
+    // (lotes viejos no traen el bucket — el `|| {}` de arriba lo cubre).
+    ['materia', 'empaques', 'toppings', 'preparaciones'].forEach(restore);
+    ['materia', 'empaques', 'toppings', 'preparaciones'].forEach(restoreFaltante);
     var prep = getPreparacion(state, lote.preparacionId);
     if (prep) prep.cantidad = Math.max(0, (Number(prep.cantidad) || 0) - lote.gramosObtenidos);
     quitarRegistro_(state, 'lotes', id);
@@ -1537,13 +1576,54 @@
   // ese teléfono, se reusa (y se actualiza el nombre si vino distinto);
   // si no, se crea. Sin teléfono ni nombre, no hay cliente que registrar
   // (la venta queda sin clienteId, como hoy).
+  //
+  // Clientes duplicados (revisión): elegir una "Ana" que ya existe (el
+  // campo de teléfono se oculta, llega vacío) creaba una "Ana" nueva en
+  // CADA venta, y escribir un teléfono en "Nombre o teléfono" creaba un
+  // cliente llamado con los dígitos. Ahora:
+  //   - sin teléfono, se reusa el cliente cuyo nombre coincide ignorando
+  //     mayúsculas, tildes y espacios de más;
+  //   - si lo escrito en el nombre es solo un número (dígitos, espacios,
+  //     + o -), se trata como teléfono.
+  function esTelefono_(texto) {
+    return /^\+?[\d\s-]+$/.test(texto) && /\d/.test(texto);
+  }
+  function soloDigitos_(texto) {
+    return String(texto || '').replace(/\D/g, '');
+  }
+  // Cliente existente para lo que se escribió en "Nombre o teléfono" (+ el
+  // teléfono aparte, si vino). Compartido con la UI (onVentaClienteInput)
+  // para que el formulario de "cliente nuevo" y el guardado usen el mismo
+  // criterio de coincidencia.
+  function buscarCliente(state, nombre, telefono) {
+    nombre = (nombre || '').trim();
+    telefono = (telefono || '').trim();
+    if (esTelefono_(nombre)) {
+      if (!telefono) telefono = nombre;
+      nombre = '';
+    }
+    var clientes = state.clientes || [];
+    if (telefono) {
+      var tel = soloDigitos_(telefono);
+      return clientes.find(function (c) { return c.telefono && soloDigitos_(c.telefono) === tel; }) || null;
+    }
+    if (!nombre) return null;
+    var clave = normalizarNombreInsumo_(nombre);
+    return clientes.find(function (c) { return normalizarNombreInsumo_(c.nombre) === clave; }) || null;
+  }
   function findOrCreateCliente(state, nombre, telefono, direccion) {
     nombre = (nombre || '').trim();
     telefono = (telefono || '').trim();
+    if (esTelefono_(nombre)) {
+      if (!telefono) telefono = nombre;
+      nombre = '';
+    }
     if (!nombre && !telefono) return null;
-    var existente = telefono ? state.clientes.find(function (c) { return c.telefono === telefono; }) : null;
+    var existente = buscarCliente(state, nombre, telefono);
     if (existente) {
-      if (nombre) existente.nombre = nombre;
+      // Solo si coincidió por teléfono: una coincidencia por nombre ya es
+      // el mismo nombre (no se pisa "Ana" con un "ana" escrito a mano).
+      if (nombre && telefono) existente.nombre = nombre;
       if (direccion) existente.direccion = direccion;
       return existente.id;
     }
@@ -2050,10 +2130,29 @@
     return gasto;
   }
 
-  // Revierte un gasto: si era de inventario, devuelve el insumo exactamente
-  // a su costo/cantidad de antes de la compra (usa el snapshot, no
-  // recalcula) — evita el mismo problema de "revertir con la fórmula en
-  // vez del dato real" que P0-1 encontró en las ventas.
+  // Revierte un gasto de inventario deshaciendo SOLO lo que esa compra
+  // movió — no volviendo al snapshot. Antes se ponía `cantidad =
+  // cantidadAntes` (y costo/faltante del snapshot), lo que borraba en
+  // silencio toda venta, merma, lote o compra registrada DESPUÉS de esa
+  // compra (ej. comprar 2000g, vender 500g, borrar la compra: el stock
+  // volvía al valor previo como si la venta no hubiera existido).
+  //
+  // Lo que la compra hizo (ver registrarGasto): saldó `saldaFaltante` de
+  // la deuda de faltante y sumó el resto (`neto`) al stock. Deshacerlo:
+  //   - stock: se resta `neto`; si hoy hay menos stock que eso (ya se
+  //     consumió parte de esta compra), queda en 0 y lo que no alcanzó se
+  //     vuelve faltante — mismo modelo A2 que applyVenta: el déficit
+  //     nunca se pierde en el clamp.
+  //   - faltante: se le devuelve la deuda que la compra había saldado.
+  //   - costo: si nada tocó el insumo desde la compra (cantidad y costo
+  //     son exactamente los que dejó), se vuelve a `costoAntes`. Si hubo
+  //     movimientos, se saca esta compra del promedio ponderado:
+  //     (cantidad·costo − neto·costoCompra) / (cantidad − neto), solo si
+  //     sale positivo y finito; si no (el stock ya no alcanza para
+  //     "sacar" la compra), se deja el costo actual — no hay una cifra
+  //     mejor que inventar.
+  // Registros viejos sin snapshot (costoAntes/cantidadAntes): igual que
+  // antes, solo se quitan de la lista.
   function eliminarGasto(state, id) {
     var gasto = state.gastos.find(function (g) { return g.id === id; });
     if (!gasto) return;
@@ -2061,9 +2160,26 @@
       var list = getInsumoList(state, gasto.insumoTipo);
       var insumo = list && list.find(function (x) { return x.id === gasto.insumoId; });
       if (insumo && gasto.costoAntes !== undefined && gasto.cantidadAntes !== undefined) {
-        insumo.costo = gasto.costoAntes;
-        insumo.cantidad = gasto.cantidadAntes;
-        if (gasto.faltanteAntes !== undefined) insumo.faltante = gasto.faltanteAntes; // A2
+        var cantidadCompra = Number(gasto.cantidad) || 0;
+        var saldaFaltante = Math.min(Number(gasto.faltanteAntes) || 0, cantidadCompra); // A2
+        var neto = cantidadCompra - saldaFaltante;
+        var costoCompraUnitario = cantidadCompra > 0 ? gasto.monto / cantidadCompra : 0;
+        var costoDespues = neto > 0
+          ? costoPromedioPonderado(gasto.costoAntes, gasto.cantidadAntes, costoCompraUnitario, neto)
+          : gasto.costoAntes;
+        var cantidadActual = Number(insumo.cantidad) || 0;
+        var costoActual = Number(insumo.costo) || 0;
+        var sinCambiosDespues = Math.abs(cantidadActual - ((Number(gasto.cantidadAntes) || 0) + neto)) < 1e-9 &&
+          Math.abs(costoActual - costoDespues) < 1e-9;
+        if (sinCambiosDespues) {
+          insumo.costo = gasto.costoAntes;
+        } else if (neto > 0 && cantidadActual - neto > 0) {
+          var costoSinCompra = (cantidadActual * costoActual - neto * costoCompraUnitario) / (cantidadActual - neto);
+          if (isFinite(costoSinCompra) && costoSinCompra > 0) insumo.costo = costoSinCompra;
+        }
+        var deficit = Math.max(0, neto - cantidadActual);
+        insumo.cantidad = Math.max(0, cantidadActual - neto);
+        insumo.faltante = (Number(insumo.faltante) || 0) + saldaFaltante + deficit;
       }
     }
     quitarRegistro_(state, 'gastos', id);
@@ -2516,24 +2632,44 @@
       }, 0);
   }
 
+  // Depreciación de todo el capex dentro del intervalo [inicio, fin].
+  // Cada equipo deprecia `monto / vidaUtilMeses` por mes (mes = 30 días,
+  // mismo criterio que meses30/getDepreciacionMensualTotal) SOLO durante
+  // su vida útil: [fecha de compra, compra + vidaUtilMeses·30 días). Se
+  // cuenta la parte de esa vida que cae dentro del intervalo.
+  //
+  // Antes se tomaba la cuota mensual vigente HOY y se multiplicaba por
+  // todos los días del período: un equipo comprado el 1 de septiembre
+  // con 12 meses de vida contaba ~9 cuotas en "Año" (enero–septiembre,
+  // aunque no existía), y uno que terminó de depreciarse en junio
+  // desaparecía del año completo (aunque sí depreció enero–junio).
+  function depreciacionEnIntervalo_(state, inicio, fin) {
+    var DIA = 1000 * 60 * 60 * 24;
+    var ini = inicio.getTime(), fi = fin.getTime();
+    if (!(fi > ini)) return 0;
+    return (state.gastos || [])
+      .filter(function (g) { return g.tipo === 'capex' && g.vidaUtilMeses > 0; })
+      .reduce(function (sum, g) {
+        var compra = new Date(g.fecha).getTime();
+        if (!isFinite(compra)) return sum;
+        var finVida = compra + g.vidaUtilMeses * 30 * DIA;
+        var solape = Math.min(fi, finVida) - Math.max(ini, compra);
+        if (solape <= 0) return sum;
+        return sum + (g.monto / g.vidaUtilMeses) * (solape / (30 * DIA));
+      }, 0);
+  }
+
   // Depreciación prorrateada al período de reportes seleccionado (día/
-  // semana/mes/año). I5 (auditoría): antes usaba factores FIJOS (mes=1,
-  // año=12) sin importar cuántos días habían transcurrido realmente del
-  // período — el día 1 de un mes mostraba la depreciación del mes
-  // COMPLETO, igual que el día 28. Reusa la misma proración por días
-  // transcurridos que ya usa correctamente getDepreciacionRango.
+  // semana/mes/año), desde el inicio del período hasta `ref` (días
+  // REALMENTE transcurridos, I5 — no el mes/año completo desde el día 1).
   function getDepreciacionPeriodo(state, period, ref) {
     var end = ref ? new Date(ref) : new Date();
     var start = getDateStart(period, ref);
-    var mensual = getDepreciacionMensualTotal(state, end);
-    var dias = Math.max(0, (end - start) / (1000 * 60 * 60 * 24));
-    return mensual * (dias / 30);
+    return depreciacionEnIntervalo_(state, start, end);
   }
   function getDepreciacionRango(state, startISO, endISO) {
     var b = rangeBounds(startISO, endISO); // ya resuelto a fecha local correcta
-    var mensual = getDepreciacionMensualTotal(state, b.end);
-    var dias = Math.max(1, (b.end - b.start) / (1000 * 60 * 60 * 24));
-    return mensual * (dias / 30);
+    return depreciacionEnIntervalo_(state, b.start, b.end);
   }
 
   function agruparGastosPorCategoria(gastos) {
@@ -2964,8 +3100,10 @@
 
     // Teórico de preparaciones = consumoReal.preparaciones de las VENTAS
     // (ya congelado al momento de vender por P1.2 — no se re-expande).
+    // + lo que los LOTES tomaron del stock de una sub-preparación (una
+    // preparación que usa otra como componente).
     var teoricoPrepPorId = {};
-    ventasRango.forEach(function (v) {
+    ventasRango.concat(lotesRango).forEach(function (v) {
       Object.keys((v.consumoReal || {}).preparaciones || {}).forEach(function (id) {
         teoricoPrepPorId[id] = (teoricoPrepPorId[id] || 0) + v.consumoReal.preparaciones[id];
       });
@@ -3519,6 +3657,7 @@
     getMovimientos: getMovimientos,
     findInsumoConTipo: findInsumoConTipo,
     findOrCreateCliente: findOrCreateCliente,
+    buscarCliente: buscarCliente,
     getTicketPromedio: getTicketPromedio,
     getVentasByRange: getVentasByRange,
     getGastosByRange: getGastosByRange,

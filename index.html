@@ -3566,7 +3566,10 @@ function calcPrepCosto() {
   const modo = document.getElementById('prep-modo').value;
   const baseGramos = parseFloat(document.getElementById('prep-base-gramos').value) || 0;
   const id = document.getElementById('prep-edit-id').value || '__preview__';
-  const candidate = { id: id, nombre: '(preview)', modo: modo, baseGramos: baseGramos, componentes: getPrepComponenteRowData() };
+  const existente = state.preparaciones.find(p => p.id === id);
+  // El rendimiento no está en este formulario: la vista previa usa el
+  // configurado (el mismo que conserva savePreparacion al editar).
+  const candidate = { id: id, nombre: '(preview)', modo: modo, baseGramos: baseGramos, componentes: getPrepComponenteRowData(), rendimientoPct: existente ? existente.rendimientoPct : undefined };
   // Vista previa: se sustituye/agrega esta preparación en una copia superficial
   // del estado para reutilizar el mismo motor de cálculo que el resto de la
   // app — nunca se duplica la fórmula de costeo (HANDOFF §20).
@@ -3650,10 +3653,11 @@ function renderLoteConsumoTeorico() {
   if (!preview) { el.innerHTML = ''; return; }
   document.getElementById('lote-gramos-teoricos').textContent = preview.gramosTeoricos.toFixed(2) + ' g';
   const filas = [];
-  ['materia', 'empaques', 'toppings'].forEach(bucket => {
+  // 'preparaciones': sub-preparación que sale de su stock ya producido.
+  ['materia', 'empaques', 'toppings', 'preparaciones'].forEach(bucket => {
     Object.keys(preview.consumo[bucket]).forEach(id => {
       const item = (state[bucket] || []).find(x => x.id === id);
-      filas.push({ nombre: item ? item.nombre : id, cantidad: preview.consumo[bucket][id], unidad: item ? item.unidad : '' });
+      filas.push({ nombre: item ? item.nombre : id, cantidad: preview.consumo[bucket][id], unidad: bucket === 'preparaciones' ? 'g' : (item ? item.unidad : '') });
     });
   });
   el.innerHTML = filas.length
@@ -3689,10 +3693,15 @@ function adoptarRendimientoObservado() {
   const prep = state.preparaciones.find(p => p.id === prepId);
   const promedio = parseFloat(document.getElementById('lote-adoptar-btn').dataset.promedio);
   if (!prep || !isFinite(promedio)) return;
-  CrumblyCore.savePreparacion(state, {
-    id: prep.id, nombre: prep.nombre, modo: prep.modo, baseGramos: prep.baseGramos,
-    componentes: prep.componentes, rendimientoPct: promedio
-  });
+  try {
+    CrumblyCore.savePreparacion(state, {
+      id: prep.id, nombre: prep.nombre, modo: prep.modo, baseGramos: prep.baseGramos,
+      componentes: prep.componentes, rendimientoPct: promedio
+    });
+  } catch (e) {
+    showToast(e.message); // ej. receta vieja en modo porcentaje con base 0
+    return;
+  }
   saveState();
   renderLoteRendimiento();
   renderPreparaciones();
@@ -3715,6 +3724,18 @@ function producirLoteUI() {
   const preparacionId = document.getElementById('lote-prep-id').value;
   const multiplicador = parseFloat(document.getElementById('lote-multiplicador').value) || 0;
   const gramosObtenidos = parseFloat(document.getElementById('lote-gramos-obtenidos').value) || 0;
+  // Mismo criterio que registrarVenta/saveMerma (P0-3): avisa si no
+  // alcanza el stock, pero no bloquea — lo que falte queda como faltante.
+  // Solo si el resto del formulario es válido (si no, el toast de core
+  // sale primero, sin preguntar nada).
+  const preview = multiplicador > 0 && gramosObtenidos > 0 ? CrumblyCore.getConsumoTeoricoLote(state, preparacionId, multiplicador) : null;
+  if (preview) {
+    const faltantes = CrumblyCore.checkStockShortage(preview.consumo, state);
+    if (faltantes.length) {
+      const detalle = faltantes.map(f => '- ' + f.nombre + ': disponible ' + f.disponible.toFixed(0) + ', necesario ' + f.necesario.toFixed(0) + ', faltan ' + f.faltante.toFixed(0)).join('\n');
+      if (!confirm('No hay stock suficiente para producir este lote:\n\n' + detalle + '\n\n¿Producirlo de todas formas? Lo que falta quedará como faltante.')) return;
+    }
+  }
   try {
     CrumblyCore.producirPreparacion(state, { preparacionId, multiplicador, gramosObtenidos, usuarioEmail: state.config.email || '' });
   } catch (e) {
@@ -4110,7 +4131,10 @@ function openSaleModal() {
 function closeSaleModal() { closeModal('modal-venta'); }
 function onVentaClienteInput() {
   const val = document.getElementById('venta-cliente-nombre').value.trim();
-  const match = val && state.clientes.some(c => c.nombre.toLowerCase() === val.toLowerCase());
+  // Mismo criterio que findOrCreateCliente (nombre sin tildes/mayúsculas,
+  // o teléfono si lo escrito es un número) — si ya existe, no se pide
+  // de nuevo teléfono/dirección.
+  const match = val && CrumblyCore.buscarCliente(state, val, '');
   document.getElementById('venta-cliente-nuevo-form').style.display = (val.length > 1 && !match) ? 'flex' : 'none';
 }
 function renderVentaMetodoPago() {
