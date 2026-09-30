@@ -2970,7 +2970,7 @@ const TIPO_INSUMO_LABEL = { materia: 'Materia prima', empaques: 'Empaque', toppi
 function insumoCategorias() {
   const items = CrumblyCore.getInsumosUnificados(state).filter(i => insInventarioTipo === 'todos' || i.tipo === insInventarioTipo);
   const cats = new Set(items.map(i => i.categoria).filter(Boolean));
-  return Array.from(cats).sort();
+  return Array.from(cats).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
 }
 function setInventarioTipo(tipo, el) {
   insInventarioTipo = tipo;
@@ -3387,13 +3387,16 @@ function renderInventario() {
   document.getElementById('inv-filtros-activos').textContent = filtrosActivos ? String(filtrosActivos) : '';
 
   const el = document.getElementById('inv-list');
-  const busq = insInventarioBusqueda.trim().toLowerCase();
+  // Buscador sin tildes ("almidon" encuentra "Almidón") y lista en orden alfabético.
+  const busq = normalizarBusqueda_(insInventarioBusqueda.trim());
+  const coincide = nombre => !busq || normalizarBusqueda_(nombre).includes(busq);
+  const alfabetico = (a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es', { sensitivity: 'base' });
 
   // Z3/Z4: tipo "preparaciones" muestra la lista de preparaciones en el
   // mismo lugar — antes vivían en una sección aparte, alcanzable solo
   // desplazándose hasta el final de la página.
   if (insInventarioTipo === 'preparaciones') {
-    const preps = state.preparaciones.filter(p => !busq || p.nombre.toLowerCase().includes(busq));
+    const preps = state.preparaciones.filter(p => coincide(p.nombre)).sort(alfabetico);
     if (!state.preparaciones.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">No hay preparaciones registradas</p>'; return; }
     if (!preps.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">Ninguna preparación coincide con "' + esc(insInventarioBusqueda) + '"</p>'; return; }
     el.innerHTML = preps.map(prep => {
@@ -3423,7 +3426,8 @@ function renderInventario() {
   const items = todos
     .filter(i => insInventarioTipo === 'todos' || i.tipo === insInventarioTipo)
     .filter(i => insInventarioCategoria === 'todos' || i.categoria === insInventarioCategoria)
-    .filter(i => !busq || i.nombre.toLowerCase().includes(busq)); // Z2: buscador, combinado con los filtros de arriba
+    .filter(i => coincide(i.nombre)) // Z2: buscador, combinado con los filtros de arriba
+    .sort(alfabetico);
   if (!items.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">' + (busq ? 'Ningún insumo coincide con "' + esc(insInventarioBusqueda) + '"' : 'No hay insumos en esta categoría') + '</p>'; return; }
   // Umbral de "esto probablemente está mal cargado" — distinto por unidad
   // de medida: nada medido por gramo/mililitro (harina, mantequilla,
