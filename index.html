@@ -591,7 +591,10 @@ textarea.field{height:auto}
       <div class="page-view" id="page-productos">
         <div style="display:flex;align-items:center;justify-content:space-between">
           <div class="page-title">Productos</div>
-          <button class="btn" onclick="openModalProducto()"><i class="ph ph-plus"></i> Nuevo producto</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-outline" onclick="generateRecetarioPDF()"><i class="ph ph-download-simple"></i> Recetario PDF</button>
+            <button class="btn" onclick="openModalProducto()"><i class="ph ph-plus"></i> Nuevo producto</button>
+          </div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap" id="prod-chips"></div>
         <div id="prod-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px"></div>
@@ -4542,6 +4545,88 @@ function generateMermasReportPDF() {
   pdfFooter(doc);
   doc.save('crumbly-mermas-' + mermaPeriodo + '-' + new Date().toISOString().slice(0, 10) + '.pdf');
   showToast('Reporte de mermas descargado');
+}
+
+// Recetario: una ficha por producto (ingredientes, cantidad, costo, margen)
+// y una por preparación. Los números salen de getDesgloseCostoProducto /
+// getPreparacionCosto — los mismos de Costeo, sin fórmula propia.
+function generateRecetarioPDF() {
+  if (!window.jspdf) { showToast('No se pudo cargar el generador de PDF'); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const porNombre = (a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es');
+  const productos = state.productos.slice().sort((a, b) => (a.categoria || '').localeCompare(b.categoria || '', 'es') || porNombre(a, b));
+  const preparaciones = state.preparaciones.slice().sort(porNombre);
+  const num = n => (Math.round(n * 100) / 100).toLocaleString('es-CO');
+  const derecha = { 1: { halign: 'right' }, 2: { halign: 'right' } };
+  // columnStyles no alcanza al encabezado ni al pie de autotable — se alinean celda por celda.
+  const der = t => ({ content: t, styles: { halign: 'right' } });
+  const pie = { fontStyle: 'bold', textColor: [20, 20, 20] };
+  // Filas más compactas que en los reportes: una receta se lee de un vistazo.
+  const compacta = { fontSize: 8.5, textColor: [30, 30, 30], cellPadding: { top: 2.2, right: 3, bottom: 2.2, left: 3 } };
+  // Encabezado de cada ficha: nombre a la izquierda, dato clave a la derecha.
+  // Si la ficha entera (~6mm por fila) no entra en lo que queda de página,
+  // arranca en la siguiente — una receta nunca queda partida.
+  const ficha = (y, filas, titulo, detalle) => {
+    if (y + 22 + filas * 6 > 280) { doc.addPage(); y = 28; }
+    pdfSectionLabel(doc, titulo, y);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(130);
+    doc.text(detalle, PDF_RIGHT, y, { align: 'right' });
+    doc.setTextColor(20);
+    return y + 5;
+  };
+
+  // Productos sin receta (ej. domicilios) no llevan ficha.
+  const conReceta = productos.filter(p => CrumblyCore.getDesgloseCostoProducto(state, p.id).lineas.length);
+  let y = pdfHeader(doc, 'Recetario',
+    conReceta.length + ' productos · ' + preparaciones.length + ' preparaciones',
+    new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' }));
+
+  conReceta.forEach(p => {
+    const { lineas, costoTotal } = CrumblyCore.getDesgloseCostoProducto(state, p.id);
+    const { margenPct } = CrumblyCore.getMargenProducto(p, state);
+    y = ficha(y, lineas.length, p.nombre, (p.categoria || 'Sin categoría') + ' · Precio ' + fmt(p.precio || 0));
+    y = pdfMinimalTable(doc, {
+      startY: y,
+      head: [['Ingrediente', der('Cantidad'), der('Costo')]],
+      // Receta en gramos; empaques y toppings se cuentan por unidad.
+      body: lineas.map(l => [l.nombre, num(l.cantidad) + (l.grupo === 'empaque' || l.tipo === 'toppings' ? ' u' : ' g'), fmt(l.subtotal)]),
+      foot: [['Costo total · margen ' + Math.round(margenPct * 100) + '%', '', der(fmt(costoTotal))]],
+      styles: compacta, footStyles: pie,
+      columnStyles: derecha
+    }) + 10;
+  });
+
+  if (preparaciones.length) {
+    doc.addPage();
+    y = 28;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(20);
+    doc.text('Preparaciones', PDF_MARGIN, y);
+    y += 12;
+    preparaciones.forEach(prep => {
+      let costo;
+      try { costo = CrumblyCore.getPreparacionCosto(state, prep.id); }
+      catch (e) { costo = null; } // ciclo entre preparaciones — se muestra la receta igual, sin costo
+      const rendimiento = prep.rendimientoPct === undefined ? 100 : Number(prep.rendimientoPct);
+      y = ficha(y, (prep.componentes || []).length, prep.nombre, costo ? 'Rinde ' + num(costo.gramosObtenidos) + ' g · ' + fmtGramoCosto(costo.costoPorGramo) + '/g' : 'Costo no calculable');
+      const filas = (prep.componentes || []).map(c => {
+        const ref = (c.tipo === 'preparacion' ? state.preparaciones : state.materia).find(x => x.id === c.refId);
+        return [ref ? ref.nombre : '(eliminado)', num(CrumblyCore.gramosDeComponentePreparacion(prep, c)) + ' g'];
+      });
+      y = pdfMinimalTable(doc, {
+        startY: y,
+        head: [['Ingrediente', der('Cantidad')]],
+        body: filas.length ? filas : [['Sin ingredientes cargados', '—']],
+        foot: [['Rendimiento ' + num(rendimiento) + '%' + (costo ? ' · costo del lote ' + fmt(costo.costoTotal) : ''), '']],
+        styles: compacta, footStyles: pie,
+        columnStyles: { 1: { halign: 'right' } }
+      }) + 10;
+    });
+  }
+
+  pdfFooter(doc);
+  doc.save('crumbly-recetario-' + new Date().toISOString().slice(0, 10) + '.pdf');
+  showToast('Recetario descargado');
 }
 
 /* ─── CONFIG / CORREO ─── */

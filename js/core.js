@@ -3494,6 +3494,7 @@
     getPreparacion: getPreparacion,
     getPreparacionComposicionPorGramo: getPreparacionComposicionPorGramo,
     getPreparacionCosto: getPreparacionCosto,
+    gramosDeComponentePreparacion: gramosDeComponentePreparacion,
     expandGramosAMateria: expandGramosAMateria,
     wouldCreateCiclo: wouldCreateCiclo,
     savePreparacion: savePreparacion,
