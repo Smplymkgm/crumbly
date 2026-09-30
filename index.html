@@ -1909,14 +1909,33 @@ function renderBotonSonido_() {
 // Botón de Pedidos: habilita (es un toque) y suena, para confirmar que se oye.
 function activarSonido_() {
   desbloquearAudio_();
-  setTimeout(() => { sonar_(); renderBotonSonido_(); }, 50);
+  sonar_(); // sin setTimeout: en iPhone la voz solo se habilita dentro del mismo toque
+  setTimeout(renderBotonSonido_, 50);
 }
 function avisarPedidoNuevo_() {
   showToast('Pedido nuevo');
   sonar_();
 }
+// El aviso es la voz del celular diciendo "Nuevo pedido" (la del sistema,
+// sin archivos ni servicios). Si el dispositivo no tiene voz, pitido.
 function sonar_() {
   try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (e) {}
+  if (!decir_('Nuevo pedido')) pitido_();
+}
+function decir_(texto) {
+  try {
+    if (!('speechSynthesis' in window)) return false;
+    const u = new SpeechSynthesisUtterance(texto);
+    const voces = speechSynthesis.getVoices();
+    const voz = voces.find(v => /^es[-_]CO/i.test(v.lang)) || voces.find(v => /^es/i.test(v.lang));
+    if (voz) u.voice = voz;
+    u.lang = voz ? voz.lang : 'es-CO';
+    speechSynthesis.cancel(); // dos pedidos seguidos: no se encolan avisos
+    speechSynthesis.speak(u);
+    return true;
+  } catch (e) { return false; }
+}
+function pitido_() {
   if (!audioCtx) return;
   [0, 0.2].forEach(t => {
     const o = audioCtx.createOscillator(), g = audioCtx.createGain();
