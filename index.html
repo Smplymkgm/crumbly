@@ -100,6 +100,8 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 .adicion-opcion input{width:18px;height:18px;flex-shrink:0;accent-color:var(--ink)}
 .adicion-nombre{flex:1;color:var(--text)}
 .adicion-precio{color:var(--muted);white-space:nowrap}
+.pedidos-en-vivo{font-size:var(--fs-sm);color:var(--muted);white-space:nowrap}
+.pedidos-en-vivo.activo{color:var(--success);font-weight:var(--fw-bold)}
 .pedidos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin-bottom:10px}
 .pedido-card{display:flex;flex-direction:column;gap:10px}
 .pedido-card.listo{border-color:var(--success);box-shadow:inset 4px 0 0 var(--success)}
@@ -624,7 +626,13 @@ textarea.field{height:auto}
 
       <!-- PEDIDOS -->
       <div class="page-view" id="page-pedidos">
-        <div class="page-title">Pedidos</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <div class="page-title">Pedidos</div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span id="pedidos-en-vivo" class="pedidos-en-vivo">○ Conectando…</span>
+            <button class="btn btn-outline" id="pedidos-sonido-btn" onclick="activarSonido_()"><i class="ph ph-speaker-high"></i> Activar sonido</button>
+          </div>
+        </div>
         <div id="pedidos-list"></div>
       </div>
 
@@ -1697,14 +1705,34 @@ function iniciarRealtime_() {
   if (!usaSupabase || realtimeCanal) return;
   let sb;
   try { sb = auth.getSupabase(); } catch (e) { return; } // sin supabase-js (offline): el próximo pull lo reintenta
-  realtimeCanal = sb.channel('crumbly-cambios');
+  const canal = sb.channel('crumbly-cambios');
+  realtimeCanal = canal;
   CrumblySupabaseSync.COLECCIONES.forEach(tabla => {
-    realtimeCanal.on('postgres_changes', { event: '*', schema: 'public', table: tabla }, p => aplicarFilaRemota_(tabla, p.new));
+    canal.on('postgres_changes', { event: '*', schema: 'public', table: tabla }, p => aplicarFilaRemota_(tabla, p.new));
   });
-  realtimeCanal.subscribe();
+  canal.subscribe(estado => {
+    if (realtimeCanal !== canal) return; // un canal viejo ya reemplazado
+    enVivo = estado === 'SUBSCRIBED';
+    renderEstadoEnVivo_();
+    // Se cortó (red, celular dormido, token vencido): se descarta y se
+    // reintenta; mientras tanto el respaldo de Pedidos sigue trayendo.
+    if (estado === 'CHANNEL_ERROR' || estado === 'TIMED_OUT' || estado === 'CLOSED') {
+      realtimeCanal = null;
+      sb.removeChannel(canal);
+      setTimeout(iniciarRealtime_, 5000);
+    }
+  });
 }
 function detenerRealtime_() {
-  if (realtimeCanal) { realtimeCanal.unsubscribe(); realtimeCanal = null; }
+  if (realtimeCanal) { const c = realtimeCanal; realtimeCanal = null; c.unsubscribe(); }
+  enVivo = false;
+}
+let enVivo = false;
+function renderEstadoEnVivo_() {
+  const el = document.getElementById('pedidos-en-vivo');
+  if (!el) return;
+  el.textContent = enVivo ? '● En vivo' : '○ Reconectando…';
+  el.classList.toggle('activo', enVivo);
 }
 // Aplica UNA fila remota (realtime o pull incremental) al state y a la
 // base. Devuelve false si no cambió nada, 'pedido-nuevo' si llegó un
@@ -1795,21 +1823,49 @@ function avanzarPedido(id) {
   saveState();
   renderPedidos();
 }
-// El tiempo de espera avanza solo mientras la pantalla está a la vista.
+// Con Pedidos a la vista: el tiempo de espera avanza, y cada 15 s se
+// revisa si hay pedidos nuevos (respaldo del tiempo real — un pull
+// incremental sin cambios pesa casi nada).
 setInterval(() => {
   const pagina = document.getElementById('page-pedidos');
-  if (pagina && pagina.classList.contains('active')) renderPedidos();
-}, 30000);
+  if (!pagina || !pagina.classList.contains('active') || document.visibilityState !== 'visible') return;
+  renderPedidos();
+  if (usaSupabase && auth.isAuthenticated() && loadSupabaseBase()) {
+    enCola_(pullSupabase_).then(r => { if (r && r.ok) refreshAll(); }).catch(() => {});
+  }
+}, 15000);
 
 // Aviso sonoro de pedido nuevo. Los navegadores solo dejan sonar audio
-// después de que la persona tocó la pantalla al menos una vez — por eso
-// el AudioContext se crea (o se reactiva) en el primer toque.
+// después de un toque que cuente como "activación": en pantallas táctiles
+// eso es touchend/click, NO pointerdown (bug real: en el celular nunca se
+// habilitaba). En iPhone, audioSession 'playback' hace que suene aunque
+// el celular esté en modo silencio.
 let audioCtx = null;
-document.addEventListener('pointerdown', () => {
-  try { audioCtx = audioCtx || new AudioContext(); if (audioCtx.state === 'suspended') audioCtx.resume(); } catch (e) {}
-});
+function desbloquearAudio_() {
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = 'playback';
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (e) {}
+  renderBotonSonido_();
+}
+['touchend', 'click'].forEach(ev => document.addEventListener(ev, desbloquearAudio_, { passive: true }));
+function sonidoListo_() { return !!audioCtx && audioCtx.state === 'running'; }
+function renderBotonSonido_() {
+  const btn = document.getElementById('pedidos-sonido-btn');
+  if (btn) btn.innerHTML = sonidoListo_() ? '<i class="ph ph-speaker-high"></i> Probar sonido' : '<i class="ph ph-speaker-slash"></i> Activar sonido';
+}
+// Botón de Pedidos: habilita (es un toque) y suena, para confirmar que se oye.
+function activarSonido_() {
+  desbloquearAudio_();
+  setTimeout(() => { sonar_(); renderBotonSonido_(); }, 50);
+}
 function avisarPedidoNuevo_() {
   showToast('Pedido nuevo');
+  sonar_();
+}
+function sonar_() {
+  try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (e) {}
   if (!audioCtx) return;
   [0, 0.2].forEach(t => {
     const o = audioCtx.createOscillator(), g = audioCtx.createGain();
@@ -2748,7 +2804,7 @@ function navTo(page, el) {
   closeMobileMenu();
   if (page === 'dashboard') renderReportes();
   if (page === 'caja') renderCaja();
-  if (page === 'pedidos') renderPedidos();
+  if (page === 'pedidos') { renderPedidos(); renderEstadoEnVivo_(); renderBotonSonido_(); }
   if (page === 'inventario') { renderInventario(); renderMermas(); }
   if (page === 'productos') renderProductos();
   if (page === 'clientes') renderClientes();
