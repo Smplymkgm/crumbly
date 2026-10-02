@@ -99,16 +99,18 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 .ing-delta.sube,.ing-delta.baja{color:var(--ink);font-weight:var(--fw-bold)}
 .ing-plot{position:relative;padding-right:46px}
 .ing-area{position:relative;height:190px}
-.ing-gl{position:absolute;left:0;right:-46px;border-top:1px solid var(--line)}
+.ing-gl{position:absolute;left:0;right:-46px;border-top:1px solid #f1f1f1}
 .ing-gl span{position:absolute;right:0;transform:translateY(-50%);font-size:var(--fs-xs);color:var(--muted);width:42px;text-align:right;background:var(--white)}
 .ing-cols{position:absolute;inset:0;display:flex;align-items:flex-end}
-.ing-col{flex:1;height:100%;display:flex;align-items:flex-end;justify-content:center;background:none;border:none;padding:0 4px;cursor:pointer}
-.ing-bar{display:block;width:100%;max-width:46px;border-radius:9px 9px 3px 3px;background:var(--soft);transition:background .15s}
-.ing-col:hover .ing-bar{background:var(--mid)}
-.ing-col.sel .ing-bar{background:var(--ink)}
-.ing-guia{position:absolute;right:-46px;border-top:1px dashed var(--mid);pointer-events:none}
-.ing-tip{position:absolute;transform:translate(calc(-100% - 10px),50%);background:var(--ink);color:var(--white);border-radius:7px;padding:4px 9px;font-size:var(--fs-xs);font-weight:var(--fw-bold);white-space:nowrap;pointer-events:none}
-.ing-tip.derecha{transform:translate(10px,50%)}
+.ing-col{flex:1;height:100%;display:flex;align-items:flex-end;justify-content:center;background:none;border:none;padding:0 5px;cursor:pointer}
+/* Barras que se desvanecen hacia abajo (referencia del dueño): la de
+   la tarde elegida en tinta, el resto en gris claro con borde fino. */
+.ing-bar{display:block;width:100%;max-width:36px;border-radius:8px 8px 2px 2px;background:linear-gradient(180deg,#e6e6e6 0%,rgba(230,230,230,.12) 100%);border:1px solid rgba(0,0,0,.06);border-bottom:none;transition:background .15s}
+.ing-col:hover .ing-bar{background:linear-gradient(180deg,#d4d4d4 0%,rgba(212,212,212,.15) 100%)}
+.ing-col.sel .ing-bar{background:linear-gradient(180deg,#111 0%,rgba(17,17,17,.28) 100%);border-color:transparent}
+.ing-guia{position:absolute;right:-46px;border-top:1px dashed #c4c4c4;pointer-events:none}
+.ing-tip{position:absolute;transform:translate(calc(-100% - 22px),50%);background:var(--ink);color:var(--white);border-radius:6px;padding:3px 8px;font-size:var(--fs-xs);font-weight:var(--fw-medium);white-space:nowrap;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.12)}
+.ing-tip.derecha{transform:translate(22px,50%)}
 .ing-dias{display:flex;margin-top:10px}
 .ing-dias span{flex:1;text-align:center;font-size:var(--fs-xs);color:var(--muted)}
 .ing-dias span.sel{color:var(--ink);font-weight:var(--fw-bold)}
