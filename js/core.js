@@ -2361,6 +2361,122 @@
     quitarRegistro_(state, 'gastos', id);
   }
 
+  // ─── Varias compras en un solo registro (modal "Registrar gasto") ───
+  // Pedido del dueño: en una misma vuelta se hacen varias compras (ej.
+  // harina + leche + bolsas en el mismo mercado) con uno o varios
+  // comprobantes. Cada línea sigue siendo UN gasto normal, creado con
+  // registrarGasto tal cual (así stock, costo promedio y faltante se
+  // calculan exactamente igual); lo único nuevo es que comparten fecha,
+  // proveedor, medio de pago, comprobantes y un `grupoId`.
+
+  // En inventario la categoría sale del tipo de insumo (antes se elegía a
+  // mano y se podía poner "Empaque" a una compra de harina).
+  var CATEGORIA_GASTO_POR_INSUMO = { materia: 'Materia prima', empaques: 'Empaque', toppings: 'Toppings' };
+  function categoriaGastoInventario(insumoTipo) {
+    return CATEGORIA_GASTO_POR_INSUMO[insumoTipo] || '';
+  }
+
+  // Comprobantes de una venta o gasto como lista: `comprobantes` (nuevo,
+  // varios) si tiene alguno; si no, el `comprobante` suelto de siempre.
+  function comprobantesDe(registro) {
+    if (!registro) return [];
+    var lista = Array.isArray(registro.comprobantes)
+      ? registro.comprobantes.filter(function (c) { return typeof c === 'string' && c; })
+      : [];
+    if (lista.length) return lista;
+    return registro.comprobante ? [String(registro.comprobante)] : [];
+  }
+
+  // Nombre descriptivo para el archivo en Drive:
+  // <fecha>_<proveedor o categoría>_<monto>_<n>.<ext>, sin tildes, espacios
+  // ni caracteres raros (ej. "2026-10-02_makro_125000_1.jpg").
+  var EXTENSION_POR_MIME = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'image/heif': 'heif', 'application/pdf': 'pdf' };
+  function nombreArchivoComprobante(datos) {
+    datos = datos || {};
+    var etiqueta = String(datos.etiqueta || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').slice(0, 40).replace(/^-+|-+$/g, '');
+    var fecha = /^\d{4}-\d{2}-\d{2}$/.test(datos.fecha || '') ? datos.fecha : 'sin-fecha';
+    var monto = Math.max(0, Math.round(Number(datos.monto) || 0));
+    var n = Math.max(1, Math.floor(Number(datos.n) || 1));
+    var m = /\.([a-z0-9]{1,5})$/i.exec(String(datos.nombreOriginal || ''));
+    var ext = m ? m[1].toLowerCase() : (EXTENSION_POR_MIME[datos.mimeType] || '');
+    return fecha + '_' + (etiqueta || 'gasto') + '_' + monto + '_' + n + (ext ? '.' + ext : '');
+  }
+
+  // '' si todas las líneas sirven; si no, el primer error (con el número
+  // de compra cuando hay varias). Se valida TODO antes de registrar nada.
+  function validarLineasGasto(tipo, lineas) {
+    if (!lineas || !lineas.length) return 'Agregá al menos una compra';
+    for (var i = 0; i < lineas.length; i++) {
+      var l = lineas[i] || {};
+      var cual = lineas.length > 1 ? ' (compra ' + (i + 1) + ')' : '';
+      if (!(Math.round(Number(l.monto) || 0) > 0)) return 'El monto debe ser mayor a 0' + cual;
+      if (tipo === 'inventario') {
+        if (!l.insumoTipo || !l.insumoId) return 'Elegí el insumo comprado' + cual;
+        if (!((Number(l.cantidad) || 0) > 0)) return 'La cantidad comprada debe ser mayor a 0' + cual;
+      } else if (tipo === 'capex') {
+        if (!((Number(l.vidaUtilMeses) || 0) > 0)) return 'La vida útil (meses) debe ser mayor a 0' + cual;
+      }
+    }
+    return '';
+  }
+
+  // comun: { tipo, fecha?, proveedor, descripcion, metodoPago,
+  //   montoEfectivo?, montoTransferencia?, comprobantes: [url, …] }
+  // lineas: inventario → { insumoTipo, insumoId, cantidad, monto };
+  //   operativo/capex → { categoria, descripcion, monto, vidaUtilMeses? }.
+  // Devuelve los gastos creados. Si algo falla a mitad de camino, deshace
+  // los que ya creó (en orden inverso) y relanza el error: o se guardan
+  // todas las compras o ninguna.
+  function registrarGastosAgrupados(state, comun, lineas) {
+    comun = comun || {};
+    var error = validarLineasGasto(comun.tipo, lineas);
+    if (error) throw new Error(error);
+    // Pago dividido: solo con UNA compra. Repartir el efectivo y la
+    // transferencia entre varias líneas obligaría a inventar una
+    // proporción (y a redondear) que nadie pagó así; con una sola línea el
+    // gasto guarda exactamente lo que se escribió, como siempre.
+    if (comun.metodoPago === 'dividido' && lineas.length > 1) {
+      throw new Error('El pago dividido es para una sola compra. Con varias, elegí efectivo o transferencia, o registralas por separado');
+    }
+    var comprobantes = (comun.comprobantes || []).filter(function (c) { return typeof c === 'string' && c; });
+    var grupoId = genId();
+    var creados = [];
+    try {
+      lineas.forEach(function (l) {
+        var input = {
+          tipo: comun.tipo,
+          fecha: comun.fecha,
+          monto: Math.round(Number(l.monto) || 0),
+          proveedor: comun.proveedor || '',
+          comprobante: comprobantes[0] || '',
+          metodoPago: comun.metodoPago,
+          montoEfectivo: comun.montoEfectivo,
+          montoTransferencia: comun.montoTransferencia
+        };
+        if (comun.tipo === 'inventario') {
+          input.categoria = categoriaGastoInventario(l.insumoTipo);
+          input.descripcion = comun.descripcion || '';
+          input.insumoTipo = l.insumoTipo;
+          input.insumoId = l.insumoId;
+          input.cantidad = l.cantidad;
+        } else {
+          input.categoria = l.categoria || '';
+          input.descripcion = l.descripcion || '';
+          if (comun.tipo === 'capex') input.vidaUtilMeses = l.vidaUtilMeses;
+        }
+        var gasto = registrarGasto(state, input);
+        gasto.grupoId = grupoId;
+        gasto.comprobantes = comprobantes.slice();
+        creados.push(gasto);
+      });
+    } catch (e) {
+      for (var i = creados.length - 1; i >= 0; i--) eliminarGasto(state, creados[i].id);
+      throw e;
+    }
+    return creados;
+  }
+
   // I3: misma cota superior que getVentasByPeriod, mismo motivo.
   function getGastosByPeriod(gastos, period, ref) {
     var start = getDateStart(period, ref);
@@ -3820,6 +3936,11 @@
     costoPromedioPonderado: costoPromedioPonderado,
     registrarGasto: registrarGasto,
     eliminarGasto: eliminarGasto,
+    categoriaGastoInventario: categoriaGastoInventario,
+    comprobantesDe: comprobantesDe,
+    nombreArchivoComprobante: nombreArchivoComprobante,
+    validarLineasGasto: validarLineasGasto,
+    registrarGastosAgrupados: registrarGastosAgrupados,
     getGastosByPeriod: getGastosByPeriod,
     MERMA_MOTIVOS: MERMA_MOTIVOS,
     getMermaOrigenList: getMermaOrigenList,

@@ -159,7 +159,7 @@ function uploadComprobante_(body) {
   try {
     var bytes = Utilities.base64Decode(body.data);
     var blob = Utilities.newBlob(bytes, body.mimeType || 'application/octet-stream', body.filename);
-    var folder = getOrCreateComprobantesFolder_();
+    var folder = getOrCreateMesFolder_(getOrCreateComprobantesFolder_(), mesComprobante_(body.fecha));
     var file = folder.createFile(blob);
     // "Cualquiera con el link" — necesario para que las fotos de producto
     // se vean con <img> en cualquier dispositivo/cuenta, no solo logueado
@@ -181,6 +181,21 @@ function getOrCreateComprobantesFolder_() {
   var folders = DriveApp.getFoldersByName(COMPROBANTES_FOLDER);
   if (folders.hasNext()) return folders.next();
   return DriveApp.createFolder(COMPROBANTES_FOLDER);
+}
+
+// Una subcarpeta por mes dentro de "Crumbly - Comprobantes" (ej. "2026-10"),
+// para no tener cientos de archivos sueltos en una sola carpeta. El mes
+// sale de body.fecha (YYYY-MM-DD, la fecha del gasto o venta) y, si no
+// viene o no es válida (cliente viejo, fotos de producto), de hoy.
+function mesComprobante_(fecha) {
+  if (typeof fecha === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(fecha)) return fecha.slice(0, 7);
+  return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM');
+}
+
+function getOrCreateMesFolder_(padre, nombre) {
+  var folders = padre.getFoldersByName(nombre);
+  if (folders.hasNext()) return folders.next();
+  return padre.createFolder(nombre);
 }
 
 // ─── Sesiones ───────────────────────────────────────────────────────────

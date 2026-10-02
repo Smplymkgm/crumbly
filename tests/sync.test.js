@@ -137,6 +137,14 @@ test('el body es JSON con token, action=uploadComprobante, filename, mimeType y 
   assert.strictEqual(body.data, 'QUJD');
 });
 
+test('fecha opcional: se manda solo si viene (para la subcarpeta del mes)', async () => {
+  const f = mockFetch([{ body: { ok: true, url: 'u' } }, { body: { ok: true, url: 'u' } }]);
+  await Sync.uploadFile('https://x.com/exec', 'tok', 'a.jpg', 'image/jpeg', 'QUJD', f, { fecha: '2026-10-02' });
+  await Sync.uploadFile('https://x.com/exec', 'tok', 'a.jpg', 'image/jpeg', 'QUJD', f);
+  assert.strictEqual(JSON.parse(f.calls[0].opts.body).fecha, '2026-10-02');
+  assert.ok(!('fecha' in JSON.parse(f.calls[1].opts.body)));
+});
+
 test('devuelve la url de Drive que responde el backend', async () => {
   const f = mockFetch([{ body: { ok: true, url: 'https://drive.google.com/file/d/abc/view', fileId: 'abc' } }]);
   const r = await Sync.uploadFile('https://x.com/exec', 'tok', 'a.jpg', 'image/jpeg', 'QUJD', f);

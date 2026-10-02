@@ -403,9 +403,14 @@
   // ya viene en base64 (index.html la arma con FileReader). Devuelve
   // { ok, url, fileId } — url es lo que se guarda en venta.comprobante /
   // gasto.comprobante en vez de solo el nombre del archivo.
-  function uploadFile(backendUrl, token, filename, mimeType, base64Data, fetchImpl) {
+  // extra (opcional): { fecha: 'YYYY-MM-DD' } para que el backend guarde
+  // el archivo en la subcarpeta de ese mes. Un Apps Script sin redesplegar
+  // ignora el campo y sigue guardando en la carpeta de siempre.
+  function uploadFile(backendUrl, token, filename, mimeType, base64Data, fetchImpl, extra) {
     var f = resolveFetch(fetchImpl);
-    var body = JSON.stringify({ token: token, action: 'uploadComprobante', filename: filename, mimeType: mimeType, data: base64Data });
+    var payload = { token: token, action: 'uploadComprobante', filename: filename, mimeType: mimeType, data: base64Data };
+    if (extra && extra.fecha) payload.fecha = extra.fecha;
+    var body = JSON.stringify(payload);
     return f(backendUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },

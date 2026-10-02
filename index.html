@@ -173,6 +173,30 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
   .vf-fila{grid-template-columns:minmax(0,1fr) 84px 72px 22px}
   .vf-pie{grid-template-columns:1fr auto}
 }
+/* ─── Gasto: mismas secciones que Venta. Cada compra es un bloque de la
+   tabla; las filas de dos campos pasan a una columna en vez de desbordar
+   a 375px (flex-wrap, cada campo 1 1 140px). ─── */
+.gasto-form .field{background:var(--bg)}
+.gf-fila{display:flex;flex-wrap:wrap;gap:10px}
+.gf-fila > *{flex:1 1 140px;min-width:0}
+.gf-linea{padding:10px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px;min-width:0}
+.gf-linea:first-child{border-top:none}
+.gf-linea .field-label{font-size:var(--fs-xs);margin-bottom:4px}
+.gf-linea-cab{display:flex;align-items:center;justify-content:space-between;min-height:24px;font-size:var(--fs-xs);font-weight:var(--fw-bold);color:var(--ink)}
+.gf-costo{margin-top:-2px;font-size:var(--fs-xs)}
+.gf-costo:empty{display:none}
+.gf-archivo{display:flex;align-items:center;gap:8px;margin-top:6px;padding:6px 6px 6px 10px;border:1px solid var(--line);border-radius:9px;font-size:var(--fs-sm);color:var(--text);min-width:0}
+.gf-archivo i.ph-file{color:var(--muted);flex-shrink:0}
+.gf-archivo-nombre{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gf-archivo-estado{font-size:var(--fs-xs);color:var(--muted);flex-shrink:0}
+.caja-comprobantes p a{color:var(--white);text-decoration:underline;display:inline-block;margin:2px 10px 2px 0}
+@media (max-width:480px){
+  #modal-gasto{padding:8px}
+  #modal-gasto .modal{padding:18px 16px;max-height:94vh}
+}
+.caja-comprobantes{position:relative}
+.caja-comprobantes p{left:auto;right:0;width:220px}
+.caja-comprobantes summary{display:inline-flex;align-items:center;gap:2px;font-size:var(--fs-xs);font-weight:var(--fw-bold)}
 /* Caja: productos más vendidos, un toque = elegirlo (como en el buscador). */
 .adiciones-lista{width:100%;border:1px solid var(--line);border-radius:12px;background:var(--white)}
 .adiciones-lista summary{display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--ink);list-style:none}
@@ -1062,111 +1086,94 @@ textarea.field{height:auto}
   </div>
 </div>
 
-<!-- MODAL GASTO -->
+<!-- MODAL GASTO: varias compras de una misma vuelta (mismo día, proveedor,
+     medio de pago y comprobantes) en un solo registro. Cada línea queda
+     como un gasto propio (CrumblyCore.registrarGastosAgrupados). Mismo
+     diseño en secciones que "Registrar venta". -->
 <div class="modal-overlay" id="modal-gasto">
-  <div class="modal">
-    <button class="close-modal" onclick="closeModal('modal-gasto')">✕</button>
-    <div class="modal-title">Registrar gasto</div>
-    <div class="modal-field">
-      <div class="field-label">Tipo de gasto
+  <div class="modal modal-wide gasto-form">
+    <div class="modal-title-row">
+      <span class="modal-title">Registrar gasto</span>
+      <button class="modal-close" onclick="pedirCerrarModal('modal-gasto')" aria-label="Cerrar"><i class="ph ph-x"></i></button>
+    </div>
+
+    <!-- 1. Lo que comparten todas las compras -->
+    <section class="vf-seccion">
+      <div class="vf-titulo">Compra</div>
+      <div class="vf-sub">Lo que comparten todas las compras de esta vuelta</div>
+      <div class="vf-label-row">
+        <span class="field-label">Tipo de gasto</span>
         <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p><b>Inventario:</b> compras de materia prima, empaques o toppings; suben el stock. <b>Operativo:</b> arriendo, servicios, nómina, publicidad. <b>Implementos:</b> equipos y mobiliario; su costo se reparte en los meses de vida útil.</p></details>
       </div>
-      <select id="g-tipo" onchange="onGastoTipoChange()">
-        <option value="inventario">Inventario</option>
-        <option value="operativo">Operativo</option>
-        <option value="capex">Implementos</option>
-      </select>
-    </div>
-    <div style="display:flex;gap:10px">
-      <div class="modal-field" style="flex:1">
-        <label>Categoría</label>
-        <select id="g-categoria"></select>
+      <div class="pill-row" id="g-tipo" style="margin-bottom:12px;width:fit-content;max-width:100%"></div>
+      <div class="gf-fila">
+        <div>
+          <label class="field-label" for="g-fecha">Fecha</label>
+          <input type="date" id="g-fecha" class="field">
+        </div>
+        <div>
+          <label class="field-label" for="g-proveedor">Proveedor (opcional)</label>
+          <input type="text" id="g-proveedor" class="field" placeholder="Ej: Makro, Alcaldía">
+        </div>
       </div>
-      <div class="modal-field" style="flex:1">
-        <label>Fecha</label>
-        <input type="date" id="g-fecha">
-      </div>
-    </div>
+    </section>
 
-    <div id="g-campos-inventario">
-      <label style="font-size:var(--fs-xs);color:var(--muted);font-weight:var(--fw-bold);display:block;margin-bottom:6px">Insumo comprado</label>
-      <div style="display:flex;gap:10px;margin-bottom:12px">
-        <div class="modal-field" style="flex:1;margin-bottom:0">
-          <select id="g-insumo-tipo" onchange="populateGastoInsumoSelect()">
-            <option value="materia">Materia prima</option>
-            <option value="empaques">Empaque</option>
-            <option value="toppings">Toppings</option>
-          </select>
-        </div>
-        <div class="modal-field" style="flex:2;margin-bottom:0">
-          <select id="g-insumo-id" onchange="onGastoInsumoChange()"></select>
+    <!-- 2. Las compras: una línea por cosa comprada -->
+    <section class="vf-seccion">
+      <div class="vf-label-row" style="margin-bottom:0">
+        <span class="vf-titulo">Lo que compraste</span>
+        <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p id="g-lineas-info"></p></details>
+      </div>
+      <div class="vf-sub"><span id="g-lineas-count">1 compra</span> · cada una queda como un gasto</div>
+      <div class="vf-tabla">
+        <div id="g-lineas"></div>
+        <div class="vf-fila vf-pie">
+          <span>Total</span><strong id="g-total" class="vf-num">$0</strong>
         </div>
       </div>
-      <div class="modal-field">
-        <div class="field-label">Cantidad comprada (<span id="g-cantidad-unidad">unidades</span>)
-          <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Escribila en la medida del insumo (la que está entre paréntesis): si compraste 5 kg y el insumo se mide en gramos, escribí 5000. Si compraste una caja de 100 unidades, escribí 100, no 1. El costo del insumo se recalcula solo, como promedio con el stock que ya tenías.</p></details>
-        </div>
-        <input type="number" id="g-cantidad" placeholder="2000" min="0" step="0.01" oninput="updateGastoCostoPreview()">
-      </div>
-      <p class="item-sub" id="g-costo-preview" style="margin-bottom:10px;font-weight:var(--fw-bold)"></p>
-    </div>
+      <button type="button" class="add-ing-btn" style="margin:10px 0 0" onclick="agregarLineaGasto()"><i class="ph ph-plus"></i> Agregar otra compra</button>
+    </section>
 
-    <div id="g-campos-capex" style="display:none">
-      <div class="modal-field">
-        <div class="field-label">Vida útil (meses)
-          <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>El gasto no resta de golpe de la utilidad: se reparte (deprecia) a lo largo de estos meses.</p></details>
+    <!-- 3. Pago y comprobantes -->
+    <section class="vf-seccion">
+      <div class="vf-titulo">Pago</div>
+      <div class="vf-sub">Cómo pagaste y con qué soporte</div>
+      <div class="pill-row" id="g-metodo-pago" style="margin-bottom:12px;width:fit-content;max-width:100%"></div>
+      <div id="g-campos-dividido" style="display:none;margin-bottom:12px">
+        <div class="gf-fila">
+          <div>
+            <label class="field-label" for="g-monto-efectivo">En efectivo ($)</label>
+            <input type="number" id="g-monto-efectivo" class="field" inputmode="numeric" placeholder="0" min="0" step="1" oninput="onGastoMontoEfectivoInput()">
+          </div>
+          <div>
+            <label class="field-label" for="g-monto-transferencia">En transferencia ($)</label>
+            <input type="number" id="g-monto-transferencia" class="field" inputmode="numeric" placeholder="0" min="0" step="1" oninput="updateGastoDivididoPreview()">
+          </div>
         </div>
-        <input type="number" id="g-vida-util" placeholder="36" min="1" step="1">
+        <p class="item-sub" id="g-dividido-preview" style="margin-top:6px"></p>
       </div>
-    </div>
+      <p class="item-sub" id="g-dividido-aviso" style="display:none;margin:-4px 0 12px;color:var(--danger)">El pago dividido es para una sola compra. Con varias, elegí efectivo o transferencia, o registralas por separado.</p>
 
-    <div style="display:flex;gap:10px">
-      <div class="modal-field" style="flex:1">
-        <label>Monto pagado ($)</label>
-        <input type="number" id="g-monto" placeholder="50000" min="0" step="1" oninput="updateGastoCostoPreview();updateGastoDivididoPreview()">
+      <div class="vf-label-row">
+        <span class="field-label">Comprobantes (opcional)</span>
+        <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Podés adjuntar varias fotos o PDF (una factura por tienda, por ejemplo). Quedan en todas las compras de esta vuelta y se guardan en Drive, en una carpeta por mes.</p></details>
       </div>
-      <div class="modal-field" style="flex:1">
-        <label>Proveedor (opcional)</label>
-        <input type="text" id="g-proveedor" placeholder="Ej: Makro, Alcaldía">
-      </div>
-    </div>
-    <div class="modal-field">
-      <label>Medio de pago</label>
-      <select id="g-metodo-pago" onchange="onGastoMetodoPagoChange()">
-        <option value="efectivo">Efectivo</option>
-        <option value="transferencia">Transferencia</option>
-        <option value="dividido">Dividido (parte en efectivo, parte en transferencia)</option>
-      </select>
-    </div>
-    <div id="g-campos-dividido" style="display:none">
-      <div style="display:flex;gap:10px">
-        <div class="modal-field" style="flex:1">
-          <label>En efectivo ($)</label>
-          <input type="number" id="g-monto-efectivo" placeholder="0" min="0" step="1" oninput="updateGastoDivididoPreview()">
-        </div>
-        <div class="modal-field" style="flex:1">
-          <label>En transferencia ($)</label>
-          <input type="number" id="g-monto-transferencia" placeholder="0" min="0" step="1" oninput="updateGastoDivididoPreview()">
-        </div>
-      </div>
-      <p class="item-sub" id="g-dividido-preview" style="margin-bottom:10px"></p>
-    </div>
-    <div class="modal-field">
-      <label>Descripción (opcional)</label>
-      <input type="text" id="g-descripcion" placeholder="Ej: Campaña Instagram agosto">
-    </div>
-    <div class="modal-field">
-      <label class="field-label">Comprobante (opcional)</label>
       <label class="dropzone">
-        <input type="file" id="g-comprobante-input" accept="image/*,.pdf" onchange="onComprobanteChange(event,'g-comprobante-label')">
+        <input type="file" id="g-comprobante-input" accept="image/*,.pdf" multiple onchange="onGastoComprobantesChange(event)">
         <i class="ph ph-upload-simple" style="font-size:var(--fs-h3);color:var(--muted)"></i>
-        <span id="g-comprobante-label" style="font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--text)">Subir comprobante</span>
+        <span style="font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--text)">Subir comprobantes</span>
       </label>
-    </div>
-    <div class="modal-btns">
-      <button class="btn-cancel" onclick="closeModal('modal-gasto')">Cancelar</button>
-      <button class="btn-save" onclick="saveGasto()">Guardar</button>
-    </div>
+      <div id="g-comprobantes-lista"></div>
+
+      <details class="ins-mas" id="g-mas-opciones" style="margin:12px 0 14px">
+        <summary>Más opciones <span id="g-mas-resumen" style="font-weight:var(--fw-medium);color:var(--muted)"></span></summary>
+        <label class="field-label" for="g-descripcion">Descripción (opcional)</label>
+        <input type="text" id="g-descripcion" class="field" placeholder="Ej: mercado de la semana" oninput="renderGastoMasResumen()">
+      </details>
+
+      <button class="btn btn-block" style="margin-top:14px" onclick="saveGasto()"><i class="ph ph-check-circle"></i> <span id="g-guardar-texto">Guardar gasto</span> · <span id="g-guardar-total">$0</span></button>
+      <button class="btn-cancel" onclick="pedirCerrarModal('modal-gasto')">Cancelar</button>
+    </section>
   </div>
 </div>
 
@@ -4611,10 +4618,10 @@ function updateVentaDivididoPreview() {
 // decía "Subiendo…" guardaba la venta sin comprobante, y cuando la subida
 // terminaba escribía la URL igual — pegándosela a la venta SIGUIENTE. Cada
 // selección de archivo (y cada vez que se abre el modal) sube el número:
-// una subida que termina con un número viejo se descarta.
+// una subida que termina con un número viejo se descarta. Gastos (varios
+// comprobantes) usa la misma idea con gastoComprobantesToken.
 const comprobanteSubida_ = {
-  'venta-comprobante-label': { token: 0, subiendo: false },
-  'g-comprobante-label': { token: 0, subiendo: false }
+  'venta-comprobante-label': { token: 0, subiendo: false }
 };
 function reiniciarComprobante_(labelId, inputId) {
   comprobanteSubida_[labelId].token++;
@@ -4625,7 +4632,6 @@ function reiniciarComprobante_(labelId, inputId) {
 }
 function setComprobanteValor(labelId, valor) {
   if (labelId === 'venta-comprobante-label') ventaComprobante = valor;
-  if (labelId === 'g-comprobante-label') gastoComprobanteNombre = valor;
 }
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
@@ -6003,43 +6009,160 @@ function shareReportByEmail() {
   setTimeout(() => { window.location.href = `mailto:${to}?subject=${subject}&body=${body}`; }, 400);
 }
 
-/* ─── GASTOS (HANDOFF §9) ─── */
-let gastoComprobanteNombre = '';
+/* ─── GASTOS (HANDOFF §9) ───
+   Varias compras de una misma vuelta en un solo registro: fecha,
+   proveedor, medio de pago y comprobantes son comunes; cada línea
+   (insumo + cantidad + monto, o categoría + descripción + monto) queda
+   como un gasto propio vía CrumblyCore.registrarGastosAgrupados, que
+   llama a registrarGasto por línea (stock y costo, igual que siempre). */
+const GASTO_TIPOS_ = [['inventario', 'Inventario'], ['operativo', 'Operativo'], ['capex', 'Implementos']];
+const GASTO_INSUMO_TIPOS_ = [['materia', 'Materia prima'], ['empaques', 'Empaque'], ['toppings', 'Toppings']];
+let gastoTipo = 'inventario';
+let gastoMetodoPago = 'efectivo';
+let gastoLineas = []; // [{ id, insumo: 'materia:<id>', cantidad, monto, categoria, descripcion, vidaUtil }] (texto tal cual se escribió)
+let gastoLineaSeq_ = 0;
+function nuevaLineaGasto_() {
+  return { id: 'gl' + (++gastoLineaSeq_), insumo: '', cantidad: '', monto: '', categoria: CrumblyCore.GASTO_CATEGORIAS[gastoTipo][0], descripcion: '', vidaUtil: '' };
+}
 function openModalGasto() {
   document.getElementById('g-fecha').value = todayLocalISO();
   document.getElementById('g-fecha').max = todayLocalISO(); // I3: no se puede elegir una fecha futura
-  document.getElementById('g-tipo').value = 'inventario';
-  document.getElementById('g-monto').value = '';
   document.getElementById('g-proveedor').value = '';
   document.getElementById('g-descripcion').value = '';
-  document.getElementById('g-cantidad').value = '';
-  document.getElementById('g-vida-util').value = '';
-  document.getElementById('g-insumo-tipo').value = 'materia';
-  document.getElementById('g-metodo-pago').value = 'efectivo';
   document.getElementById('g-monto-efectivo').value = '';
   document.getElementById('g-monto-transferencia').value = '';
-  reiniciarComprobante_('g-comprobante-label', 'g-comprobante-input');
-  onGastoTipoChange();
-  onGastoMetodoPagoChange();
-  updateGastoCostoPreview();
+  document.getElementById('g-mas-opciones').open = false;
+  gastoTipo = 'inventario';
+  gastoMetodoPago = 'efectivo';
+  gastoLineas = [nuevaLineaGasto_()]; // una sola compra por defecto: el caso de siempre sigue siendo rápido
+  reiniciarComprobantesGasto_();
+  renderGastoTipo();
+  renderGastoMetodoPago();
+  renderGastoMasResumen();
   openModal('modal-gasto');
 }
-function onGastoMetodoPagoChange() {
-  const dividido = document.getElementById('g-metodo-pago').value === 'dividido';
-  document.getElementById('g-campos-dividido').style.display = dividido ? 'block' : 'none';
-  updateGastoDivididoPreview();
+function renderGastoTipo() {
+  document.getElementById('g-tipo').innerHTML = GASTO_TIPOS_
+    .map(([id, label]) => `<button type="button" class="pill-btn ${gastoTipo === id ? 'active' : ''}" onclick="setGastoTipo('${id}')">${label}</button>`).join('');
+  document.getElementById('g-mas-opciones').style.display = gastoTipo === 'inventario' ? '' : 'none';
+  document.getElementById('g-lineas-info').innerHTML = gastoTipo === 'inventario'
+    ? 'Una línea por insumo. La cantidad va en la medida del insumo (la que aparece al lado): si compraste 5 kg y el insumo se mide en gramos, escribí 5000; una caja de 100 unidades es 100, no 1. El costo del insumo se recalcula solo, como promedio con el stock que ya tenías.'
+    : gastoTipo === 'capex'
+      ? 'Una línea por implemento. Su costo no resta de golpe de la utilidad: se reparte (deprecia) en los meses de vida útil.'
+      : 'Una línea por gasto (ej. aseo y transporte del mismo día).';
+  renderGastoLineas();
 }
-// Solo avisa si no cuadra con el monto total — no bloquea guardar, la
-// plata real manda sobre lo que la app espera.
-function updateGastoDivididoPreview() {
-  const el = document.getElementById('g-dividido-preview');
-  const monto = parseFloat(document.getElementById('g-monto').value) || 0;
-  const efectivo = parseFloat(document.getElementById('g-monto-efectivo').value) || 0;
-  const transferencia = parseFloat(document.getElementById('g-monto-transferencia').value) || 0;
-  const suma = efectivo + transferencia;
-  if (!monto) { el.textContent = ''; return; }
-  if (suma === monto) { el.textContent = 'Suma ' + fmt(suma) + ' ✓'; el.style.color = 'var(--muted)'; }
-  else { el.textContent = 'Suma ' + fmt(suma) + ', pero el monto pagado es ' + fmt(monto); el.style.color = 'var(--danger)'; }
+// Cambiar de tipo vacía las líneas (un insumo no tiene sentido como
+// gasto operativo), pero conserva los montos ya escritos.
+function setGastoTipo(tipo) {
+  if (tipo === gastoTipo) return;
+  gastoTipo = tipo;
+  gastoLineas = gastoLineas.map(l => Object.assign(nuevaLineaGasto_(), { monto: l.monto }));
+  renderGastoTipo();
+}
+function opcionesInsumoGasto_(valor) {
+  const grupos = GASTO_INSUMO_TIPOS_.map(([tipo, label]) => {
+    const list = CrumblyCore.filtrarOrdenarPorNombre(state[tipo] || []);
+    if (!list.length) return '';
+    return `<optgroup label="${label}">` + list.map(x => {
+      const v = tipo + ':' + x.id;
+      return `<option value="${esc(v)}" ${v === valor ? 'selected' : ''}>${esc(x.nombre)} (actual: ${fmtCostoUnitario_(x.costo)}/${unidadCortaInsumo_(x)})</option>`;
+    }).join('') + '</optgroup>';
+  }).join('');
+  return `<option value="">${grupos ? 'Elegí el insumo' : 'No hay insumos creados'}</option>` + grupos;
+}
+function insumoDeLineaGasto_(l) {
+  const [tipo, id] = String(l.insumo || '').split(':');
+  return { tipo, id, insumo: id ? (state[tipo] || []).find(x => x.id === id) || null : null };
+}
+function unidadCortaInsumo_(insumo) {
+  const u = insumo && insumo.unidad;
+  return u === 'g' || u === 'kg' || u === 'ml' ? u : 'unidad';
+}
+function renderGastoLineas() {
+  const varias = gastoLineas.length > 1;
+  document.getElementById('g-lineas').innerHTML = gastoLineas.map((l, i) => {
+    const cab = `<div class="gf-linea-cab"><span>Compra ${i + 1}</span>${varias ? `<button type="button" class="vf-quitar" onclick="quitarLineaGasto('${l.id}')" aria-label="Quitar compra ${i + 1}"><i class="ph ph-x"></i></button>` : ''}</div>`;
+    const monto = `<div>
+          <label class="field-label" for="${l.id}-monto">Monto ($)</label>
+          <input type="number" id="${l.id}-monto" class="field" inputmode="numeric" placeholder="50000" min="0" step="1" value="${esc(l.monto)}" oninput="setLineaGasto('${l.id}','monto',this.value)">
+        </div>`;
+    if (gastoTipo === 'inventario') {
+      const u = unidadCortaInsumo_(insumoDeLineaGasto_(l).insumo);
+      return `<div class="gf-linea">${cab}
+        <div>
+          <label class="field-label" for="${l.id}-insumo">Insumo</label>
+          <select id="${l.id}-insumo" class="field" onchange="setLineaGasto('${l.id}','insumo',this.value)">${opcionesInsumoGasto_(l.insumo)}</select>
+        </div>
+        <div class="gf-fila">
+          <div>
+            <label class="field-label" for="${l.id}-cantidad">Cantidad (<span id="${l.id}-unidad">${u === 'unidad' ? 'unidades' : u}</span>)</label>
+            <input type="number" id="${l.id}-cantidad" class="field" inputmode="decimal" placeholder="2000" min="0" step="0.01" value="${esc(l.cantidad)}" oninput="setLineaGasto('${l.id}','cantidad',this.value)">
+          </div>
+          ${monto}
+        </div>
+        <p class="item-sub gf-costo" id="${l.id}-costo"></p>
+      </div>`;
+    }
+    const cats = CrumblyCore.GASTO_CATEGORIAS[gastoTipo].map(c => `<option value="${esc(c)}" ${c === l.categoria ? 'selected' : ''}>${esc(c)}</option>`).join('');
+    return `<div class="gf-linea">${cab}
+      <div>
+        <label class="field-label" for="${l.id}-categoria">Categoría</label>
+        <select id="${l.id}-categoria" class="field" onchange="setLineaGasto('${l.id}','categoria',this.value)">${cats}</select>
+      </div>
+      <div>
+        <label class="field-label" for="${l.id}-descripcion">Descripción (opcional)</label>
+        <input type="text" id="${l.id}-descripcion" class="field" placeholder="${gastoTipo === 'capex' ? 'Ej: plancha de waffles' : 'Ej: campaña Instagram'}" value="${esc(l.descripcion)}" oninput="setLineaGasto('${l.id}','descripcion',this.value)">
+      </div>
+      <div class="gf-fila">
+        ${monto}
+        ${gastoTipo === 'capex' ? `<div>
+          <label class="field-label" for="${l.id}-vida">Vida útil (meses)</label>
+          <input type="number" id="${l.id}-vida" class="field" inputmode="numeric" placeholder="36" min="1" step="1" value="${esc(l.vidaUtil)}" oninput="setLineaGasto('${l.id}','vidaUtil',this.value)">
+        </div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('g-lineas-count').textContent = gastoLineas.length === 1 ? '1 compra' : gastoLineas.length + ' compras';
+  gastoLineas.forEach(updateGastoCostoPreview);
+  renderGastoTotal_();
+}
+// Escribir en una línea NO vuelve a dibujar la tabla (se perdería el
+// foco): solo actualiza lo que depende de ese campo.
+function setLineaGasto(id, campo, valor) {
+  const l = gastoLineas.find(x => x.id === id);
+  if (!l) return;
+  l[campo] = valor;
+  if (campo === 'insumo') {
+    const u = unidadCortaInsumo_(insumoDeLineaGasto_(l).insumo);
+    document.getElementById(id + '-unidad').textContent = u === 'unidad' ? 'unidades' : u;
+  }
+  if (campo === 'insumo' || campo === 'cantidad' || campo === 'monto') updateGastoCostoPreview(l);
+  if (campo === 'monto') renderGastoTotal_();
+}
+function agregarLineaGasto() {
+  const l = nuevaLineaGasto_();
+  gastoLineas.push(l);
+  renderGastoLineas();
+  renderGastoMetodoPago(); // el aviso de "dividido es para una sola compra"
+  const primero = document.getElementById(l.id + (gastoTipo === 'inventario' ? '-insumo' : '-categoria'));
+  if (primero) primero.focus();
+}
+function quitarLineaGasto(id) {
+  if (gastoLineas.length <= 1) return;
+  gastoLineas = gastoLineas.filter(l => l.id !== id);
+  renderGastoLineas();
+  renderGastoMetodoPago();
+}
+function gastoTotal_() {
+  return gastoLineas.reduce((a, l) => a + Math.round(parseFloat(l.monto) || 0), 0);
+}
+function renderGastoTotal_() {
+  const total = gastoTotal_();
+  document.getElementById('g-total').textContent = fmt(total);
+  document.getElementById('g-guardar-total').textContent = fmt(total);
+  document.getElementById('g-guardar-texto').textContent = gastoLineas.length === 1 ? 'Guardar gasto' : 'Guardar ' + gastoLineas.length + ' gastos';
+  updateGastoDivididoPreview();
 }
 // Vista previa en vivo del costo unitario que va a quedar guardado
 // (monto / cantidad) — para detectar en el momento un error de digitación
@@ -6051,81 +6174,159 @@ function updateGastoDivididoPreview() {
 // La cantidad va en la medida del insumo elegido (g, kg, ml o unidades):
 // antes decía "unidades individuales" y quien compraba 5 kg de un insumo
 // en gramos escribía 5 → el costo por gramo quedaba 1000× de más.
-function gastoInsumoSeleccionado_() {
-  const tipo = document.getElementById('g-insumo-tipo').value;
-  const id = document.getElementById('g-insumo-id').value;
-  return (state[tipo] || []).find(x => x.id === id) || null;
-}
-function unidadCortaInsumo_(insumo) {
-  const u = insumo && insumo.unidad;
-  return u === 'g' || u === 'kg' || u === 'ml' ? u : 'unidad';
-}
-function onGastoInsumoChange() {
-  const insumo = gastoInsumoSeleccionado_();
-  const u = unidadCortaInsumo_(insumo);
-  document.getElementById('g-cantidad-unidad').textContent = u === 'unidad' ? 'unidades' : u;
-  updateGastoCostoPreview();
-}
-function updateGastoCostoPreview() {
-  const el = document.getElementById('g-costo-preview');
-  const cantidad = parseFloat(document.getElementById('g-cantidad').value) || 0;
-  const monto = parseFloat(document.getElementById('g-monto').value) || 0;
+function updateGastoCostoPreview(l) {
+  const el = document.getElementById(l.id + '-costo');
+  if (!el) return;
+  const cantidad = parseFloat(l.cantidad) || 0;
+  const monto = parseFloat(l.monto) || 0;
   if (cantidad <= 0 || monto <= 0) { el.textContent = ''; return; }
   const unitario = monto / cantidad;
-  const u = unidadCortaInsumo_(gastoInsumoSeleccionado_());
+  const u = unidadCortaInsumo_(insumoDeLineaGasto_(l).insumo);
   el.textContent = 'Costo por ' + u + ': ' + fmtCostoUnitario_(unitario);
   // En g/ml un costo de más de $1.000 casi siempre es la cantidad escrita
   // en kilos (o en paquetes) — mismo umbral que el aviso del insumo.
   el.style.color = unitario > ((u === 'g' || u === 'ml') ? 1000 : 50000) ? 'var(--danger)' : 'var(--muted)';
 }
-function onGastoTipoChange() {
-  const tipo = document.getElementById('g-tipo').value;
-  document.getElementById('g-campos-inventario').style.display = tipo === 'inventario' ? 'block' : 'none';
-  document.getElementById('g-campos-capex').style.display = tipo === 'capex' ? 'block' : 'none';
-  const catSel = document.getElementById('g-categoria');
-  catSel.innerHTML = CrumblyCore.GASTO_CATEGORIAS[tipo].map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
-  if (tipo === 'inventario') populateGastoInsumoSelect();
+function renderGastoMetodoPago() {
+  document.getElementById('g-metodo-pago').innerHTML = [['efectivo', 'Efectivo'], ['transferencia', 'Transferencia'], ['dividido', 'Dividido']]
+    .map(([id, label]) => `<button type="button" class="pill-btn ${gastoMetodoPago === id ? 'active' : ''}" onclick="setGastoMetodoPago('${id}')">${label}</button>`).join('');
+  // Dividido solo con UNA compra (ver registrarGastosAgrupados): con
+  // varias se avisa acá y guardar queda bloqueado con el mismo mensaje.
+  const dividido = gastoMetodoPago === 'dividido';
+  const varias = gastoLineas.length > 1;
+  document.getElementById('g-campos-dividido').style.display = dividido && !varias ? 'block' : 'none';
+  document.getElementById('g-dividido-aviso').style.display = dividido && varias ? 'block' : 'none';
+  updateGastoDivididoPreview();
 }
-function populateGastoInsumoSelect() {
-  const tipo = document.getElementById('g-insumo-tipo').value;
-  const list = tipo === 'materia' ? state.materia : tipo === 'empaques' ? state.empaques : state.toppings;
-  const sel = document.getElementById('g-insumo-id');
-  sel.innerHTML = list.length
-    ? list.map(x => `<option value="${x.id}">${esc(x.nombre)} (actual: ${fmtCostoUnitario_(x.costo)}/${unidadCortaInsumo_(x)})</option>`).join('')
-    : '<option value="">-- No hay insumos de este tipo --</option>';
-  onGastoInsumoChange();
+function setGastoMetodoPago(m) {
+  gastoMetodoPago = m;
+  renderGastoMetodoPago();
+  const ef = document.getElementById('g-monto-efectivo');
+  if (m === 'dividido' && gastoLineas.length === 1 && !ef.value) ef.focus();
 }
+// Al escribir el efectivo, la transferencia se llena sola con lo que falta
+// (igual que en Venta; se puede corregir a mano).
+function onGastoMontoEfectivoInput() {
+  const efectivoTxt = document.getElementById('g-monto-efectivo').value;
+  document.getElementById('g-monto-transferencia').value = efectivoTxt === '' ? '' : Math.max(0, gastoTotal_() - (parseFloat(efectivoTxt) || 0));
+  updateGastoDivididoPreview();
+}
+// Solo avisa si no cuadra con el monto total — no bloquea guardar, la
+// plata real manda sobre lo que la app espera.
+function updateGastoDivididoPreview() {
+  const el = document.getElementById('g-dividido-preview');
+  const monto = gastoTotal_();
+  const efectivo = parseFloat(document.getElementById('g-monto-efectivo').value) || 0;
+  const transferencia = parseFloat(document.getElementById('g-monto-transferencia').value) || 0;
+  const suma = efectivo + transferencia;
+  if (gastoMetodoPago !== 'dividido' || !monto) { el.textContent = ''; return; }
+  if (suma === monto) { el.textContent = 'Suma ' + fmt(suma) + ' ✓'; el.style.color = 'var(--muted)'; }
+  else { el.textContent = 'Suma ' + fmt(suma) + ', pero el monto pagado es ' + fmt(monto); el.style.color = 'var(--danger)'; }
+}
+function renderGastoMasResumen() {
+  document.getElementById('g-mas-resumen').textContent = document.getElementById('g-descripcion').value.trim() ? '· con descripción' : '';
+}
+
+// ─── Comprobantes del gasto: varios archivos, cada uno sube por su lado
+// (CrumblySync.uploadFile, el mismo de siempre) y muestra su estado. Misma
+// protección que comprobanteSubida_ (bug real: guardar mientras decía
+// "Subiendo…" dejaba el gasto sin comprobante y la URL terminaba pegada al
+// registro SIGUIENTE): cada apertura del modal sube gastoComprobantesToken
+// y una subida que termina con un token viejo, o de un archivo que ya se
+// quitó, se descarta. saveGasto no deja guardar con subidas en curso.
+let gastoComprobantes = []; // [{ id, n, nombre, url, estado: 'subiendo' | 'listo' }]
+let gastoComprobantesToken = 0;
+let gastoComprobanteSeq_ = 0;
+function reiniciarComprobantesGasto_() {
+  gastoComprobantesToken++;
+  gastoComprobantes = [];
+  document.getElementById('g-comprobante-input').value = '';
+  renderGastoComprobantes();
+}
+function renderGastoComprobantes() {
+  document.getElementById('g-comprobantes-lista').innerHTML = gastoComprobantes.map(c => `<div class="gf-archivo">
+      <i class="ph ph-file"></i>
+      <span class="gf-archivo-nombre">${esc(c.nombre)}</span>
+      <span class="gf-archivo-estado">${c.estado === 'subiendo' ? 'Subiendo…' : /^https?:\/\//.test(c.url) ? '✓' : 'Solo el nombre'}</span>
+      <button type="button" class="vf-quitar" onclick="quitarComprobanteGasto('${c.id}')" aria-label="Quitar ${esc(c.nombre)}"><i class="ph ph-x"></i></button>
+    </div>`).join('');
+}
+function quitarComprobanteGasto(id) {
+  gastoComprobantes = gastoComprobantes.filter(c => c.id !== id); // si seguía subiendo, su resultado se descarta
+  renderGastoComprobantes();
+}
+function onGastoComprobantesChange(e) {
+  const files = Array.from(e.target.files || []);
+  e.target.value = ''; // así se puede volver a elegir el mismo archivo
+  if (!files.length) return;
+  const autenticado = auth.isAuthenticated();
+  if (!autenticado) showToast('Iniciá sesión para guardar los comprobantes en Drive. Por ahora solo se guarda el nombre');
+  files.forEach(f => {
+    if (f.size > 10 * 1024 * 1024) { showToast(f.name + ' pesa más de 10MB. Elegí uno más liviano'); return; }
+    const c = { id: 'gc' + (++gastoComprobanteSeq_), n: gastoComprobantes.length + 1, nombre: f.name, url: '', estado: autenticado ? 'subiendo' : 'listo' };
+    if (!autenticado) c.url = f.name;
+    gastoComprobantes.push(c);
+    if (autenticado) subirComprobanteGasto_(c, f, gastoComprobantesToken);
+  });
+  renderGastoComprobantes();
+}
+async function subirComprobanteGasto_(c, f, token) {
+  const vigente = () => token === gastoComprobantesToken && gastoComprobantes.includes(c);
+  const fecha = document.getElementById('g-fecha').value || todayLocalISO();
+  // Nombre descriptivo en Drive: fecha_proveedor (o categoría)_monto_n.ext
+  const primera = gastoLineas[0] || {};
+  const etiqueta = document.getElementById('g-proveedor').value.trim()
+    || (gastoTipo === 'inventario' ? CrumblyCore.categoriaGastoInventario(insumoDeLineaGasto_(primera).tipo) : primera.categoria)
+    || GASTO_TIPO_LABEL[gastoTipo];
+  const nombre = CrumblyCore.nombreArchivoComprobante({ fecha, etiqueta, monto: gastoTotal_(), n: c.n, nombreOriginal: f.name, mimeType: f.type });
+  try {
+    const base64 = await fileToBase64(f);
+    // fecha: el Apps Script nuevo la usa para la subcarpeta del mes; el
+    // viejo la ignora y guarda igual (no se depende de eso acá).
+    const res = await CrumblySync.uploadFile(auth.getBackendUrl(), auth.getToken(), nombre, f.type, base64, undefined, { fecha });
+    if (!vigente()) return;
+    if (!res.ok) throw new Error(res.error || 'error desconocido');
+    c.url = res.url;
+    c.estado = 'listo';
+  } catch (err) {
+    if (!vigente()) return;
+    gastoComprobantes = gastoComprobantes.filter(x => x !== c);
+    showToast('No se pudo subir ' + f.name + ': ' + mensajeErrorSubida_(err));
+  }
+  renderGastoComprobantes();
+}
+
 function saveGasto() {
-  if (comprobanteSubida_['g-comprobante-label'].subiendo) { showToast('Esperá a que termine de subir el comprobante'); return; }
-  const tipo = document.getElementById('g-tipo').value;
-  const categoria = document.getElementById('g-categoria').value;
-  const monto = Math.round(parseFloat(document.getElementById('g-monto').value) || 0);
-  const proveedor = document.getElementById('g-proveedor').value.trim();
-  const descripcion = document.getElementById('g-descripcion').value.trim();
-  const metodoPago = document.getElementById('g-metodo-pago').value;
-  const input = { tipo, categoria, monto, proveedor, descripcion, comprobante: gastoComprobanteNombre, metodoPago };
+  if (gastoComprobantes.some(c => c.estado === 'subiendo')) { showToast('Esperá a que terminen de subir los comprobantes'); return; }
+  const comun = {
+    tipo: gastoTipo,
+    proveedor: document.getElementById('g-proveedor').value.trim(),
+    descripcion: gastoTipo === 'inventario' ? document.getElementById('g-descripcion').value.trim() : '',
+    metodoPago: gastoMetodoPago,
+    comprobantes: gastoComprobantes.map(c => c.url).filter(Boolean)
+  };
   // I4: antes no había campo de fecha acá — todo gasto quedaba fechado a
   // "ahora mismo", aunque se estuviera cargando la compra de ayer.
   const fechaInput = document.getElementById('g-fecha').value;
   if (fechaInput && fechaInput !== todayLocalISO()) {
     const [y, m, d] = fechaInput.split('-').map(Number);
     const now = new Date();
-    input.fecha = new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds()).toISOString();
+    comun.fecha = new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds()).toISOString();
   }
-  if (metodoPago === 'dividido') {
-    input.montoEfectivo = parseFloat(document.getElementById('g-monto-efectivo').value) || 0;
-    input.montoTransferencia = parseFloat(document.getElementById('g-monto-transferencia').value) || 0;
+  if (gastoMetodoPago === 'dividido') {
+    comun.montoEfectivo = parseFloat(document.getElementById('g-monto-efectivo').value) || 0;
+    comun.montoTransferencia = parseFloat(document.getElementById('g-monto-transferencia').value) || 0;
   }
-  if (tipo === 'inventario') {
-    input.insumoTipo = document.getElementById('g-insumo-tipo').value;
-    input.insumoId = document.getElementById('g-insumo-id').value;
-    input.cantidad = parseFloat(document.getElementById('g-cantidad').value) || 0;
-    if (!input.insumoId) { showToast('Selecciona el insumo comprado'); return; }
-  } else if (tipo === 'capex') {
-    input.vidaUtilMeses = parseFloat(document.getElementById('g-vida-util').value) || 0;
-  }
+  const lineas = gastoLineas.map(l => {
+    if (gastoTipo === 'inventario') {
+      const { tipo, id } = insumoDeLineaGasto_(l);
+      return { insumoTipo: tipo, insumoId: id, cantidad: parseFloat(l.cantidad) || 0, monto: l.monto };
+    }
+    return { categoria: l.categoria, descripcion: l.descripcion.trim(), monto: l.monto, vidaUtilMeses: parseFloat(l.vidaUtil) || 0 };
+  });
+  let creados;
   try {
-    CrumblyCore.registrarGasto(state, input);
+    creados = CrumblyCore.registrarGastosAgrupados(state, comun, lineas);
   } catch (e) {
     showToast(e.message);
     return;
@@ -6135,7 +6336,7 @@ function saveGasto() {
   renderCaja();
   renderInventario(); // el costo/stock del insumo pudo cambiar
   renderReportes();
-  showToast('Gasto registrado ✓');
+  showToast(creados.length === 1 ? 'Gasto registrado ✓' : creados.length + ' gastos registrados ✓');
 }
 function eliminarGasto(id) {
   const gasto = state.gastos.find(g => g.id === id);
@@ -6547,9 +6748,14 @@ function renderCaja() {
     // comprobante solo es un link real si se subió a Drive (backend
     // configurado al momento de guardar) — si no, quedó como texto suelto
     // (el nombre del archivo) y no hay nada que abrir.
-    const comprobanteBtn = /^https?:\/\//.test(m.ref.comprobante || '')
-      ? `<a class="btn-icon" href="${esc(m.ref.comprobante)}" target="_blank" rel="noopener" title="Ver comprobante"><i class="ph ph-receipt"></i></a>`
-      : '';
+    // Un gasto puede traer varios (comprobantes); si hay más de uno, el
+    // ícono abre una burbuja con un link por archivo.
+    const links = CrumblyCore.comprobantesDe(m.ref).filter(u => /^https?:\/\//.test(u));
+    const comprobanteBtn = links.length === 1
+      ? `<a class="btn-icon" href="${esc(links[0])}" target="_blank" rel="noopener" title="Ver comprobante"><i class="ph ph-receipt"></i></a>`
+      : links.length > 1
+        ? `<details class="info caja-comprobantes"><summary aria-label="Ver ${links.length} comprobantes"><i class="ph ph-receipt"></i>${links.length}</summary><p>${links.map((u, i) => `<a href="${esc(u)}" target="_blank" rel="noopener">Comprobante ${i + 1}</a>`).join('')}</p></details>`
+        : '';
     return `<div class="list-row">
       <div style="display:flex;align-items:center;gap:10px;min-width:0">
         <div style="width:26px;height:26px;border-radius:50%;background:var(--bg);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ph ${icon}" style="font-size:var(--fs-sm);color:var(--ink)"></i></div>
@@ -6647,7 +6853,7 @@ function closeModal(id) { document.getElementById(id).classList.remove('open'); 
 // actual. Las filas de receta agregadas o quitadas también cuentan (son
 // <select>/<input> dentro del modal). El insumo ya tenía su propia foto
 // (Z5, hayCambiosSinGuardarInsumo_) y se reusa tal cual.
-const MODALES_FORMULARIO_ = ['modal-producto', 'modal-preparacion', 'modal-lote', 'modal-merma'];
+const MODALES_FORMULARIO_ = ['modal-producto', 'modal-preparacion', 'modal-lote', 'modal-merma', 'modal-gasto'];
 const fotoModal_ = {};
 function fotoCamposModal_(id) {
   return Array.from(document.querySelectorAll('#' + id + ' input:not([type=search]), #' + id + ' select, #' + id + ' textarea'))
@@ -6655,6 +6861,7 @@ function fotoCamposModal_(id) {
 }
 function modalConCambios_(id) {
   if (id === 'modal-insumo') return hayCambiosSinGuardarInsumo_();
+  if (id === 'modal-gasto' && gastoComprobantes.length) return true; // adjuntar archivos no cambia ningún campo
   return MODALES_FORMULARIO_.includes(id) && fotoModal_[id] !== undefined && fotoCamposModal_(id) !== fotoModal_[id];
 }
 // La X de los formularios llama a esta en vez de closeModal.

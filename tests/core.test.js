@@ -4221,6 +4221,124 @@ test('filtrarOrdenarPorNombre: busca sin tildes ni mayúsculas y en campos extra
   assert.strictEqual(C.normalizarBusqueda('Ñandú Ácido'), 'nandu acido');
 });
 
+console.log('\n== Gastos: varias compras y varios comprobantes ==');
+
+function stateCompras() {
+  const s = C.emptyState();
+  s.materia.push({ id: 'm1', nombre: 'Harina', unidad: 'g', cantidad: 1000, costo: 10, minimo: 0 });
+  s.empaques.push({ id: 'e1', nombre: 'Bolsa', unidad: 'unidad', cantidad: 0, costo: 0, minimo: 0 });
+  return s;
+}
+
+test('categoriaGastoInventario: la categoría sale del tipo de insumo', () => {
+  assert.strictEqual(C.categoriaGastoInventario('materia'), 'Materia prima');
+  assert.strictEqual(C.categoriaGastoInventario('empaques'), 'Empaque');
+  assert.strictEqual(C.categoriaGastoInventario('toppings'), 'Toppings');
+  assert.strictEqual(C.categoriaGastoInventario('otro'), '');
+  assert.deepStrictEqual(['materia', 'empaques', 'toppings'].map(C.categoriaGastoInventario), C.GASTO_CATEGORIAS.inventario);
+});
+
+test('comprobantesDe: usa la lista nueva si tiene algo; si no, el comprobante suelto de siempre', () => {
+  assert.deepStrictEqual(C.comprobantesDe({ comprobantes: ['https://a', 'https://b'], comprobante: 'https://a' }), ['https://a', 'https://b']);
+  assert.deepStrictEqual(C.comprobantesDe({ comprobante: 'https://viejo' }), ['https://viejo']);
+  assert.deepStrictEqual(C.comprobantesDe({ comprobantes: [], comprobante: 'https://viejo' }), ['https://viejo']);
+  assert.deepStrictEqual(C.comprobantesDe({ comprobantes: ['', null, 'https://x'] }), ['https://x']);
+  assert.deepStrictEqual(C.comprobantesDe({ comprobante: '' }), []);
+  assert.deepStrictEqual(C.comprobantesDe(null), []);
+});
+
+test('nombreArchivoComprobante: fecha_proveedor_monto_n.ext, sin tildes ni espacios', () => {
+  assert.strictEqual(C.nombreArchivoComprobante({ fecha: '2026-10-02', etiqueta: 'Makro Centro', monto: 125000.4, n: 1, nombreOriginal: 'IMG_0001.JPG' }), '2026-10-02_makro-centro_125000_1.jpg');
+  assert.strictEqual(C.nombreArchivoComprobante({ fecha: '2026-10-02', etiqueta: 'Panadería Ñoño / #2', monto: 5000, n: 3, nombreOriginal: 'factura' , mimeType: 'application/pdf' }), '2026-10-02_panaderia-nono-2_5000_3.pdf');
+  assert.strictEqual(C.nombreArchivoComprobante({ fecha: 'mal', etiqueta: '  ', monto: -5, n: 0 }), 'sin-fecha_gasto_0_1');
+  assert.ok(C.nombreArchivoComprobante({ fecha: '2026-10-02', etiqueta: 'x'.repeat(200), monto: 1, n: 1 }).length < 70);
+});
+
+test('validarLineasGasto: monto > 0, insumo y cantidad > 0 en inventario, vida útil en implementos', () => {
+  assert.strictEqual(C.validarLineasGasto('inventario', []), 'Agregá al menos una compra');
+  assert.strictEqual(C.validarLineasGasto('inventario', [{ insumoTipo: 'materia', insumoId: 'm1', cantidad: 10, monto: 100 }]), '');
+  assert.strictEqual(C.validarLineasGasto('inventario', [{ insumoTipo: 'materia', insumoId: 'm1', cantidad: 10, monto: 0 }]), 'El monto debe ser mayor a 0');
+  assert.strictEqual(C.validarLineasGasto('inventario', [{ insumoTipo: 'materia', insumoId: 'm1', cantidad: 10, monto: 100 }, { insumoTipo: 'materia', insumoId: 'm1', cantidad: 0, monto: 100 }]), 'La cantidad comprada debe ser mayor a 0 (compra 2)');
+  assert.strictEqual(C.validarLineasGasto('inventario', [{ insumoTipo: 'materia', insumoId: '', cantidad: 1, monto: 1 }]), 'Elegí el insumo comprado');
+  assert.strictEqual(C.validarLineasGasto('operativo', [{ categoria: 'Aseo', monto: 100 }]), '');
+  assert.strictEqual(C.validarLineasGasto('capex', [{ categoria: 'Mobiliario', monto: 100 }]), 'La vida útil (meses) debe ser mayor a 0');
+});
+
+test('registrarGastosAgrupados: un gasto por línea con registrarGasto, mismo grupoId, fecha, proveedor y comprobantes', () => {
+  const s = stateCompras();
+  const fecha = '2026-10-01T15:00:00.000Z';
+  const gastos = C.registrarGastosAgrupados(s, {
+    tipo: 'inventario', fecha, proveedor: 'Makro', descripcion: 'mercado', metodoPago: 'transferencia',
+    comprobantes: ['https://lh3/a', 'https://lh3/b']
+  }, [
+    { insumoTipo: 'materia', insumoId: 'm1', cantidad: 1000, monto: 30000 },
+    { insumoTipo: 'empaques', insumoId: 'e1', cantidad: 100, monto: 5000 }
+  ]);
+  assert.strictEqual(gastos.length, 2);
+  assert.strictEqual(s.gastos.length, 2);
+  assert.ok(gastos[0].grupoId && gastos[0].grupoId === gastos[1].grupoId);
+  gastos.forEach(g => {
+    assert.strictEqual(g.fecha, fecha);
+    assert.strictEqual(g.proveedor, 'Makro');
+    assert.strictEqual(g.metodoPago, 'transferencia');
+    assert.deepStrictEqual(g.comprobantes, ['https://lh3/a', 'https://lh3/b']);
+    assert.strictEqual(g.comprobante, 'https://lh3/a');
+    assert.strictEqual(g.descripcion, 'mercado');
+  });
+  assert.strictEqual(gastos[0].categoria, 'Materia prima');
+  assert.strictEqual(gastos[1].categoria, 'Empaque');
+  // misma lógica de stock/costo que registrarGasto: 1000g a $10 + 1000g a $30 -> $20
+  assert.strictEqual(s.materia[0].cantidad, 2000);
+  assert.strictEqual(s.materia[0].costo, 20);
+  assert.strictEqual(s.empaques[0].cantidad, 100);
+  assert.strictEqual(s.empaques[0].costo, 50);
+});
+
+test('registrarGastosAgrupados: operativo e implementos usan categoría y descripción de cada línea', () => {
+  const s = stateCompras();
+  const ops = C.registrarGastosAgrupados(s, { tipo: 'operativo', metodoPago: 'efectivo' }, [
+    { categoria: 'Aseo', descripcion: 'jabón', monto: 8000 },
+    { categoria: 'Transporte', descripcion: 'taxi', monto: 12000 }
+  ]);
+  assert.deepStrictEqual(ops.map(g => [g.categoria, g.descripcion, g.monto]), [['Aseo', 'jabón', 8000], ['Transporte', 'taxi', 12000]]);
+  assert.deepStrictEqual(ops[0].comprobantes, []);
+  assert.strictEqual(ops[0].comprobante, '');
+  const cap = C.registrarGastosAgrupados(s, { tipo: 'capex', metodoPago: 'efectivo' }, [{ categoria: 'Mobiliario', descripcion: 'mesa', monto: 300000, vidaUtilMeses: 24 }]);
+  assert.strictEqual(cap[0].vidaUtilMeses, 24);
+});
+
+test('registrarGastosAgrupados: valida todo antes de tocar nada', () => {
+  const s = stateCompras();
+  assert.throws(() => C.registrarGastosAgrupados(s, { tipo: 'inventario', metodoPago: 'efectivo' }, [
+    { insumoTipo: 'materia', insumoId: 'm1', cantidad: 1000, monto: 30000 },
+    { insumoTipo: 'materia', insumoId: 'm1', cantidad: 0, monto: 1000 }
+  ]), /compra 2/);
+  assert.strictEqual(s.gastos.length, 0);
+  assert.strictEqual(s.materia[0].cantidad, 1000);
+});
+
+test('registrarGastosAgrupados: si registrarGasto falla a mitad, deshace las compras ya creadas', () => {
+  const s = stateCompras();
+  assert.throws(() => C.registrarGastosAgrupados(s, { tipo: 'inventario', metodoPago: 'efectivo' }, [
+    { insumoTipo: 'materia', insumoId: 'm1', cantidad: 1000, monto: 30000 },
+    { insumoTipo: 'materia', insumoId: 'no-existe', cantidad: 10, monto: 1000 }
+  ]), /Insumo no encontrado/);
+  assert.strictEqual(s.gastos.length, 0);
+  assert.strictEqual(s.materia[0].cantidad, 1000);
+  assert.strictEqual(s.materia[0].costo, 10);
+});
+
+test('registrarGastosAgrupados: pago dividido solo con una compra', () => {
+  const s = stateCompras();
+  assert.throws(() => C.registrarGastosAgrupados(s, { tipo: 'operativo', metodoPago: 'dividido', montoEfectivo: 1, montoTransferencia: 1 }, [
+    { categoria: 'Aseo', monto: 1 }, { categoria: 'Aseo', monto: 1 }
+  ]), /una sola compra/);
+  assert.strictEqual(s.gastos.length, 0);
+  const [g] = C.registrarGastosAgrupados(s, { tipo: 'operativo', metodoPago: 'dividido', montoEfectivo: 3000, montoTransferencia: 7000 }, [{ categoria: 'Aseo', monto: 10000 }]);
+  assert.strictEqual(g.montoEfectivo, 3000);
+  assert.strictEqual(g.montoTransferencia, 7000);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);
