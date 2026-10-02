@@ -109,7 +109,6 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 .ing-col:hover .ing-bar{background:linear-gradient(180deg,#4a4a4a 0%,#262626 100%)}
 .ing-col.sel .ing-bar{background:linear-gradient(180deg,#ffffff 0%,#8c8c8c 100%);border-color:transparent}
 .ing-guia{position:absolute;right:-46px;border-top:1px dashed rgba(255,255,255,.55);pointer-events:none}
-.ing-punto{position:absolute;width:7px;height:7px;border-radius:50%;background:#fff;transform:translate(-50%,50%);pointer-events:none}
 .ing-tip{position:absolute;transform:translate(calc(-100% - 10px),50%);background:#1f2633;color:#fff;border:1px solid #33405a;border-radius:7px;padding:4px 9px;font-size:var(--fs-xs);font-weight:var(--fw-bold);white-space:nowrap;pointer-events:none}
 .ing-tip.derecha{transform:translate(10px,50%)}
 .ing-dias{display:flex;margin-top:10px}
@@ -5138,7 +5137,6 @@ function renderChartBars() {
           </button>`).join('')}
         </div>
         <div class="ing-guia" style="bottom:${alto(sel.total)}%;left:${centro}%"></div>
-        <div class="ing-punto" style="bottom:${alto(sel.total)}%;left:${centro}%"></div>
         <div class="ing-tip${tipDerecha ? ' derecha' : ''}" style="bottom:${alto(sel.total)}%;left:${centro}%">${esc(sel.dayLabel)} : ${fmtCompacto_(sel.total)}</div>
       </div>
       <div class="ing-dias">${dias.map(d => `<span class="${d === sel ? 'sel' : ''}">${esc(d.dayLabel)}</span>`).join('')}</div>
