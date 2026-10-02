@@ -725,11 +725,11 @@ textarea.field{height:auto}
 
       <!-- PRODUCTOS -->
       <div class="page-view" id="page-productos">
-        <div style="display:flex;align-items:center;justify-content:space-between">
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between">
           <div class="page-title">Productos</div>
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-outline" onclick="generateRecetarioPDF()"><i class="ph ph-download-simple"></i> Recetario PDF</button>
-            <button class="btn" onclick="openModalProducto()"><i class="ph ph-plus"></i> Nuevo producto</button>
+          <div style="display:flex;gap:8px;white-space:nowrap">
+            <button class="btn btn-outline" onclick="generateRecetarioPDF()"><i class="ph ph-download-simple"></i> Recetario</button>
+            <button class="btn" onclick="openModalProducto()"><i class="ph ph-plus"></i> Nuevo</button>
           </div>
         </div>
         <input type="search" id="prod-buscador" class="field" placeholder="Buscar producto..." autocomplete="off" oninput="setProductosBusqueda(this.value)">
@@ -1182,20 +1182,20 @@ textarea.field{height:auto}
   <div class="modal">
     <button class="close-modal" onclick="pedirCerrarModal('modal-merma')">✕</button>
     <div class="modal-title">Registrar merma</div>
-    <div style="display:flex;gap:10px">
-      <div class="modal-field" style="flex:1">
+    <div style="display:flex;flex-wrap:wrap;column-gap:10px">
+      <div class="modal-field" style="flex:1 1 140px">
         <label>Fecha</label>
         <input type="date" id="merma-fecha">
       </div>
-      <div class="modal-field" style="flex:1">
+      <div class="modal-field" style="flex:1 1 140px">
         <label>Motivo</label>
         <select id="merma-motivo"></select>
       </div>
     </div>
     <label style="font-size:var(--fs-xs);color:var(--muted);font-weight:var(--fw-bold);display:block;margin-bottom:6px">Origen</label>
     <input type="search" id="merma-origen-buscar" class="field" style="margin-bottom:10px;height:38px" placeholder="Buscar..." autocomplete="off" oninput="populateMermaOrigenSelect(true)">
-    <div style="display:flex;gap:10px;margin-bottom:12px">
-      <div class="modal-field" style="flex:1;margin-bottom:0">
+    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+      <div class="modal-field" style="flex:1 1 140px;margin-bottom:0">
         <select id="merma-origen-tipo" onchange="populateMermaOrigenSelect()">
           <option value="materia">Materia prima</option>
           <option value="empaques">Empaque</option>
@@ -1204,7 +1204,7 @@ textarea.field{height:auto}
           <option value="preparacion">Preparación (masa, salsa…)</option>
         </select>
       </div>
-      <div class="modal-field" style="flex:2;margin-bottom:0">
+      <div class="modal-field" style="flex:2 1 160px;margin-bottom:0">
         <select id="merma-origen-id" onchange="calcMermaValor()"></select>
       </div>
     </div>
