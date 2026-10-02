@@ -5115,7 +5115,7 @@ function renderChartBars() {
   const suma = arr => arr.reduce((a, d) => a + d.total, 0);
   const total = suma(dias), totalPrevio = suma(previos);
   const variacion = totalPrevio > 0 ? (total - totalPrevio) / totalPrevio : null;
-  const tope = topeEje_(Math.max(...dias.map(d => d.total)));
+  const tope = topeEje_(Math.max(100000, ...dias.map(d => d.total))); // ponytail: piso de $100k, así una semana vacía no muestra "$0" cinco veces
   const iSel = Math.max(0, dias.findIndex(d => d.fecha === chartDiaSel));
   const sel = chartDiaSel && dias.some(d => d.fecha === chartDiaSel) ? dias[iSel] : dias[dias.length - 1];
   const idx = dias.indexOf(sel);
