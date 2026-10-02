@@ -88,6 +88,33 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 
 /* ─── Cards / pills / chips ─── */
 .card{background:var(--white);border:1px solid var(--line);border-radius:16px;padding:18px}
+/* Ingresos por día: tarjeta oscura */
+.ing-card{background:#121212;border-color:#121212;color:#f2f2f2}
+.ing-titulo{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:var(--fw-bold);font-size:var(--fs-body);margin-bottom:14px}
+.ing-titulo i{color:#9a9a9a;margin-right:4px}
+.ing-rango{display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-xs);font-weight:var(--fw-medium);color:#d6d6d6;border:1px solid #2c2c2c;border-radius:999px;padding:6px 10px;white-space:nowrap}
+.ing-rango i{margin:0;color:#9a9a9a}
+.ing-hero{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.ing-total{font-size:var(--fs-h1);font-weight:var(--fw-bold);letter-spacing:-.01em;color:#fff}
+.ing-delta{font-size:var(--fs-sm);color:#9a9a9a}
+.ing-delta.sube{color:#3ecf8e;font-weight:var(--fw-bold)}
+.ing-delta.baja{color:#ff6b6b;font-weight:var(--fw-bold)}
+.ing-plot{position:relative;padding-right:46px}
+.ing-area{position:relative;height:190px}
+.ing-gl{position:absolute;left:0;right:-46px;border-top:1px solid rgba(255,255,255,.07)}
+.ing-gl span{position:absolute;right:0;transform:translateY(-50%);font-size:var(--fs-xs);color:#8a8a8a;width:42px;text-align:right}
+.ing-cols{position:absolute;inset:0;display:flex;align-items:flex-end}
+.ing-col{flex:1;height:100%;display:flex;align-items:flex-end;justify-content:center;background:none;border:none;padding:0 4px;cursor:pointer}
+.ing-bar{display:block;width:100%;max-width:46px;border-radius:9px 9px 3px 3px;background:linear-gradient(180deg,#363636 0%,#1d1d1d 100%);border:1px solid rgba(255,255,255,.06);border-bottom:none;transition:background .15s}
+.ing-col:hover .ing-bar{background:linear-gradient(180deg,#4a4a4a 0%,#262626 100%)}
+.ing-col.sel .ing-bar{background:linear-gradient(180deg,#ffffff 0%,#8c8c8c 100%);border-color:transparent}
+.ing-guia{position:absolute;right:-46px;border-top:1px dashed rgba(255,255,255,.55);pointer-events:none}
+.ing-punto{position:absolute;width:7px;height:7px;border-radius:50%;background:#fff;transform:translate(-50%,50%);pointer-events:none}
+.ing-tip{position:absolute;transform:translate(calc(-100% - 10px),50%);background:#1f2633;color:#fff;border:1px solid #33405a;border-radius:7px;padding:4px 9px;font-size:var(--fs-xs);font-weight:var(--fw-bold);white-space:nowrap;pointer-events:none}
+.ing-tip.derecha{transform:translate(10px,50%)}
+.ing-dias{display:flex;margin-top:10px}
+.ing-dias span{flex:1;text-align:center;font-size:var(--fs-xs);color:#8a8a8a}
+.ing-dias span.sel{color:#fff;font-weight:var(--fw-bold)}
 /* La burbuja se ubica contra el MODAL (no contra el ícono): queda justo
    debajo del ícono en lo vertical, pero siempre dentro del ancho del
    formulario — pegada al ícono se salía de la pantalla en el celular. */
@@ -427,10 +454,10 @@ textarea.field{height:auto}
         </div>
 
         <div class="charts-grid">
-          <div class="card">
-            <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px">
-              <div class="card-title">Ingresos por día</div>
-              <div style="font-size:var(--fs-xs);color:var(--muted)" id="dash-chart-range">últimos 7 días</div>
+          <div class="card ing-card">
+            <div class="ing-titulo">
+              <span><i class="ph ph-chart-bar"></i> Ingresos por día</span>
+              <span class="ing-rango" id="dash-chart-range"><i class="ph ph-calendar-blank"></i> Últimos 7 días</span>
             </div>
             <div id="dash-chart-bars"></div>
           </div>
@@ -5002,32 +5029,59 @@ function onReportRangeChange() {
   renderReportes();
 }
 
-/* ─── Gráfica de barras "Ingresos por día" (últimos 7 días, siempre) ─── */
-function renderChartBars() {
-  const dias = CrumblyCore.getIngresosPorDia(state.ventas, 7);
-  const max = Math.max(1, ...dias.map(d => d.total));
-  const maxPadded = Math.ceil((max * 1.2) / 20000) * 20000 || 20000;
-  const avg = dias.reduce((a, d) => a + d.total, 0) / dias.length;
-  const gridLines = [1, 0.75, 0.5, 0.25, 0].map(f => ({ top: Math.round((1 - f) * 100), label: '$' + Math.round((f * maxPadded) / 1000) + 'k' }));
-  const avgTop = Math.round((1 - avg / maxPadded) * 100);
-  const bars = dias.map(d => {
-    const color = d.esHoy ? 'var(--ink)' : 'var(--soft)';
-    const valueColor = d.esHoy ? 'var(--ink)' : 'var(--mid)';
-    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end">
-      <span style="font-size:var(--fs-xs);color:${valueColor};font-weight:var(--fw-bold)">$${Math.round(d.total / 1000)}k</span>
-      <div style="width:100%;max-width:30px;height:${Math.max(4, Math.round(d.total / maxPadded * 100))}%;background:${color};border-radius:5px 5px 2px 2px"></div>
-    </div>`;
-  }).join('');
-  const labels = dias.map(d => `<div style="flex:1;text-align:center;font-size:var(--fs-xs);font-weight:${d.esHoy ? 'var(--fw-bold)' : 'var(--fw-medium)'};color:var(--muted)">${d.dayLabel}</div>`).join('');
-  document.getElementById('dash-chart-bars').innerHTML = `
-    <div style="position:relative;height:140px;margin-left:36px;margin-top:6px">
-      ${gridLines.map(gl => `<div style="position:absolute;left:0;right:0;top:${gl.top}%;border-top:1px solid var(--line)"></div><span style="position:absolute;left:-36px;top:${gl.top}%;transform:translateY(-50%);font-size:var(--fs-xs);color:var(--muted);width:32px;text-align:right">${gl.label}</span>`).join('')}
-      <div style="position:absolute;left:0;right:0;top:${avgTop}%;border-top:1px dashed var(--mid)"></div>
-      <div style="position:absolute;inset:0;display:flex;align-items:flex-end;gap:12px;padding-top:14px">${bars}</div>
-    </div>
-    <div style="display:flex;gap:12px;margin-left:36px;margin-top:8px">${labels}</div>`;
+/* ─── Gráfica de barras "Ingresos por día" (últimos 7 días, siempre) ───
+   Tarjeta oscura (como la de cierre de caja): total de la semana con la
+   variación contra los 7 días anteriores, columnas con el día elegido
+   resaltado + etiqueta y guía punteada hasta el eje (a la derecha).
+   Tocar una columna la elige; arranca en hoy. */
+let chartDiaSel = null; // fecha (YYYY-MM-DD local) elegida; null = hoy
+function selChartDia(fecha) { chartDiaSel = fecha; renderChartBars(); }
+// $84k / $1,2M — para el eje y la etiqueta (el total va completo con fmt).
+function fmtCompacto_(v) {
+  if (v >= 1e6) return '$' + (v / 1e6).toLocaleString('es-CO', { maximumFractionDigits: 1 }) + 'M';
+  if (v >= 1000) return '$' + Math.round(v / 1000) + 'k';
+  return '$' + Math.round(v);
 }
-
+// Tope "redondo" del eje con 4 tramos iguales (0 · ¼ · ½ · ¾ · tope).
+function topeEje_(max) {
+  const paso = Math.pow(10, Math.floor(Math.log10(Math.max(max, 1) / 4)));
+  const factor = [1, 1.5, 2, 2.5, 3, 5, 7.5, 10].find(f => f * paso * 4 >= max) || 10;
+  return factor * paso * 4;
+}
+function renderChartBars() {
+  const dias14 = CrumblyCore.getIngresosPorDia(state.ventas, 14);
+  const dias = dias14.slice(7), previos = dias14.slice(0, 7);
+  const suma = arr => arr.reduce((a, d) => a + d.total, 0);
+  const total = suma(dias), totalPrevio = suma(previos);
+  const variacion = totalPrevio > 0 ? (total - totalPrevio) / totalPrevio : null;
+  const tope = topeEje_(Math.max(...dias.map(d => d.total)));
+  const iSel = Math.max(0, dias.findIndex(d => d.fecha === chartDiaSel));
+  const sel = chartDiaSel && dias.some(d => d.fecha === chartDiaSel) ? dias[iSel] : dias[dias.length - 1];
+  const idx = dias.indexOf(sel);
+  const alto = v => Math.max(1.5, v / tope * 100);
+  const deltaHtml = variacion === null
+    ? '<span class="ing-delta">sin datos de la semana anterior</span>'
+    : `<span class="ing-delta ${variacion >= 0 ? 'sube' : 'baja'}">${variacion >= 0 ? '+' : ''}${Math.round(variacion * 100)}%</span><span class="ing-delta">vs semana anterior</span>`;
+  const centro = (idx + 0.5) / dias.length * 100;
+  // La etiqueta va a la izquierda de la columna; en las dos primeras, a la derecha (no se sale).
+  const tipDerecha = idx < 2;
+  document.getElementById('dash-chart-bars').innerHTML = `
+    <div class="ing-hero"><span class="ing-total">${fmt(total)}</span>${deltaHtml}</div>
+    <div class="ing-plot" role="img" aria-label="Ingresos de los últimos 7 días: ${dias.map(d => d.dayLabel + ' ' + fmt(d.total)).join(', ')}">
+      <div class="ing-area">
+        ${[0, 0.25, 0.5, 0.75, 1].map(f => `<div class="ing-gl" style="bottom:${f * 100}%"><span>${fmtCompacto_(f * tope)}</span></div>`).join('')}
+        <div class="ing-cols">${dias.map(d => `
+          <button type="button" class="ing-col${d === sel ? ' sel' : ''}" onclick="selChartDia('${d.fecha}')" aria-label="${esc(d.dayLabel)}: ${fmt(d.total)}">
+            <span class="ing-bar" style="height:${alto(d.total)}%"></span>
+          </button>`).join('')}
+        </div>
+        <div class="ing-guia" style="bottom:${alto(sel.total)}%;left:${centro}%"></div>
+        <div class="ing-punto" style="bottom:${alto(sel.total)}%;left:${centro}%"></div>
+        <div class="ing-tip${tipDerecha ? ' derecha' : ''}" style="bottom:${alto(sel.total)}%;left:${centro}%">${esc(sel.dayLabel)} : ${fmtCompacto_(sel.total)}</div>
+      </div>
+      <div class="ing-dias">${dias.map(d => `<span class="${d === sel ? 'sel' : ''}">${esc(d.dayLabel)}</span>`).join('')}</div>
+    </div>`;
+}
 /* ─── Donut "Más vendidos" (unidades del período activo) ─── */
 const DONUT_COLORS = ['#111111', '#444444', '#7A7A7A', '#C2C2C2'];
 function renderDonut(ventas) {
