@@ -124,7 +124,7 @@
     if (fase === 'post') {
       var info = getCatalogSizeInfo(state);
       info.fase = 'post';
-      info.motivo = 'catálogo — la migración ya corrió (confirmado), la celda solo guarda el catálogo';
+      info.motivo = 'catálogo: la migración ya corrió (confirmado), la celda solo guarda el catálogo';
       return info;
     }
     var tam = getTransferSize(state);
@@ -133,7 +133,7 @@
       return {
         tam: tam, tope: TOPE_PAYLOAD_CHARS, bloqueo: BLOQUEO_PAYLOAD_CHARS, advertencia: ADVERTENCIA_PAYLOAD_CHARS,
         pct: tam / TOPE_PAYLOAD_CHARS, nivel: nivelPre, fase: 'pre',
-        motivo: 'estado completo — la migración todavía no corrió (confirmado), la celda guarda todo'
+        motivo: 'estado completo: la migración todavía no corrió (confirmado), la celda guarda todo'
       };
     }
     // Fase SIN CONFIRMAR (nunca se llamó getMigrationStatus con éxito
@@ -144,7 +144,7 @@
     return {
       tam: tam, tope: TOPE_PAYLOAD_CHARS, bloqueo: BLOQUEO_PAYLOAD_CHARS, advertencia: ADVERTENCIA_PAYLOAD_CHARS,
       pct: tam / TOPE_PAYLOAD_CHARS, nivel: nivelSinConfirmar, fase: 'sin_confirmar',
-      motivo: 'estado completo (estimado) — todavía no se confirmó la fase de la migración con el backend; advierte, nunca bloquea'
+      motivo: 'estado completo (estimado): todavía no se confirmó la fase de la migración con el backend; advierte, nunca bloquea'
     };
   }
 

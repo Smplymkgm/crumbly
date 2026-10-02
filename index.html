@@ -465,7 +465,7 @@ textarea.field{height:auto}
         <div class="cod-grid">
           <div style="background:var(--ink);border-radius:10px;padding:13px;color:var(--white)">
             <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px">
-              <div style="font-weight:var(--fw-bold);font-size:var(--fs-sm)">Cierre de caja — hoy</div>
+              <div style="font-weight:var(--fw-bold);font-size:var(--fs-sm)">Cierre de caja de hoy</div>
               <i class="ph ph-cash-register" style="font-size:var(--fs-h3);color:rgba(255,255,255,.7)"></i>
             </div>
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
@@ -752,7 +752,7 @@ textarea.field{height:auto}
         </div>
         <input type="search" id="clientes-buscador" class="field" placeholder="Buscar por nombre o teléfono..." autocomplete="off" oninput="setClientesBusqueda(this.value)">
         <div class="card" style="padding:0;overflow:hidden">
-          <div id="clientes-list"><p class="empty" style="padding:1.5rem">Aún no hay clientes — se crean solos al registrar una venta, o los agregas aquí.</p></div>
+          <div id="clientes-list"><p class="empty" style="padding:1.5rem">Aún no hay clientes. Se crean solos al registrar una venta, o los agregas aquí.</p></div>
         </div>
       </div>
 
@@ -789,7 +789,7 @@ textarea.field{height:auto}
           <details class="info derecha"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Cómo lo medís en las recetas y en el stock. Algo que viene por unidad (como los huevos) igual puede ser materia prima.</p></details>
         </div>
         <select id="ins-tipo-medicion" class="field" onchange="actualizarEtiquetasUnidad_()">
-          <option value="" id="ins-tipo-medicion-pendiente" style="display:none">— Sin definir (corregir) —</option>
+          <option value="" id="ins-tipo-medicion-pendiente" style="display:none">Sin definir (corregir)</option>
           <option value="gramos">Gramos</option>
           <option value="mililitros">Mililitros</option>
           <option value="kilogramos">Kilogramos</option>
@@ -799,7 +799,7 @@ textarea.field{height:auto}
     </div>
     <div class="modal-field">
       <div class="field-label">Categoría</div>
-      <input type="text" id="ins-categoria" class="field" placeholder="Ej: Frutas — escribí una nueva o elegí">
+      <input type="text" id="ins-categoria" class="field" placeholder="Ej: Frutas (escribí una nueva o elegí)">
       <!-- Z1 (Ronda 7): colapsadas por defecto (son unas diez). -->
       <button type="button" style="background:transparent;border:none;color:var(--muted);font-size:var(--fs-xs);font-weight:var(--fw-medium);cursor:pointer;padding:6px 0;display:flex;align-items:center;gap:4px" onclick="toggleInsCategoriasChips()">
         Ver categorías existentes <i class="ph ph-caret-down" id="ins-categorias-caret"></i>
@@ -1106,7 +1106,7 @@ textarea.field{height:auto}
       </div>
       <div class="modal-field">
         <div class="field-label">Cantidad comprada (<span id="g-cantidad-unidad">unidades</span>)
-          <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Escribila en la medida del insumo (la que está entre paréntesis): si compraste 5 kg y el insumo se mide en gramos, escribí 5000. Si compraste una caja de 100 unidades, escribí 100 — no 1. El costo del insumo se recalcula solo, como promedio con el stock que ya tenías.</p></details>
+          <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Escribila en la medida del insumo (la que está entre paréntesis): si compraste 5 kg y el insumo se mide en gramos, escribí 5000. Si compraste una caja de 100 unidades, escribí 100, no 1. El costo del insumo se recalcula solo, como promedio con el stock que ya tenías.</p></details>
         </div>
         <input type="number" id="g-cantidad" placeholder="2000" min="0" step="0.01" oninput="updateGastoCostoPreview()">
       </div>
@@ -1116,7 +1116,7 @@ textarea.field{height:auto}
     <div id="g-campos-capex" style="display:none">
       <div class="modal-field">
         <div class="field-label">Vida útil (meses)
-          <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>El gasto no resta de golpe de la utilidad — se reparte (deprecia) a lo largo de estos meses.</p></details>
+          <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>El gasto no resta de golpe de la utilidad: se reparte (deprecia) a lo largo de estos meses.</p></details>
         </div>
         <input type="number" id="g-vida-util" placeholder="36" min="1" step="1">
       </div>
@@ -1362,7 +1362,7 @@ textarea.field{height:auto}
           <input type="date" id="venta-fecha" class="field" style="max-width:180px" onchange="renderVentaMasResumen()">
         </div>
         <div id="venta-cliente-nuevo-form" style="display:none;flex-direction:column;gap:8px;padding:10px;background:var(--bg);border:1px solid var(--line);border-radius:9px">
-          <span style="font-size:var(--fs-xs);font-weight:var(--fw-bold);color:var(--ink)">Cliente nuevo — completa sus datos (opcional)</span>
+          <span style="font-size:var(--fs-xs);font-weight:var(--fw-bold);color:var(--ink)">Cliente nuevo: completa sus datos (opcional)</span>
           <input type="text" id="venta-cliente-telefono" class="field field-sm" placeholder="Teléfono">
           <input type="text" id="venta-cliente-direccion" class="field field-sm" placeholder="Dirección">
         </div>
@@ -1472,9 +1472,9 @@ textarea.field{height:auto}
         </div>
         <p class="item-sub" id="payload-nivel-msg" style="margin-bottom:10px"></p>
         <p class="item-sub" style="margin-bottom:10px">Transferencia por sincronización (estado completo, <b>sin tope</b>): <strong id="payload-transferencia">0</strong> caracteres</p>
-        <div class="card-title" style="font-size:var(--fs-sm);margin-bottom:6px">Catálogo — cuenta contra el tope</div>
+        <div class="card-title" style="font-size:var(--fs-sm);margin-bottom:6px">Catálogo (cuenta contra el tope)</div>
         <div id="payload-desglose-catalogo" style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px"></div>
-        <div class="card-title" style="font-size:var(--fs-sm);margin-bottom:6px">Filas append-only — no cuentan contra el tope</div>
+        <div class="card-title" style="font-size:var(--fs-sm);margin-bottom:6px">Filas append-only (no cuentan contra el tope)</div>
         <div id="payload-desglose-append" style="display:flex;flex-direction:column;gap:4px"></div>
       </div>
       <div class="solo-sheets">
@@ -1656,7 +1656,7 @@ function loadState() {
   let parsed = null;
   if (raw) {
     try { parsed = JSON.parse(raw); }
-    catch (e) { showToast('Los datos guardados estaban corruptos — se abrió un estado nuevo'); }
+    catch (e) { showToast('Los datos guardados estaban corruptos. Se abrió un estado nuevo'); }
   }
   state = migrarState_(parsed);
   restaurarConteoEnProgresoLocal();
@@ -1689,7 +1689,7 @@ function saveState() {
     schedulePush();
   } catch (e) {
     showPersistentError(
-      'No se pudo guardar — el almacenamiento del navegador está lleno o no disponible.',
+      'No se pudo guardar: el almacenamiento del navegador está lleno o no disponible.',
       'Exportar respaldo ahora',
       () => { exportVentasCSV(); exportInventarioCSV(); }
     );
@@ -1844,7 +1844,7 @@ async function pullSupabase_() {
     r = await CrumblySupabaseSync.pull(sb);
     if (!r.ok) return r;
     if (mutacionesLocales === antes) break;
-    if (intento === 2) return { ok: false, error: 'hubo cambios mientras se descargaba — se reintenta en la próxima sincronización' };
+    if (intento === 2) return { ok: false, error: 'hubo cambios mientras se descargaba, se reintenta en la próxima sincronización' };
     if (loadSupabaseBase()) { const p = await pushSupabase_(); if (!p.ok) return p; }
   }
   // Sin fila de config = Supabase todavía vacío (falta migrarASupabase).
@@ -2056,7 +2056,7 @@ function renderPedidos() {
     <details class="adiciones-lista pedidos-historial pedidos-anteriores"${antPrevio && antPrevio.open ? ' open' : ''}>
       <summary><span>De días anteriores (${anteriores.length})</span></summary>
       <div class="adiciones-opciones">
-        <div class="historial-fila item-sub">Pedidos de otros días que quedaron sin marcar. Seguramente ya se entregaron — por eso no se mezclan con los de hoy. Marcarlos no cambia las ventas.</div>
+        <div class="historial-fila item-sub">Pedidos de otros días que quedaron sin marcar. Seguramente ya se entregaron, por eso no se mezclan con los de hoy. Marcarlos no cambia las ventas.</div>
         ${anteriores.map(v => `<div class="historial-fila">
           <div style="flex:1;min-width:0">
             <div><b>${nombrePedidoHtml_(v, turnos)}</b> <span class="item-sub">· ${diaCorto(v.fecha)} ${hora(v.fecha)} · ${v.estado === 'listo' ? 'listo' : 'por preparar'}</span></div>
@@ -2254,7 +2254,7 @@ function pushInBackground() {
         if (!r.ok) { updateSyncStatus('Error al sincronizar: ' + (r.error || 'desconocido'), true); return; }
         updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
       })
-      .catch(() => updateSyncStatus('Sin conexión con el backend — los cambios quedan solo en este navegador por ahora', true));
+      .catch(() => updateSyncStatus('Sin conexión con el backend. Los cambios quedan solo en este navegador por ahora', true));
     return;
   }
   const usuario = (auth.getCurrentUser() && auth.getCurrentUser().email) || '';
@@ -2276,7 +2276,7 @@ function pushInBackground() {
           'Ver detalle en Ajustes',
           () => openModal('modal-ajustes')
         );
-        updateSyncStatus('Bloqueado por tamaño — ver Ajustes', true);
+        updateSyncStatus('Bloqueado por tamaño (ver Ajustes)', true);
         return;
       }
       // U4 (C2): otro dispositivo escribió el catálogo desde la última
@@ -2298,13 +2298,13 @@ function pushInBackground() {
       if (r.sizeInfo && r.sizeInfo.nivel === 'advertencia') {
         const queMide = r.sizeInfo.fase === 'post' ? 'El catálogo' : 'El estado completo';
         showPersistentError(
-          queMide + ' va en ' + r.sizeInfo.tam.toLocaleString('es-CO') + ' de ' + r.sizeInfo.tope.toLocaleString('es-CO') + ' caracteres (' + Math.round(r.sizeInfo.pct * 100) + '%) — se acerca al tope de una celda de Sheets.',
+          queMide + ' va en ' + r.sizeInfo.tam.toLocaleString('es-CO') + ' de ' + r.sizeInfo.tope.toLocaleString('es-CO') + ' caracteres (' + Math.round(r.sizeInfo.pct * 100) + '%), se acerca al tope de una celda de Sheets.',
           'Ver desglose en Ajustes',
           () => openModal('modal-ajustes')
         );
       }
     })
-    .catch(() => updateSyncStatus('Sin conexión con el backend — los cambios quedan solo en este navegador por ahora', true));
+    .catch(() => updateSyncStatus('Sin conexión con el backend. Los cambios quedan solo en este navegador por ahora', true));
 }
 
 // U4 (C2): un push chocó contra una versión de catálogo más nueva.
@@ -2324,9 +2324,9 @@ function resolverConflictoDePush_(r) {
   refreshAll();
   if (conflicts.length) {
     mostrarConflictosCatalogo(conflicts);
-    updateSyncStatus('Conflicto de sincronización — ' + conflicts.length + ' registro(s) por revisar', true);
+    updateSyncStatus('Conflicto de sincronización: ' + conflicts.length + ' registro(s) por revisar', true);
   } else {
-    updateSyncStatus('Se combinaron cambios de otro dispositivo — reintentando sincronizar');
+    updateSyncStatus('Se combinaron cambios de otro dispositivo. Reintentando sincronizar');
     saveState(); // vuelve a intentar con la nueva base — ya no debería chocar
   }
 }
@@ -2456,7 +2456,7 @@ function pullOnLoad() {
         updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
         refreshAll();
       })
-      .catch(() => updateSyncStatus('Trabajando sin conexión con el backend — se sincronizará cuando vuelva la red', true));
+      .catch(() => updateSyncStatus('Trabajando sin conexión con el backend. Se sincronizará cuando vuelva la red', true));
     return;
   }
   CrumblySync.pull(auth.getBackendUrl(), auth.getToken())
@@ -2500,13 +2500,13 @@ function pullOnLoad() {
       refreshAll();
       if (conflicts.length) {
         mostrarConflictosCatalogo(conflicts);
-        updateSyncStatus('Conflicto de sincronización — ' + conflicts.length + ' registro(s) por revisar', true);
+        updateSyncStatus('Conflicto de sincronización: ' + conflicts.length + ' registro(s) por revisar', true);
       } else {
         updateSyncStatus('Se combinaron cambios de otro dispositivo · ' + formatSyncTime(state.config.lastSync));
         saveState(); // sincroniza de vuelta el resultado del merge con la nueva base
       }
     })
-    .catch(() => updateSyncStatus('Trabajando sin conexión con el backend — se sincronizará cuando vuelva la red', true));
+    .catch(() => updateSyncStatus('Trabajando sin conexión con el backend. Se sincronizará cuando vuelva la red', true));
 }
 // T0: panel de Ajustes — mismo cálculo que motivó la tarea (medido en la
 // consola a mano antes de esto), ahora siempre a un clic.
@@ -2528,7 +2528,7 @@ function renderPayloadPanel() {
   const faseEl = document.getElementById('payload-fase-estado');
   if (info.fase === 'post') { faseEl.textContent = '🟢 Fase confirmada: POST-migración'; faseEl.style.color = 'var(--muted)'; }
   else if (info.fase === 'pre') { faseEl.textContent = '🟡 Fase confirmada: PRE-migración'; faseEl.style.color = 'var(--muted)'; }
-  else { faseEl.textContent = '⚪ Fase SIN CONFIRMAR — advierte, nunca bloquea'; faseEl.style.color = '#c98a1f'; }
+  else { faseEl.textContent = '⚪ Fase SIN CONFIRMAR: advierte, nunca bloquea'; faseEl.style.color = '#c98a1f'; }
   document.getElementById('payload-alarma-motivo').textContent =
     'Midiendo: ' + info.motivo + '.';
   document.getElementById('payload-tamano').textContent = info.tam.toLocaleString('es-CO');
@@ -2541,7 +2541,7 @@ function renderPayloadPanel() {
   const msg = document.getElementById('payload-nivel-msg');
   const queMide = info.fase === 'post' ? 'el catálogo' : 'el estado completo';
   if (info.nivel === 'bloqueado') { msg.textContent = 'Bloqueado: ' + queMide + ' supera el tope de una celda de Sheets. La sincronización se rechaza para no perder datos en silencio.'; msg.style.color = 'var(--danger)'; }
-  else if (info.nivel === 'advertencia') { msg.textContent = queMide.charAt(0).toUpperCase() + queMide.slice(1) + ' se acerca al tope de una celda de Sheets' + (info.fase === 'sin_confirmar' ? ' (sin confirmar todavía — no bloquearía aunque lo superara)' : '') + '.'; msg.style.color = '#c98a1f'; }
+  else if (info.nivel === 'advertencia') { msg.textContent = queMide.charAt(0).toUpperCase() + queMide.slice(1) + ' se acerca al tope de una celda de Sheets' + (info.fase === 'sin_confirmar' ? ' (sin confirmar todavía, no bloquearía aunque lo superara)' : '') + '.'; msg.style.color = '#c98a1f'; }
   else { msg.textContent = 'Dentro de rango normal.'; msg.style.color = 'var(--muted)'; }
 
   const fila = d => `
@@ -2565,11 +2565,11 @@ function renderReporteIntegridad() {
   const aportesAnomalos = CrumblyCore.getProductosConAporteAnomalo(state);
   const checks = [
     { titulo: 'Insumos sin unidad definida', lista: r.sinUnidad, aItem: i => i.nombre },
-    { titulo: 'Insumos con costo fuera de rango', lista: r.costoFueraDeRango, aItem: i => i.nombre + ' — ' + fmt(i.costo) + '/' + i.unidad },
+    { titulo: 'Insumos con costo fuera de rango', lista: r.costoFueraDeRango, aItem: i => i.nombre + ' · ' + fmt(i.costo) + '/' + i.unidad },
     { titulo: 'Insumos con stock pero sin costo cargado', lista: r.stockConCostoCero, aItem: i => i.nombre },
     { titulo: 'Insumos con stock negativo o faltante pendiente', lista: r.stockNegativoOFaltante, aItem: i => i.nombre + ' (cant. ' + fmtCant(i.cantidad, i.unidad) + (i.faltante ? ', faltante ' + fmtCant(i.faltante, i.unidad) : '') + ')' },
-    { titulo: 'Ventas cuyo costo superó lo vendido', lista: r.ventasCostoMayorATotal, aItem: v => (v.fecha ? new Date(v.fecha).toLocaleDateString('es-CO') : v.id) + ' — total ' + fmt(v.total) },
-    { titulo: 'Productos cuyo costo actual supera su precio', lista: r.productosCostoMayorAPrecio, aItem: p => p.nombre + ' — costo ' + fmt(p.costo) + ' > precio ' + fmt(p.precio) },
+    { titulo: 'Ventas cuyo costo superó lo vendido', lista: r.ventasCostoMayorATotal, aItem: v => (v.fecha ? new Date(v.fecha).toLocaleDateString('es-CO') : v.id) + ' · total ' + fmt(v.total) },
+    { titulo: 'Productos cuyo costo actual supera su precio', lista: r.productosCostoMayorAPrecio, aItem: p => p.nombre + ' · costo ' + fmt(p.costo) + ' > precio ' + fmt(p.precio) },
     { titulo: 'Componentes que aportan más del 50% del precio de venta', lista: aportesAnomalos, aItem: a => a.productoNombre + ': ' + a.componenteNombre + ' aporta ' + fmt(a.aporteAbsoluto) + ' (' + Math.round(a.pctDelPrecio * 100).toLocaleString('es-CO') + '% del precio)' },
     // B1 (Ronda 9): un componente cuyo refId no resuelve donde su `tipo`
     // dice que debería — el costo de ESE producto/preparación no
@@ -2597,7 +2597,7 @@ function renderReporteIntegridad() {
         <span class="item-sub" style="color:${r.insumosHuerfanos.length ? 'var(--danger)' : 'var(--muted)'}">Insumos huérfanos (sin ninguna receta que los use)</span>
         <span class="badge" style="background:${r.insumosHuerfanos.length ? 'var(--danger)' : 'var(--soft)'}">${r.insumosHuerfanos.length}</span>
       </div>
-      ${r.insumosHuerfanos.length ? '<ul style="margin:4px 0 0 18px;padding:0;font-size:var(--fs-sm);color:var(--muted)">' + r.insumosHuerfanos.map(i => '<li>' + esc(i.nombre) + ' — ' + fmt(i.costo) + '</li>').join('') + '</ul>' : ''}
+      ${r.insumosHuerfanos.length ? '<ul style="margin:4px 0 0 18px;padding:0;font-size:var(--fs-sm);color:var(--muted)">' + r.insumosHuerfanos.map(i => '<li>' + esc(i.nombre) + ' · ' + fmt(i.costo) + '</li>').join('') + '</ul>' : ''}
     </div>` +
     renderSeccionIngredientesEmpaque_(r.ingredientesEnEmpaques);
 }
@@ -2648,7 +2648,7 @@ function renderSeccionIngredientesEmpaque_(items) {
         ${items.map(i => `
           <label style="display:flex;gap:8px;align-items:flex-start;font-size:var(--fs-sm);color:var(--muted)">
             <input type="checkbox" class="chk-reclasificar-empaque" value="${esc(i.id)}" checked style="margin-top:3px">
-            <span>${esc(i.nombre)} (${fmt(i.costo)}, señal: ${i.senal === 'esAdicion' ? 'se vende como adición' : 'categoría "' + esc(i.categoria) + '"'})${i.productosAfectados.length ? ' — ' + i.productosAfectados.map(p => esc(p.productoNombre) + ': ' + fmt(p.aporte) + (p.pctDelPrecio !== null ? ' (' + Math.round(p.pctDelPrecio * 100) + '% del precio)' : '')).join(', ') : ''}</span>
+            <span>${esc(i.nombre)} (${fmt(i.costo)}, señal: ${i.senal === 'esAdicion' ? 'se vende como adición' : 'categoría "' + esc(i.categoria) + '"'})${i.productosAfectados.length ? ' · ' + i.productosAfectados.map(p => esc(p.productoNombre) + ': ' + fmt(p.aporte) + (p.pctDelPrecio !== null ? ' (' + Math.round(p.pctDelPrecio * 100) + '% del precio)' : '')).join(', ') : ''}</span>
           </label>`).join('')}
       </div>
       <button class="btn-primary" style="margin-top:8px" onclick="abrirPreviewLoteReclasificacion_()">Reclasificar seleccionados a materia prima</button>
@@ -2684,7 +2684,7 @@ function renderPreviewLoteReclasificacion_(preview) {
     overlay = document.createElement('div');
     overlay.id = 'modal-preview-lote';
     overlay.className = 'modal-overlay';
-    overlay.innerHTML = '<div class="modal"><div class="modal-title-row"><span class="modal-title">Vista previa — reclasificar a materia prima</span><button class="modal-close" onclick="closeModal(\'modal-preview-lote\')"><i class="ph ph-x"></i></button></div><div id="preview-lote-contenido" style="display:flex;flex-direction:column;gap:12px"></div></div>';
+    overlay.innerHTML = '<div class="modal"><div class="modal-title-row"><span class="modal-title">Vista previa: reclasificar a materia prima</span><button class="modal-close" onclick="closeModal(\'modal-preview-lote\')"><i class="ph ph-x"></i></button></div><div id="preview-lote-contenido" style="display:flex;flex-direction:column;gap:12px"></div></div>';
     document.body.appendChild(overlay);
   }
   const utilizables = preview.filter(p => !p.bloqueado);
@@ -2712,7 +2712,7 @@ function renderPreviewLoteReclasificacion_(preview) {
 function confirmarLoteReclasificacion_() {
   const ids = loteReclasificacionUtilizables_;
   const r = CrumblyCore.aplicarLoteReclasificacion(state, ids);
-  if (!r.ok) { alert('No se pudo aplicar el lote — algo cambió desde la vista previa. Volvé a abrirla.'); return; }
+  if (!r.ok) { alert('No se pudo aplicar el lote: algo cambió desde la vista previa. Volvé a abrirla.'); return; }
   saveState();
   closeModal('modal-preview-lote');
   renderReporteIntegridad(); renderInventario(); renderReportes();
@@ -2752,7 +2752,7 @@ function showModalResultado_(titulo, resumenTexto, htmlDetalle) {
 // ya eran agnósticos de bucket, solo la UI asumía uno compartido.
 function abrirResolverDuplicado_(idA, idB) {
   const fa = CrumblyCore.findInsumoConTipo(state, idA), fb = CrumblyCore.findInsumoConTipo(state, idB);
-  if (!fa || !fb) { showToast('Uno de los dos insumos ya no existe — el reporte puede estar desactualizado'); renderReporteIntegridad(); return; }
+  if (!fa || !fb) { showToast('Uno de los dos insumos ya no existe. El reporte puede estar desactualizado'); renderReporteIntegridad(); return; }
   const usoA = CrumblyCore.findProductosUsandoInsumo(state, idA), usoB = CrumblyCore.findProductosUsandoInsumo(state, idB);
   let overlay = document.getElementById('modal-resolver-duplicado');
   if (!overlay) {
@@ -2774,7 +2774,7 @@ function abrirResolverDuplicado_(idA, idB) {
   document.getElementById('resolver-duplicado-contenido').innerHTML =
     '<div class="item-sub">Elegí el que tiene los datos correctos <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>El que elijas se conserva; las recetas del otro pasan a usar el elegido y el otro queda libre para borrarlo aparte. Conservar uno no cambia su tipo.</p></details></div>' +
     '<div style="display:flex;gap:10px">' + tarjeta(fa, usoA, idA, idB) + tarjeta(fb, usoB, idB, idA) + '</div>' +
-    (fa.tipo !== fb.tipo ? '<div style="font-size:var(--fs-xs);color:var(--danger)">Están en tipos distintos (' + (TIPO_INSUMO_LABEL[fa.tipo] || fa.tipo) + ' / ' + (TIPO_INSUMO_LABEL[fb.tipo] || fb.tipo) + ') — conservar uno no cambia su clasificación, solo repunta las referencias del otro hacia este.</div>' : '');
+    (fa.tipo !== fb.tipo ? '<div style="font-size:var(--fs-xs);color:var(--danger)">Están en tipos distintos (' + (TIPO_INSUMO_LABEL[fa.tipo] || fa.tipo) + ' / ' + (TIPO_INSUMO_LABEL[fb.tipo] || fb.tipo) + '). Conservar uno no cambia su clasificación, solo repunta las referencias del otro hacia este.</div>' : '');
   openModal('modal-resolver-duplicado');
 }
 function previewRepunte_(idDescartado, idConservado) {
@@ -2785,12 +2785,12 @@ function previewRepunte_(idDescartado, idConservado) {
     overlay = document.createElement('div');
     overlay.id = 'modal-preview-repunte';
     overlay.className = 'modal-overlay';
-    overlay.innerHTML = '<div class="modal"><div class="modal-title-row"><span class="modal-title">Vista previa — repuntar referencias</span><button class="modal-close" onclick="closeModal(\'modal-preview-repunte\')"><i class="ph ph-x"></i></button></div><div id="preview-repunte-contenido" style="display:flex;flex-direction:column;gap:10px"></div></div>';
+    overlay.innerHTML = '<div class="modal"><div class="modal-title-row"><span class="modal-title">Vista previa: repuntar referencias</span><button class="modal-close" onclick="closeModal(\'modal-preview-repunte\')"><i class="ph ph-x"></i></button></div><div id="preview-repunte-contenido" style="display:flex;flex-direction:column;gap:10px"></div></div>';
     document.body.appendChild(overlay);
   }
   document.getElementById('preview-repunte-contenido').innerHTML = `
     <div style="font-size:var(--fs-sm);color:var(--muted)">Las recetas pasan a usar "${esc(conservado.nombre)}" <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Todas las recetas que usan el insumo descartado van a apuntar a "${esc(conservado.nombre)}". El costo de cada producto sí cambia: abajo ves el antes y el después.</p></details></div>
-    ${preview.productos.length ? preview.productos.map(p => desgloseFila_(p.productoNombre, p.desgloseAntes, p.desgloseDespues)).join('') : '<div style="font-size:var(--fs-xs);color:var(--muted)">Ninguna receta usa el insumo descartado — no hay nada que repuntar, pero igual queda huérfano y se puede borrar.</div>'}
+    ${preview.productos.length ? preview.productos.map(p => desgloseFila_(p.productoNombre, p.desgloseAntes, p.desgloseDespues)).join('') : '<div style="font-size:var(--fs-xs);color:var(--muted)">Ninguna receta usa el insumo descartado. No hay nada que repuntar, pero igual queda huérfano y se puede borrar.</div>'}
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn-secondary" onclick="closeModal('modal-preview-repunte')">Cancelar</button>
       <button class="btn-primary" onclick="confirmarRepunte_('${idDescartado}','${idConservado}')">Confirmar repunte</button>
@@ -2847,7 +2847,7 @@ function getAlertasCentro_() {
   // 1 (más grave) — plata que se pierde en cada venta de este producto,
   // con el componente culpable nombrado (Y1).
   r.productosCostoMayorAPrecio.forEach(p => alertas.push({
-    sev: 1, texto: textoAporteCulpable_(p.id, p.nombre, 'se vende BAJO COSTO — costo ' + fmt(p.costo) + ', precio ' + fmt(p.precio)),
+    sev: 1, texto: textoAporteCulpable_(p.id, p.nombre, 'se vende BAJO COSTO: costo ' + fmt(p.costo) + ', precio ' + fmt(p.precio)),
     accion: () => { closeModal('modal-alertas'); navTo('productos'); openModalProducto(p.id); }
   }));
   // 1.5 — margen bajo (costo > 60% del precio, sin llegar a pérdida) —
@@ -2888,7 +2888,7 @@ function getAlertasCentro_() {
     const huerfano = d.a.usos === 0 ? d.a : d.b;
     const enUso = d.a.usos === 0 ? d.b : d.a;
     alertas.push({
-      sev: 3, texto: '"' + enUso.nombre + '" y "' + huerfano.nombre + '" parecen el mismo insumo — el costeo usa "' + enUso.nombre + '" (' + fmt(enUso.costo) + '), "' + huerfano.nombre + '" quedó sin ninguna receta',
+      sev: 3, texto: '"' + enUso.nombre + '" y "' + huerfano.nombre + '" parecen el mismo insumo. El costeo usa "' + enUso.nombre + '" (' + fmt(enUso.costo) + '), "' + huerfano.nombre + '" quedó sin ninguna receta',
       accion: () => { closeModal('modal-alertas'); navTo('inventario'); openInsumoModal(huerfano.id); }
     });
   });
@@ -2900,7 +2900,7 @@ function getAlertasCentro_() {
   // problema, nunca solo información).
   r.insumosDuplicadosEntreBuckets.forEach(d => {
     alertas.push({
-      sev: 3, texto: '"' + d.a.nombre + '" está en dos tipos a la vez: ' + (TIPO_INSUMO_LABEL[d.a.tipo] || d.a.tipo) + ' (' + fmt(d.a.costo) + ') y ' + (TIPO_INSUMO_LABEL[d.b.tipo] || d.b.tipo) + ' (' + fmt(d.b.costo) + ') — cada copia cuenta su costo distinto',
+      sev: 3, texto: '"' + d.a.nombre + '" está en dos tipos a la vez: ' + (TIPO_INSUMO_LABEL[d.a.tipo] || d.a.tipo) + ' (' + fmt(d.a.costo) + ') y ' + (TIPO_INSUMO_LABEL[d.b.tipo] || d.b.tipo) + ' (' + fmt(d.b.costo) + '). Cada copia cuenta su costo distinto',
       accion: () => { closeModal('modal-alertas'); navTo('inventario'); openInsumoModal(d.a.id); }
     });
   });
@@ -2924,7 +2924,7 @@ function getAlertasCentro_() {
   // con Sheets: Supabase no tiene tope de celda.
   const sizeInfo = usaSupabase ? { nivel: 'ok' } : CrumblySync.getAlarmSizeInfo(stateSinConteoEnProgreso(), CrumblySync.getFaseConocida());
   if (sizeInfo.nivel === 'bloqueado') alertas.push({
-    sev: 1, texto: 'Sincronización BLOQUEADA por tamaño — ver Ajustes',
+    sev: 1, texto: 'Sincronización BLOQUEADA por tamaño (ver Ajustes)',
     accion: () => { closeModal('modal-alertas'); openModal('modal-ajustes'); }
   });
   else if (sizeInfo.nivel === 'advertencia') alertas.push({
@@ -2967,7 +2967,7 @@ function abrirCentroAlertas() {
         <button style="width:100%;text-align:left;background:var(--bg);border:none;cursor:pointer;border-radius:10px;padding:12px" onclick="ejecutarAccionAlerta(${i})">
           <span style="font-size:var(--fs-sm);color:var(--ink)">${esc(a.texto)}</span>
         </button>`).join('')
-    : '<p class="empty">Sin alertas — todo en orden.</p>';
+    : '<p class="empty">Sin alertas, todo en orden.</p>';
   openModal('modal-alertas');
 }
 function ejecutarAccionAlerta(i) {
@@ -2990,7 +2990,7 @@ async function renderMigrationStatus() {
   const detalleEl = document.getElementById('migracion-detalle');
   detalleEl.innerHTML = '';
   if (!auth.isAuthenticated() || !auth.getBackendUrl()) {
-    faseEl.textContent = 'Sin sesión — no se puede consultar.';
+    faseEl.textContent = 'Sin sesión, no se puede consultar.';
     return;
   }
   let r;
@@ -3003,15 +3003,15 @@ async function renderMigrationStatus() {
   if (!r || !r.ok) { faseEl.textContent = 'No se pudo consultar: ' + ((r && r.error) || 'error desconocido'); return; }
 
   const faseLabel = r.fase === 'pre'
-    ? '🟡 PRE-migración — el catálogo todavía tiene transacciones embebidas en la celda.'
-    : '🟢 POST-migración — la celda solo tiene catálogo, las transacciones viven en filas.';
+    ? '🟡 PRE-migración: el catálogo todavía tiene transacciones embebidas en la celda.'
+    : '🟢 POST-migración: la celda solo tiene catálogo, las transacciones viven en filas.';
   faseEl.textContent = faseLabel;
   renderPayloadPanel(); // V1: ya se confirmó la fase con el backend — re-dibuja la alarma con el dato certero, no el que había en caché al abrir el panel
 
   if (!r.ultima) { detalleEl.innerHTML = '<p class="item-sub">Todavía no se registró ninguna corrida de migrarAAppendOnly().</p>'; return; }
   const u = r.ultima;
   const colorVeredicto = u.veredicto === 'OK' ? 'var(--muted)' : 'var(--danger)';
-  let html = `<p class="item-sub">Última corrida: ${esc(new Date(u.ts).toLocaleString('es-CO'))} — <strong style="color:${colorVeredicto}">${esc(u.veredicto)}</strong></p>`;
+  let html = `<p class="item-sub">Última corrida: ${esc(new Date(u.ts).toLocaleString('es-CO'))} · <strong style="color:${colorVeredicto}">${esc(u.veredicto)}</strong></p>`;
   if (u.reporte && !u.reporte.problemas) {
     html += Object.entries(u.reporte).map(([col, r2]) => `
       <div style="display:flex;justify-content:space-between;font-size:var(--fs-sm)">
@@ -3115,7 +3115,7 @@ function mostrarConflictosCatalogo(conflicts) {
   conflictosCatalogoPendientes = conflicts;
   renderConflictosCatalogo_();
   showPersistentError(
-    conflicts.length + ' registro(s) se editaron en dos dispositivos a la vez — nada se perdió, pero hay que elegir cuál versión se queda.',
+    conflicts.length + ' registro(s) se editaron en dos dispositivos a la vez. Nada se perdió, pero hay que elegir cuál versión se queda.',
     'Revisar conflictos',
     () => document.getElementById('modal-conflictos-catalogo').classList.add('open')
   );
@@ -3531,7 +3531,7 @@ function saveInsumo() {
   const sospecha = CrumblyCore.checkCostoSospechoso(state, unidadElegida, datos.costo, editId || undefined);
   if (sospecha) {
     const seguir = confirm(
-      fmtCostoUnitario_(sospecha.costoUnitario) + ' por ' + unidadElegida + ' — muy por encima de lo normal ' +
+      fmtCostoUnitario_(sospecha.costoUnitario) + ' por ' + unidadElegida + ', muy por encima de lo normal ' +
       '(mediana de insumos en ' + unidadElegida + ': ' + fmtCostoUnitario_(sospecha.mediana) + ' por ' + unidadElegida + ').\n\n' +
       '¿Estás ingresando el precio del paquete completo en vez del costo por ' + unidadElegida + '?\n\n' +
       '¿Guardar de todas formas?'
@@ -3582,7 +3582,7 @@ function saveInsumo() {
       let msg = 'Cambiar "' + nombre + '" de ' + TIPO_INSUMO_LABEL[editTipo] + ' a ' + TIPO_INSUMO_LABEL[bucketNuevo] + '.\n\n';
       if (afectados.length) {
         msg += 'Usado (directo o vía preparación) por ' + afectados.length + ' producto(s): ' + afectados.map(p => p.nombre).join(', ') + '.\n' +
-          'Van a seguir funcionando igual — el id no cambia.\n\n';
+          'Van a seguir funcionando igual: el id no cambia.\n\n';
       }
       if ((editTipo === 'empaques') !== (bucketNuevo === 'empaques')) {
         msg += 'Empaque ↔ materia prima también cambia cómo se reparte su costo entre comida y empaque en los reportes (el costo TOTAL del producto no cambia).\n\n';
@@ -3681,8 +3681,8 @@ function intentarEliminarInsumo_(id, { pedirConfirmacion = true } = {}) {
   const usado = CrumblyCore.findProductosUsandoInsumo(state, id);
   if (usado.productos.length || usado.preparaciones.length) {
     const partes = [];
-    if (usado.productos.length) partes.push(usado.productos.length + ' producto(s) — ' + usado.productos.map(p => p.nombre).join(', '));
-    if (usado.preparaciones.length) partes.push(usado.preparaciones.length + ' preparación(es) — ' + usado.preparaciones.map(p => p.nombre).join(', '));
+    if (usado.productos.length) partes.push(usado.productos.length + ' producto(s): ' + usado.productos.map(p => p.nombre).join(', '));
+    if (usado.preparaciones.length) partes.push(usado.preparaciones.length + ' preparación(es): ' + usado.preparaciones.map(p => p.nombre).join(', '));
     alert('No se puede eliminar: lo usan ' + partes.join(' y ') + '.\n\nQuítalo de esas recetas primero.');
     return false;
   }
@@ -3908,7 +3908,7 @@ function onPrepComponenteBuscar(rowId) {
 // marcada y no se puede guardar hasta elegir otro o quitarla con ✕.
 function opcionRefPerdida_(list, selectedId, tipo) {
   if (!selectedId || list.some(x => x.id === selectedId)) return '';
-  const texto = tipo === 'preparacion' ? '— (preparación no encontrada) —' : '— (insumo no encontrado) —';
+  const texto = tipo === 'preparacion' ? '(preparación no encontrada)' : '(insumo no encontrado)';
   return `<option value="" data-perdido="1" selected>${texto}</option>`;
 }
 function hayFilaConRefPerdida_(wrapId) {
@@ -4017,8 +4017,8 @@ function deletePreparacion(id) {
   const usadaPorPreparaciones = CrumblyCore.findPreparacionesUsandoPreparacion(state, id);
   if (usadaPorProductos.length || usadaPorPreparaciones.length) {
     const partes = [];
-    if (usadaPorProductos.length) partes.push(usadaPorProductos.length + ' producto(s) — ' + usadaPorProductos.map(p => p.nombre).join(', '));
-    if (usadaPorPreparaciones.length) partes.push(usadaPorPreparaciones.length + ' preparación(es) — ' + usadaPorPreparaciones.map(p => p.nombre).join(', '));
+    if (usadaPorProductos.length) partes.push(usadaPorProductos.length + ' producto(s): ' + usadaPorProductos.map(p => p.nombre).join(', '));
+    if (usadaPorPreparaciones.length) partes.push(usadaPorPreparaciones.length + ' preparación(es): ' + usadaPorPreparaciones.map(p => p.nombre).join(', '));
     alert('No se puede eliminar: la usan ' + partes.join(' y ') + '.\n\nQuítala de esas recetas primero.');
     return;
   }
@@ -4038,7 +4038,7 @@ function openModalLote(prepId) {
   const prep = state.preparaciones.find(p => p.id === prepId);
   if (!prep) return;
   document.getElementById('lote-prep-id').value = prepId;
-  document.getElementById('modal-lote-title').textContent = 'Producir lote — ' + prep.nombre;
+  document.getElementById('modal-lote-title').textContent = 'Producir lote de ' + prep.nombre;
   document.getElementById('lote-multiplicador').value = 1;
   document.getElementById('lote-gramos-obtenidos').value = '';
   renderLoteConsumoTeorico();
@@ -4077,7 +4077,7 @@ function renderLoteRendimiento() {
   const promedioEl = document.getElementById('lote-rendimiento-promedio');
   const adoptarBtn = document.getElementById('lote-adoptar-btn');
   if (promedio === null) {
-    promedioEl.textContent = '— (sin lotes todavía)';
+    promedioEl.textContent = 'Sin lotes todavía';
     adoptarBtn.style.display = 'none';
   } else {
     promedioEl.textContent = promedio.toFixed(1) + '%';
@@ -4201,7 +4201,7 @@ async function onProductoFotoChange(e) {
     return;
   }
   if (f.size > 10 * 1024 * 1024) {
-    showToast('La foto pesa más de 10MB — elegí una más liviana');
+    showToast('La foto pesa más de 10MB. Elegí una más liviana');
     e.target.value = '';
     return;
   }
@@ -4607,7 +4607,7 @@ function updateVentaDivididoPreview() {
   if (efectivoTxt === '' && transfTxt === '') { el.textContent = 'Escribe cuánto paga en efectivo; el resto queda en transferencia.'; el.style.color = 'var(--muted)'; return; }
   const suma = Math.round((parseFloat(efectivoTxt) || 0) + (parseFloat(transfTxt) || 0));
   if (suma === total) { el.textContent = 'Suma ' + fmt(suma) + ' ✓'; el.style.color = 'var(--muted)'; }
-  else { el.textContent = 'Suma ' + fmt(suma) + ' — el total de la venta es ' + fmt(total); el.style.color = 'var(--danger)'; }
+  else { el.textContent = 'Suma ' + fmt(suma) + ', pero el total de la venta es ' + fmt(total); el.style.color = 'var(--danger)'; }
 }
 // Subida de comprobante en curso, por modal. Bug real: confirmar mientras
 // decía "Subiendo…" guardaba la venta sin comprobante, y cuando la subida
@@ -4653,13 +4653,13 @@ async function onComprobanteChange(e, labelId) {
   if (!auth.isAuthenticated()) {
     label.textContent = f.name;
     setComprobanteValor(labelId, f.name);
-    showToast('Iniciá sesión para guardar el comprobante en Drive — por ahora solo se guarda el nombre');
+    showToast('Iniciá sesión para guardar el comprobante en Drive. Por ahora solo se guarda el nombre');
     return;
   }
   if (f.size > 10 * 1024 * 1024) {
     label.textContent = 'Subir comprobante';
     setComprobanteValor(labelId, '');
-    showToast('El archivo pesa más de 10MB — elige uno más liviano');
+    showToast('El archivo pesa más de 10MB. Elige uno más liviano');
     return;
   }
 
@@ -4779,7 +4779,7 @@ function renderVentaSugerencias_(texto) {
   const matches = getVentaBuscables().filter(x => !q || normalizarBusqueda_(x.nombre).includes(q)).slice(0, 30);
   if (!q && !matches.length) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
   wrap.innerHTML = matches.length
-    ? matches.map(m => `<button type="button" class="venta-sugerencia" onclick="selectVentaBuscado('${m.tipo}','${m.id}')" style="display:block;width:100%;text-align:left;padding:9px 12px;border:none;border-bottom:1px solid var(--line);background:transparent;cursor:pointer;font-size:var(--fs-sm);color:var(--text)">${esc(m.nombre)} — ${m.precioTexto}</button>`).join('')
+    ? matches.map(m => `<button type="button" class="venta-sugerencia" onclick="selectVentaBuscado('${m.tipo}','${m.id}')" style="display:block;width:100%;text-align:left;padding:9px 12px;border:none;border-bottom:1px solid var(--line);background:transparent;cursor:pointer;font-size:var(--fs-sm);color:var(--text)">${esc(m.nombre)} <span style="color:var(--muted)">· ${m.precioTexto}</span></button>`).join('')
     : '<div style="padding:10px 12px;font-size:var(--fs-sm);color:var(--muted)">Sin resultados</div>';
   wrap.style.display = 'block';
 }
@@ -4788,7 +4788,7 @@ function selectVentaBuscado(tipo, id) {
   if (!item) return;
   ventaDraftSelected = { tipo, id };
   const input = document.getElementById('venta-draft-producto');
-  input.value = item.nombre + ' — ' + precioVentaTexto_(tipo, item);
+  input.value = item.nombre + ' · ' + precioVentaTexto_(tipo, item);
   input.blur(); // en el celular baja el teclado y deja ver las adiciones
   document.getElementById('venta-buscar-sugerencias').style.display = 'none';
   renderDraftAdiciones();
@@ -5001,13 +5001,13 @@ function eliminarVenta(id) {
   if (!venta) return;
   const aproximado = !venta.consumoReal && venta.items.some(i => i.productoId);
   const aviso = aproximado
-    ? '¿Eliminar esta venta? Es una venta antigua sin registro exacto de consumo — se devolverá el inventario usando la receta ACTUAL de cada producto, aproximado si la receta cambió desde entonces.'
+    ? '¿Eliminar esta venta? Es una venta antigua sin registro exacto de consumo. Se devolverá el inventario usando la receta ACTUAL de cada producto, aproximado si la receta cambió desde entonces.'
     : '¿Eliminar esta venta? Se devolverá exactamente el stock que consumió.';
   // Un pedido que todavía se está preparando: que quien borra sepa que
   // también desaparece de la pantalla de Pedidos (saveState la redibuja).
   const enPreparacion = venta.estado === 'pendiente' || venta.estado === 'listo';
   const avisoPedido = enPreparacion
-    ? 'Este pedido todavía está en preparación (' + (venta.estado === 'listo' ? 'listo para entregar' : 'por preparar') + ') — si lo eliminás, también desaparece de la pantalla de Pedidos.\n\n'
+    ? 'Este pedido todavía está en preparación (' + (venta.estado === 'listo' ? 'listo para entregar' : 'por preparar') + '). Si lo eliminás, también desaparece de la pantalla de Pedidos.\n\n'
     : '';
   if (!confirm(avisoPedido + aviso)) return;
   borrarConSync_('ventas', id, () => CrumblyCore.revertVenta(state, venta));
@@ -5034,7 +5034,7 @@ function getReportVentas() { return hasCustomRange() ? CrumblyCore.getVentasByRa
 function getReportGastos() { return hasCustomRange() ? CrumblyCore.getGastosByRange(state.gastos, reportRangeStart, reportRangeEnd) : CrumblyCore.getGastosByPeriod(state.gastos, reportPeriod); }
 function getReportCascada() { return hasCustomRange() ? CrumblyCore.getCascadaUtilidadRango(state, reportRangeStart, reportRangeEnd) : CrumblyCore.getCascadaUtilidad(state, reportPeriod); }
 function getReportLabel() { return hasCustomRange() ? (reportRangeStart + ' a ' + reportRangeEnd) : getPeriodLabel(reportPeriod); }
-function getReportRangeLabel() { return hasCustomRange() ? (reportRangeStart + ' — ' + reportRangeEnd) : getPeriodRangeLabel(reportPeriod); }
+function getReportRangeLabel() { return hasCustomRange() ? (reportRangeStart + ' a ' + reportRangeEnd) : getPeriodRangeLabel(reportPeriod); }
 // P3.2: getBreakEven/getPrimeCost/getVarianza/getFoodCostPctRango... todas
 // piden un rango [inicio,fin] exacto (nunca period+ref) — un solo punto de
 // conversión, para que el tab de Costeo use SIEMPRE el mismo rango que ya
@@ -5235,7 +5235,7 @@ function renderVentasCostoInvalidoStripe_(ventasDelPeriodo) {
   }
   stripe.style.display = 'flex';
   document.getElementById('dash-costo-invalido-texto').textContent =
-    '⚠ ' + ventasCostoInvalidoDelPeriodo_.length + (ventasCostoInvalidoDelPeriodo_.length === 1 ? ' venta tiene' : ' ventas tienen') + ' un costo mal guardado (de antes de un arreglo) — la ganancia de este período no es confiable.';
+    '⚠ ' + ventasCostoInvalidoDelPeriodo_.length + (ventasCostoInvalidoDelPeriodo_.length === 1 ? ' venta tiene' : ' ventas tienen') + ' un costo mal guardado (de antes de un arreglo). La ganancia de este período no es confiable.';
   ganNeto.style.color = 'var(--danger)';
   ganNeto.title = 'No confiable: ' + ventasCostoInvalidoDelPeriodo_.length + ' venta(s) del período tienen un costo mal guardado (ver el aviso rojo)';
 }
@@ -5245,12 +5245,12 @@ function renderVentasCostoInvalido_() {
     overlay = document.createElement('div');
     overlay.id = 'modal-ventas-costo-invalido';
     overlay.className = 'modal-overlay';
-    overlay.innerHTML = '<div class="modal"><div class="modal-title-row"><span class="modal-title">Ventas con costo inválido</span><button class="modal-close" onclick="closeModal(\'modal-ventas-costo-invalido\')"><i class="ph ph-x"></i></button></div><p class="item-sub" style="margin-bottom:10px">El costo guardado al momento de vender supera lo que se cobró — revisalas o borralas una por una. No se excluyen solas del cálculo.</p><div id="ventas-costo-invalido-lista" style="display:flex;flex-direction:column;gap:8px"></div></div>';
+    overlay.innerHTML = '<div class="modal"><div class="modal-title-row"><span class="modal-title">Ventas con costo inválido</span><button class="modal-close" onclick="closeModal(\'modal-ventas-costo-invalido\')"><i class="ph ph-x"></i></button></div><p class="item-sub" style="margin-bottom:10px">El costo guardado al momento de vender supera lo que se cobró. Revisalas o borralas una por una. No se excluyen solas del cálculo.</p><div id="ventas-costo-invalido-lista" style="display:flex;flex-direction:column;gap:8px"></div></div>';
     document.body.appendChild(overlay);
   }
   document.getElementById('ventas-costo-invalido-lista').innerHTML = ventasCostoInvalidoDelPeriodo_.map(v => `
     <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:8px;background:var(--bg)">
-      <span style="font-size:var(--fs-sm);color:var(--ink)">${v.fecha ? esc(new Date(v.fecha).toLocaleDateString('es-CO')) : v.id} — total ${fmt(v.total)}</span>
+      <span style="font-size:var(--fs-sm);color:var(--ink)">${v.fecha ? esc(new Date(v.fecha).toLocaleDateString('es-CO')) : v.id} · total ${fmt(v.total)}</span>
       <button class="btn-icon danger" onclick="eliminarVenta('${v.id}');renderVentasCostoInvalido_()" title="Eliminar"><i class="ph ph-trash"></i></button>
     </div>`).join('') || '<p class="empty">Sin ventas de costo inválido en este período.</p>';
   openModal('modal-ventas-costo-invalido');
@@ -5273,10 +5273,10 @@ function setDashTab(tab) {
 
 const PRIME_COST_TECHO = 0.65;
 const MENU_ACCION = {
-  estrella: 'Mantener — es tu producto ideal, protege su calidad y precio.',
-  'caballo de batalla': 'Alta venta, bajo margen — sube el precio o bájale el costo sin que se note.',
-  enigma: 'Buen margen, poca venta — promociónalo o reubícalo en el menú.',
-  perro: 'Baja venta y bajo margen — reconsidera si sigue en el menú.'
+  estrella: 'Mantener: es tu producto ideal, protege su calidad y precio.',
+  'caballo de batalla': 'Alta venta, bajo margen: sube el precio o bájale el costo sin que se note.',
+  enigma: 'Buen margen, poca venta: promociónalo o reubícalo en el menú.',
+  perro: 'Baja venta y bajo margen: reconsidera si sigue en el menú.'
 };
 const MENU_ORDEN = ['estrella', 'caballo de batalla', 'enigma', 'perro'];
 const MENU_LABEL = { estrella: 'Estrella', 'caballo de batalla': 'Caballo de batalla', enigma: 'Enigma', perro: 'Perro' };
@@ -5331,7 +5331,7 @@ function renderReportesCosteo() {
           return `<div style="border:1px solid var(--line);border-radius:9px;padding:10px">
             <div style="font-weight:var(--fw-bold);font-size:var(--fs-sm);color:var(--ink)">${MENU_LABEL[clas]} (${items.length})</div>
             <div class="item-sub" style="margin:4px 0 8px">${esc(MENU_ACCION[clas])}</div>
-            ${items.length ? items.map(m => `<div class="item-sub">${esc(m.nombre)} — ${fmt(m.cmUnitario)}/u</div>`).join('') : '<div class="item-sub">—</div>'}
+            ${items.length ? items.map(m => `<div class="item-sub">${esc(m.nombre)} · ${fmt(m.cmUnitario)}/u</div>`).join('') : '<div class="item-sub">—</div>'}
           </div>`;
         }).join('')}
       </div>
@@ -5969,7 +5969,7 @@ function exportVentasCSV() {
     rows.push([fecha, productos, v.total.toFixed(0), v.ganancia.toFixed(0)]);
   });
   downloadCSV('crumbly-ventas-' + reportPeriod + '-' + todayLocalISO() + '.csv', rows);
-  showToast('CSV de ventas exportado — súbelo a tu Google Sheet');
+  showToast('CSV de ventas exportado. Súbelo a tu Google Sheet');
 }
 function exportInventarioCSV() {
   const rows = [['Tipo', 'Nombre', 'Cantidad disponible', 'Unidad', 'Costo unitario', 'Precio venta (si aplica)', 'Mínimo', 'Estado']];
@@ -5982,7 +5982,7 @@ function exportInventarioCSV() {
   state.empaques.forEach(m => rows.push(fila('Empaque', m, 'unidad', '')));
   state.toppings.forEach(m => rows.push(fila('Topping', m, 'unidad', num(m.precio, 4))));
   downloadCSV('crumbly-inventario-' + todayLocalISO() + '.csv', rows);
-  showToast('CSV de inventario exportado — súbelo a tu Google Sheet');
+  showToast('CSV de inventario exportado. Súbelo a tu Google Sheet');
 }
 function exportGastosCSV() {
   const gastos = getReportGastos();
@@ -5993,13 +5993,13 @@ function exportGastosCSV() {
     rows.push([fecha, g.tipo, g.categoria, g.descripcion, g.monto.toFixed(0), g.proveedor || '']);
   });
   downloadCSV('crumbly-gastos-' + reportPeriod + '-' + todayLocalISO() + '.csv', rows);
-  showToast('CSV de gastos exportado — súbelo a tu Google Sheet');
+  showToast('CSV de gastos exportado. Súbelo a tu Google Sheet');
 }
 function shareReportByEmail() {
   generateSalesReportPDF();
   const to = state.config.email || '';
-  const subject = encodeURIComponent('Reporte Crumbly \u2014 ' + getReportLabel());
-  const body = encodeURIComponent('Adjunto el reporte de ventas de Crumbly (' + getReportRangeLabel() + ').\n\nEl PDF se acaba de descargar a tu dispositivo — adjúntalo aquí manualmente antes de enviar.\n\n\u2014 Crumbly');
+  const subject = encodeURIComponent('Reporte Crumbly: ' + getReportLabel());
+  const body = encodeURIComponent('Adjunto el reporte de ventas de Crumbly (' + getReportRangeLabel() + ').\n\nEl PDF se acaba de descargar a tu dispositivo. Adjúntalo aquí manualmente antes de enviar.\n\nCrumbly');
   setTimeout(() => { window.location.href = `mailto:${to}?subject=${subject}&body=${body}`; }, 400);
 }
 
@@ -6039,7 +6039,7 @@ function updateGastoDivididoPreview() {
   const suma = efectivo + transferencia;
   if (!monto) { el.textContent = ''; return; }
   if (suma === monto) { el.textContent = 'Suma ' + fmt(suma) + ' ✓'; el.style.color = 'var(--muted)'; }
-  else { el.textContent = 'Suma ' + fmt(suma) + ' — el monto pagado es ' + fmt(monto); el.style.color = 'var(--danger)'; }
+  else { el.textContent = 'Suma ' + fmt(suma) + ', pero el monto pagado es ' + fmt(monto); el.style.color = 'var(--danger)'; }
 }
 // Vista previa en vivo del costo unitario que va a quedar guardado
 // (monto / cantidad) — para detectar en el momento un error de digitación
@@ -6233,7 +6233,7 @@ function saveMerma() {
     const origen = list.find(x => x.id === origenId);
     const disponible = origen ? (Number(origen.cantidad) || 0) : 0; // una preparación nunca producida no trae `cantidad`
     if (origen && cantidad > disponible) {
-      if (!confirm('Solo hay ' + fmtCant(disponible, origen.unidad) + ' disponible — la merma dejará el stock en 0.\n\n¿Registrarla de todas formas?')) return;
+      if (!confirm('Solo hay ' + fmtCant(disponible, origen.unidad) + ' disponible. La merma dejará el stock en 0.\n\n¿Registrarla de todas formas?')) return;
       stockInsuficiente = true;
     }
   }
@@ -6421,7 +6421,7 @@ function actualizarDiferenciaTotal() {
 function guardarConteoParcial() {
   saveState();
   closeModal('modal-conteo');
-  showToast('Conteo guardado — puedes seguir después');
+  showToast('Conteo guardado, puedes seguir después');
 }
 function cerrarConteoUI() {
   const lineas = conteoLineasCompletas();
@@ -6538,8 +6538,8 @@ function renderCaja() {
     const d = new Date(m.fecha);
     const hora = d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }) + ' ' + d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
     const label = m.tipo === 'venta'
-      ? 'Venta — ' + m.ref.items.map(i => i.qty + '× ' + i.nombre).join(', ')
-      : (GASTO_TIPO_LABEL[m.ref.tipo] || m.ref.tipo) + ' — ' + (m.ref.categoria || '');
+      ? 'Venta: ' + m.ref.items.map(i => i.qty + '× ' + i.nombre).join(', ')
+      : (GASTO_TIPO_LABEL[m.ref.tipo] || m.ref.tipo) + (m.ref.categoria ? ' · ' + m.ref.categoria : '');
     const icon = m.tipo === 'venta' ? 'ph-arrow-up-right' : 'ph-arrow-down-right';
     const delBtn = m.tipo === 'venta'
       ? `<button class="btn-icon danger" onclick="eliminarVenta('${m.ref.id}')" title="Eliminar"><i class="ph ph-trash"></i></button>`
@@ -6572,7 +6572,7 @@ let clientesBusqueda = '';
 function setClientesBusqueda(v) { clientesBusqueda = v; renderClientes(); }
 function renderClientes() {
   const el = document.getElementById('clientes-list');
-  if (!state.clientes.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">Aún no hay clientes — se crean solos al registrar una venta, o los agregas aquí.</p>'; return; }
+  if (!state.clientes.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">Aún no hay clientes. Se crean solos al registrar una venta, o los agregas aquí.</p>'; return; }
   // #27: orden alfabético + buscador (nombre o teléfono), sin tildes.
   const clientes = CrumblyCore.filtrarOrdenarPorNombre(state.clientes, clientesBusqueda, ['telefono']);
   if (!clientes.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">Ningún cliente coincide con "' + esc(clientesBusqueda) + '"</p>'; return; }
@@ -6682,7 +6682,7 @@ document.addEventListener('click', function (e) {
   } else if (modalConCambios_(id)) { // #30: insumo, producto, preparación, lote, merma
     if (!confirm('¿Descartar los cambios?')) return;
   } else if (id === 'modal-venta' && ventaCart.length) {
-    if (!confirm('Hay una venta con productos en el carrito — ¿cerrar igual? Se perderá el carrito.')) return;
+    if (!confirm('Hay una venta con productos en el carrito. ¿Cerrar igual? Se perderá el carrito.')) return;
   } else if (id === 'modal-conflictos-catalogo') {
     return; // nunca por toque fuera — hay que resolver cada conflicto o usar la X
   }

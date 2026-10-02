@@ -1584,7 +1584,7 @@
       bucketReal: real ? real.bucket : null,
       motivo: real
         ? ('"' + real.nombre + '" está en ' + real.bucket + ' pero la receta lo busca en ' + coleccionEsperada)
-        : ('la referencia "' + refId + '" no existe en ninguna colección de insumos — probablemente se borró')
+        : ('la referencia "' + refId + '" no existe en ninguna colección de insumos, probablemente se borró')
     };
   }
   function getReferenciasRotas(state) {
@@ -3272,7 +3272,7 @@
     var snapInicial = getSnapshotMasReciente(state, inicioISO);
     var snapFinal = getSnapshotMasReciente(state, finISO);
     if (!snapInicial || !snapFinal) {
-      var faltaSnap = { suficiente: false, motivo: 'Falta un conteo físico guardado al inicio o al final del rango — todavía no hay conteo registrado ahí.' };
+      var faltaSnap = { suficiente: false, motivo: 'Falta un conteo físico guardado al inicio o al final del rango. Todavía no hay conteo registrado ahí.' };
       return { preparaciones: faltaSnap, materiaPrima: faltaSnap };
     }
     if (snapInicial.tipo !== 'conteo' || snapFinal.tipo !== 'conteo') {
@@ -3281,7 +3281,7 @@
     }
     function prepContado(snap) { return !!(snap.bucketsContados && snap.bucketsContados.preparaciones === true); }
     if (!prepContado(snapInicial) || !prepContado(snapFinal)) {
-      var faltaPrep = { suficiente: false, motivo: 'Las preparaciones no se contaron en el conteo inicial y/o final — sin saber cuánta preparación quedó, no se puede separar lo consumido de lo que sigue en la nevera. Ningún nivel de varianza es confiable así.' };
+      var faltaPrep = { suficiente: false, motivo: 'Las preparaciones no se contaron en el conteo inicial y/o final. Sin saber cuánta preparación quedó, no se puede separar lo consumido de lo que sigue en la nevera. Ningún nivel de varianza es confiable así.' };
       return { preparaciones: faltaPrep, materiaPrima: faltaPrep };
     }
 
@@ -3614,7 +3614,7 @@
           if (c.refId === insumoId && c.tipo === tipoViejo) {
             bloqueos.push({
               tipo: 'preparacion', id: prep.id, nombre: prep.nombre,
-              motivo: 'una preparación solo puede referenciar materia prima — no puede pasar a "' + tipoNuevo + '"'
+              motivo: 'una preparación solo puede referenciar materia prima, no puede pasar a "' + tipoNuevo + '"'
             });
             return true; // un bloqueo por preparación alcanza, no hace falta contar cada componente repetido
           }
@@ -3689,7 +3689,7 @@
   function previsualizarLoteReclasificacion(state, insumoIds) {
     return (insumoIds || []).map(function (insumoId) {
       var insumo = (state.empaques || []).find(function (x) { return x.id === insumoId; });
-      if (!insumo) return { insumoId: insumoId, nombre: insumoId, encontrado: false, bloqueado: true, bloqueos: [{ motivo: 'ya no está en empaques — puede que otro cambio del lote ya lo haya movido' }], productos: [] };
+      if (!insumo) return { insumoId: insumoId, nombre: insumoId, encontrado: false, bloqueado: true, bloqueos: [{ motivo: 'ya no está en empaques. Puede que otro cambio del lote ya lo haya movido' }], productos: [] };
       var bloqueos = detectarBloqueosMoverInsumo_(state, insumoId, 'empaques', 'materia');
       var afectados = findProductosAfectadosPorInsumo(state, insumoId);
       var productos = afectados.map(function (p) {
@@ -3722,7 +3722,7 @@
       // fallar a mitad de camino en este. Se trata igual: se excluye,
       // nunca se aplica el lote a medias.
       if (!(state.empaques || []).some(function (x) { return x.id === insumoId; })) {
-        bloqueados.push({ insumoId: insumoId, bloqueos: [{ motivo: 'ya no está en empaques — la selección quedó desactualizada' }] });
+        bloqueados.push({ insumoId: insumoId, bloqueos: [{ motivo: 'ya no está en empaques, la selección quedó desactualizada' }] });
         return;
       }
       var bloqueos = detectarBloqueosMoverInsumo_(state, insumoId, 'empaques', 'materia');
