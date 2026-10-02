@@ -4129,6 +4129,22 @@ test('getProductosPorFrecuencia sin ventas devuelve los productos en orden alfab
   assert.deepStrictEqual(C.getProductosPorFrecuencia(s).map(p => p.id), ['m', 'z']);
 });
 
+test('filtrarOrdenarPorNombre: orden alfabético en español, sin tocar la lista original', () => {
+  const list = [{ id: '1', nombre: 'Zanahoria' }, { id: '2', nombre: 'azúcar' }, { id: '3', nombre: 'Almidón' }, { id: '4', nombre: 'Ñame' }, { id: '5', nombre: 'Nuez' }];
+  assert.deepStrictEqual(C.filtrarOrdenarPorNombre(list).map(x => x.id), ['3', '2', '5', '4', '1']);
+  assert.strictEqual(list[0].id, '1');
+  assert.deepStrictEqual(C.filtrarOrdenarPorNombre(null), []);
+});
+
+test('filtrarOrdenarPorNombre: busca sin tildes ni mayúsculas y en campos extra', () => {
+  const list = [{ id: 'a', nombre: 'Almidón de yuca' }, { id: 'b', nombre: 'Harina' }, { id: 'c', nombre: 'Ana', telefono: '300 555' }];
+  assert.deepStrictEqual(C.filtrarOrdenarPorNombre(list, ' ALMIDON ').map(x => x.id), ['a']);
+  assert.deepStrictEqual(C.filtrarOrdenarPorNombre(list, 'a').map(x => x.id), ['a', 'c', 'b']);
+  assert.deepStrictEqual(C.filtrarOrdenarPorNombre(list, '555').map(x => x.id), []);
+  assert.deepStrictEqual(C.filtrarOrdenarPorNombre(list, '555', ['telefono']).map(x => x.id), ['c']);
+  assert.strictEqual(C.normalizarBusqueda('Ñandú Ácido'), 'nandu acido');
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);

@@ -731,6 +731,7 @@ textarea.field{height:auto}
             <button class="btn" onclick="openModalProducto()"><i class="ph ph-plus"></i> Nuevo producto</button>
           </div>
         </div>
+        <input type="search" id="prod-buscador" class="field" placeholder="Buscar producto..." autocomplete="off" oninput="setProductosBusqueda(this.value)">
         <div style="display:flex;gap:6px;flex-wrap:wrap" id="prod-chips"></div>
         <div id="prod-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px"></div>
       </div>
@@ -753,6 +754,7 @@ textarea.field{height:auto}
           <div class="page-title">Clientes</div>
           <button class="btn" onclick="openClienteModal()"><i class="ph ph-plus"></i> Nuevo cliente</button>
         </div>
+        <input type="search" id="clientes-buscador" class="field" placeholder="Buscar por nombre o teléfono..." autocomplete="off" oninput="setClientesBusqueda(this.value)">
         <div class="card" style="padding:0;overflow:hidden">
           <div id="clientes-list"><p class="empty" style="padding:1.5rem">Aún no hay clientes — se crean solos al registrar una venta, o los agregas aquí.</p></div>
         </div>
@@ -1182,6 +1184,7 @@ textarea.field{height:auto}
       </div>
     </div>
     <label style="font-size:var(--fs-xs);color:var(--muted);font-weight:var(--fw-bold);display:block;margin-bottom:6px">Origen</label>
+    <input type="search" id="merma-origen-buscar" class="field" style="margin-bottom:10px;height:38px" placeholder="Buscar..." autocomplete="off" oninput="populateMermaOrigenSelect(true)">
     <div style="display:flex;gap:10px;margin-bottom:12px">
       <div class="modal-field" style="flex:1;margin-bottom:0">
         <select id="merma-origen-tipo" onchange="populateMermaOrigenSelect()">
@@ -3842,9 +3845,29 @@ function populatePrepComponenteRefSelect(rowId, selectedId) {
   const editId = document.getElementById('prep-edit-id').value;
   const sel = row.querySelector('.prep-comp-ref');
   const list = tipo === 'materia' ? state.materia : state.preparaciones.filter(p => p.id !== editId);
-  sel.innerHTML = opcionRefPerdida_(list, selectedId, tipo) + (list.length
-    ? list.map(x => `<option value="${x.id}" ${x.id === selectedId ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('')
-    : '<option value="">-- No hay --</option>');
+  sel.innerHTML = opcionRefPerdida_(list, selectedId, tipo) + opcionesFiltradas_(list, selectedId, buscadorDeFila_(row, list));
+}
+// #27: los selectores de insumos (recetas, preparaciones, mermas) van en
+// orden alfabético y, si la lista es larga, con un buscador chico sin
+// tildes. El buscador solo cambia qué opciones se ven: los valores siguen
+// siendo los ids. Si nada coincide se deja la opción elegida, para no
+// soltar un ingrediente sin querer.
+const BUSCADOR_SELECT_MIN = 10;
+function opcionesFiltradas_(list, selectedId, filtro) {
+  const filtradas = CrumblyCore.filtrarOrdenarPorNombre(list, filtro);
+  const visibles = filtradas.length ? filtradas : list.filter(x => x.id === selectedId);
+  return visibles.map(x => `<option value="${x.id}" ${x.id === selectedId ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('')
+    || `<option value="">${list.length ? '-- Sin coincidencias --' : '-- No hay --'}</option>`;
+}
+function buscadorDeFila_(row, list) {
+  const buscar = row.querySelector('.comp-buscar');
+  buscar.hidden = list.length < BUSCADOR_SELECT_MIN;
+  if (buscar.hidden) buscar.value = '';
+  return buscar.value;
+}
+function onPrepComponenteBuscar(rowId) {
+  populatePrepComponenteRefSelect(rowId, document.querySelector('#' + rowId + ' .prep-comp-ref').value);
+  calcPrepCosto();
 }
 // Receta que apunta a un insumo/preparación que ya no existe: antes el
 // <select> mostraba en silencio la PRIMERA opción de la lista, y guardar
@@ -3874,6 +3897,7 @@ function addPrepComponenteRow(tipo, refId, valor) {
       <option value="materia" ${tipo === 'materia' ? 'selected' : ''}>Materia</option>
       <option value="preparacion" ${tipo === 'preparacion' ? 'selected' : ''}>Preparación</option>
     </select>
+    <input type="search" class="comp-buscar" placeholder="Buscar" autocomplete="off" oninput="onPrepComponenteBuscar('${rowId}')">
     <select class="prep-comp-ref" onchange="calcPrepCosto()"></select>
     <input type="number" class="prep-comp-valor" placeholder="${placeholder}" value="${valor || ''}" min="0" step="0.0001" oninput="calcPrepCosto()">
     <button onclick="removePrepComponenteRow('${rowId}')">✕</button>
@@ -3883,6 +3907,7 @@ function addPrepComponenteRow(tipo, refId, valor) {
   calcPrepCosto();
 }
 function onPrepComponenteTipoChange(rowId) {
+  document.querySelector('#' + rowId + ' .comp-buscar').value = '';
   populatePrepComponenteRefSelect(rowId, null);
   calcPrepCosto();
 }
@@ -4208,7 +4233,7 @@ function addEmpRow(empaqueId = '', cantidad = '') {
   const rowId = 'er' + (++empRowCount);
   empRows.push(rowId);
   const opts = opcionRefPerdida_(state.empaques, empaqueId, 'empaques') +
-    state.empaques.map(m => `<option value="${m.id}" ${m.id === empaqueId ? 'selected' : ''}>${esc(m.nombre)}</option>`).join('');
+    CrumblyCore.filtrarOrdenarPorNombre(state.empaques).map(m => `<option value="${m.id}" ${m.id === empaqueId ? 'selected' : ''}>${esc(m.nombre)}</option>`).join('');
   const html = `<div class="ing-row" id="${rowId}">
     <select onchange="calcProdCost()"><option value="">-- Empaque --</option>${opts}</select>
     <input type="number" placeholder="cant." value="${cantidad}" min="0" step="0.1" oninput="calcProdCost()">
@@ -4246,6 +4271,7 @@ function addIngRow(tipo, refId, gramos) {
       <option value="empaques" ${tipo === 'empaques' ? 'selected' : ''}>Empaque</option>
       <option value="toppings" ${tipo === 'toppings' ? 'selected' : ''}>Topping</option>
     </select>
+    <input type="search" class="comp-buscar" placeholder="Buscar" autocomplete="off" oninput="onProdComponenteBuscar('${rowId}')">
     <select class="prod-comp-ref" onchange="calcProdCost()"></select>
     <input type="number" class="prod-comp-gramos" placeholder="cant." value="${gramos || ''}" min="0" step="0.1" oninput="calcProdCost()">
     <button onclick="removeIngRow('${rowId}')">✕</button>
@@ -4261,11 +4287,14 @@ function populateProdComponenteRefSelect(rowId, selectedId) {
   const tipo = row.querySelector('.prod-comp-tipo').value;
   const sel = row.querySelector('.prod-comp-ref');
   const list = state[PROD_COMP_LIST_POR_TIPO[tipo]] || [];
-  sel.innerHTML = opcionRefPerdida_(list, selectedId, tipo) + (list.length
-    ? list.map(x => `<option value="${x.id}" ${x.id === selectedId ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('')
-    : '<option value="">-- No hay --</option>');
+  sel.innerHTML = opcionRefPerdida_(list, selectedId, tipo) + opcionesFiltradas_(list, selectedId, buscadorDeFila_(row, list));
+}
+function onProdComponenteBuscar(rowId) {
+  populateProdComponenteRefSelect(rowId, document.querySelector('#' + rowId + ' .prod-comp-ref').value);
+  calcProdCost();
 }
 function onProdComponenteTipoChange(rowId) {
+  document.querySelector('#' + rowId + ' .comp-buscar').value = '';
   populateProdComponenteRefSelect(rowId, null);
   calcProdCost();
 }
@@ -4348,14 +4377,17 @@ function setProductosCategoria(cat, el) {
   el.classList.add('active');
   renderProductos();
 }
+let productosBusqueda = '';
+function setProductosBusqueda(v) { productosBusqueda = v; renderProductos(); }
 function renderProductos() {
-  const cats = Array.from(new Set(state.productos.map(p => p.categoria).filter(Boolean))).sort();
+  const cats = Array.from(new Set(state.productos.map(p => p.categoria).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es'));
   document.getElementById('prod-chips').innerHTML = ['todos', ...cats].map(c =>
     `<button class="chip ${c === productosCategoriaActiva ? 'active' : ''}" onclick="setProductosCategoria('${esc(c)}',this)">${c === 'todos' ? 'Todos' : esc(c)}</button>`
   ).join('');
   const el = document.getElementById('prod-grid');
-  const productos = state.productos.filter(p => productosCategoriaActiva === 'todos' || p.categoria === productosCategoriaActiva);
-  if (!productos.length) { el.innerHTML = '<p class="empty">No hay productos en esta categoría</p>'; return; }
+  // #27: orden alfabético + buscador sin tildes, igual que el inventario.
+  const productos = CrumblyCore.filtrarOrdenarPorNombre(state.productos.filter(p => productosCategoriaActiva === 'todos' || p.categoria === productosCategoriaActiva), productosBusqueda);
+  if (!productos.length) { el.innerHTML = '<p class="empty">' + (productosBusqueda.trim() ? 'Ningún producto coincide con "' + esc(productosBusqueda) + '"' : 'No hay productos en esta categoría') + '</p>'; return; }
   el.innerHTML = productos.map(p => {
     // P0-2: costo calculado en vivo, nunca leído de un campo guardado.
     const r = CrumblyCore.getMargenProducto(p, state);
@@ -5444,8 +5476,7 @@ function generateCierreCajaPDF() {
   }
 
   pdfFooter(doc);
-  doc.save('crumbly-cierre-caja-' + todayLocalISO() + '.pdf');
-  showToast('Cierre de caja descargado');
+  entregarPDF_(doc, 'crumbly-cierre-caja-' + todayLocalISO() + '.pdf', 'Cierre de caja descargado');
 }
 
 /* ─── NECESIDADES DE INVENTARIO ───
@@ -5507,6 +5538,25 @@ function pdfFooter(doc) {
     doc.text('Pagina ' + i + ' de ' + pages, PDF_RIGHT, 289, { align: 'right' });
   }
   doc.setTextColor(20);
+}
+// #33: desde el celular, el PDF se comparte directo (WhatsApp, correo…) con
+// la hoja de compartir del sistema; en el computador, o si el navegador
+// no deja compartir archivos, se descarga como siempre. Cerrar la hoja de
+// compartir sin elegir nada no es un error: no se avisa nada.
+async function entregarPDF_(doc, nombre, avisoDescarga) {
+  try {
+    const file = new File([doc.output('blob')], nombre, { type: 'application/pdf' });
+    const esCelular = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+    if (esCelular && navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: nombre.replace(/\.pdf$/, '') });
+      return;
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+    // Cualquier otro error al compartir (p. ej. NotAllowedError): se descarga.
+  }
+  doc.save(nombre);
+  showToast(avisoDescarga);
 }
 
 /* ─── EXPORTAR PDF ─── */
@@ -5597,8 +5647,7 @@ function generateSalesReportPDF() {
   }
 
   pdfFooter(doc);
-  doc.save('crumbly-ventas-' + reportPeriod + '-' + todayLocalISO() + '.pdf');
-  showToast('Reporte de ventas descargado');
+  entregarPDF_(doc, 'crumbly-ventas-' + reportPeriod + '-' + todayLocalISO() + '.pdf', 'Reporte de ventas descargado');
 }
 function generateInventoryReportPDF() {
   if (!window.jspdf) { showToast('No se pudo cargar el generador de PDF'); return; }
@@ -5668,8 +5717,7 @@ function generateInventoryReportPDF() {
   });
 
   pdfFooter(doc);
-  doc.save('crumbly-inventario-semana-' + todayLocalISO() + '.pdf');
-  showToast('Reporte de inventario descargado');
+  entregarPDF_(doc, 'crumbly-inventario-semana-' + todayLocalISO() + '.pdf', 'Reporte de inventario descargado');
 }
 function generateMermasReportPDF() {
   if (!window.jspdf) { showToast('No se pudo cargar el generador de PDF'); return; }
@@ -5726,8 +5774,7 @@ function generateMermasReportPDF() {
   });
 
   pdfFooter(doc);
-  doc.save('crumbly-mermas-' + mermaPeriodo + '-' + todayLocalISO() + '.pdf');
-  showToast('Reporte de mermas descargado');
+  entregarPDF_(doc, 'crumbly-mermas-' + mermaPeriodo + '-' + todayLocalISO() + '.pdf', 'Reporte de mermas descargado');
 }
 
 // Recetario: una ficha por producto (ingredientes, cantidad, costo, margen)
@@ -5808,8 +5855,7 @@ function generateRecetarioPDF() {
   }
 
   pdfFooter(doc);
-  doc.save('crumbly-recetario-' + todayLocalISO() + '.pdf');
-  showToast('Recetario descargado');
+  entregarPDF_(doc, 'crumbly-recetario-' + todayLocalISO() + '.pdf', 'Recetario descargado');
 }
 
 /* ─── CONFIG / CORREO ─── */
@@ -6092,13 +6138,14 @@ function openModalMerma() {
   populateMermaOrigenSelect();
   openModal('modal-merma');
 }
-function populateMermaOrigenSelect() {
+function populateMermaOrigenSelect(filtrando) {
   const tipo = document.getElementById('merma-origen-tipo').value;
   const list = CrumblyCore.getMermaOrigenList(state, tipo) || [];
   const sel = document.getElementById('merma-origen-id');
-  sel.innerHTML = list.length
-    ? list.map(x => `<option value="${x.id}">${esc(x.nombre)}</option>`).join('')
-    : '<option value="">-- No hay --</option>';
+  const buscar = document.getElementById('merma-origen-buscar');
+  if (!filtrando) buscar.value = ''; // al abrir o cambiar de tipo, buscador limpio
+  buscar.hidden = list.length < BUSCADOR_SELECT_MIN;
+  sel.innerHTML = opcionesFiltradas_(list, filtrando ? sel.value : null, buscar.value);
   calcMermaValor();
 }
 function calcMermaValor() {
@@ -6482,10 +6529,15 @@ function renderCaja() {
 }
 
 /* ─── CLIENTES ─── */
+let clientesBusqueda = '';
+function setClientesBusqueda(v) { clientesBusqueda = v; renderClientes(); }
 function renderClientes() {
   const el = document.getElementById('clientes-list');
   if (!state.clientes.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">Aún no hay clientes — se crean solos al registrar una venta, o los agregas aquí.</p>'; return; }
-  el.innerHTML = state.clientes.map(c => `<div class="list-row" style="padding:12px 16px;cursor:pointer" onclick="openClienteModal('${c.id}')">
+  // #27: orden alfabético + buscador (nombre o teléfono), sin tildes.
+  const clientes = CrumblyCore.filtrarOrdenarPorNombre(state.clientes, clientesBusqueda, ['telefono']);
+  if (!clientes.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">Ningún cliente coincide con "' + esc(clientesBusqueda) + '"</p>'; return; }
+  el.innerHTML = clientes.map(c => `<div class="list-row" style="padding:12px 16px;cursor:pointer" onclick="openClienteModal('${c.id}')">
       <div style="flex:1;min-width:0">
         <div class="item-name">${esc(c.nombre)}</div>
         <div class="item-sub">${esc(c.telefono || '—')}${c.direccion ? ' · ' + esc(c.direccion) : ''}</div>

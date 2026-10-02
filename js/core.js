@@ -2101,6 +2101,22 @@
     });
   }
 
+  // Listas y selectores en orden alfabético con buscador, igual que el
+  // inventario: sin tildes ni mayúsculas ("almidon" encuentra "Almidón").
+  // `camposExtra` busca también en otros campos (p. ej. el teléfono de un
+  // cliente). No modifica la lista original.
+  function normalizarBusqueda(t) {
+    return String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  }
+  function filtrarOrdenarPorNombre(list, texto, camposExtra) {
+    var q = normalizarBusqueda(String(texto || '').trim());
+    return (list || []).filter(function (x) {
+      return !q || ['nombre'].concat(camposExtra || []).some(function (c) { return normalizarBusqueda(x[c]).indexOf(q) !== -1; });
+    }).sort(function (a, b) {
+      return String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es', { sensitivity: 'base' });
+    });
+  }
+
   // Revierte exactamente lo que una venta dedujo (usa venta.consumoReal).
   // Para ventas antiguas guardadas antes de que existiera ese campo, cae de
   // vuelta a recalcular desde la receta ACTUAL del producto — aproximado si
@@ -3756,6 +3772,8 @@
     applyVenta: applyVenta,
     getMontosPagoVenta: getMontosPagoVenta,
     getProductosPorFrecuencia: getProductosPorFrecuencia,
+    normalizarBusqueda: normalizarBusqueda,
+    filtrarOrdenarPorNombre: filtrarOrdenarPorNombre,
     revertVenta: revertVenta,
     getConsumptionRolling: getConsumptionRolling,
     getConsumptionEnRango: getConsumptionEnRango,
