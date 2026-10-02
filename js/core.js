@@ -35,6 +35,40 @@
     return sign + '$' + Math.round(Math.abs(v)).toLocaleString('es-CO');
   }
 
+  // Tanda 3 #23: el ÚNICO formato de cantidad que ve la persona —
+  // separadores es-CO, máximo 2 decimales sin ceros de sobra, y la unidad
+  // del insumo ("1.000 g", "0,4 kg", "5 und"). Antes cada pantalla hacía
+  // su propio toFixed: "1000.00 g", "0 kg" (eran 0,4 kg).
+  function formatCantidad(n, unidad) {
+    var v = Math.round((Number(n) || 0) * 100) / 100;
+    if (v === 0) v = 0; // sin "-0"
+    var txt = v.toLocaleString('es-CO', { maximumFractionDigits: 2 });
+    var etiqueta = unidad === 'unidad' || unidad === 'und' ? 'und' : (unidad || '');
+    return etiqueta ? txt + ' ' + etiqueta : txt;
+  }
+
+  // Costo por unidad de medida con decimales sensatos: sin decimales desde
+  // $100 ("$8.333", no "$8333.3333"), 2 entre $1 y $100 ("$4,72") y hasta
+  // 4 por debajo de $1 ("$0,0035") para no perder el costo por gramo.
+  function formatCostoUnitario(n) {
+    var v = Number(n);
+    if (!isFinite(v) || v === 0) return '$0';
+    var a = Math.abs(v);
+    if (a >= 100) return formatCOP(v);
+    return (v < 0 ? '-' : '') + '$' + a.toLocaleString('es-CO', { maximumFractionDigits: a >= 1 ? 2 : 4 });
+  }
+
+  // Unidad en la que una RECETA expresa un insumo: las recetas guardan
+  // gramos, así que un insumo en kg se lee en g; ml y unidad no se
+  // convierten (factor 1, ver factorUnidadAGramos_). Sin unidad cargada,
+  // la materia va en g y empaques/toppings por unidad.
+  function unidadRecetaInsumo(insumo, tipo) {
+    var u = insumo && insumo.unidad;
+    if (u === 'kg' || u === 'g') return 'g';
+    if (u === 'ml' || u === 'unidad') return u;
+    return tipo === 'empaques' || tipo === 'toppings' ? 'unidad' : 'g';
+  }
+
   function escapeHtml(s) {
     if (s === null || s === undefined) return '';
     return String(s)
@@ -1000,7 +1034,7 @@
       var sospechoso = !!(ins && ins.unidad && checkCostoSospechoso(state, ins.unidad, costoUnitario, ins.id));
       lineas.push({
         tipo: tipo, refId: refId, nombre: ins ? ins.nombre : '(insumo eliminado)',
-        cantidad: cantidad, costoUnitario: costoUnitario, subtotal: cantidad * costoPorGramoInsumo_(ins),
+        cantidad: cantidad, unidad: unidadRecetaInsumo(ins, tipo), costoUnitario: costoUnitario, subtotal: cantidad * costoPorGramoInsumo_(ins),
         grupo: grupo, sospechoso: sospechoso
       });
     }
@@ -1012,7 +1046,7 @@
         var costoUnitario = getPreparacionCosto(state, c.refId).costoPorGramo;
         lineas.push({
           tipo: 'preparacion', refId: c.refId, nombre: prep ? prep.nombre : '(preparación eliminada)',
-          cantidad: gramos, costoUnitario: costoUnitario, subtotal: gramos * costoUnitario,
+          cantidad: gramos, unidad: 'g', costoUnitario: costoUnitario, subtotal: gramos * costoUnitario,
           grupo: 'alimento', sospechoso: false // checkCostoSospechoso compara insumos por unidad, no aplica al costo/gramo de una preparación
         });
       } else if (c.tipo === 'empaques') {
@@ -1907,7 +1941,9 @@
         }
         out.push(Object.assign({}, m, {
           tipo: bucket,
-          unidadLabel: unidadLabel || 'g',
+          // Stock y consumo están en la unidad del insumo (kg, ml…), no
+          // siempre en g — "Comprar 5g" eran 5 kg (Tanda 3 #23).
+          unidadLabel: esUnidadValida(m.unidad) ? m.unidad : (unidadLabel || 'g'),
           consumo: consumoSemanal,
           semanasRestantes: semanasRestantes,
           necesitaComprar: necesitaComprar,
@@ -1916,8 +1952,8 @@
       });
     }
     build('materia', state.materia, 'g');
-    build('empaques', state.empaques, 'und');
-    build('toppings', state.toppings, 'und');
+    build('empaques', state.empaques, 'unidad');
+    build('toppings', state.toppings, 'unidad');
     out.sort(function (a, b) { return a.semanasRestantes - b.semanasRestantes; });
     return out;
   }
@@ -3215,16 +3251,16 @@
     var snapInicial = getSnapshotMasReciente(state, inicioISO);
     var snapFinal = getSnapshotMasReciente(state, finISO);
     if (!snapInicial || !snapFinal) {
-      var faltaSnap = { suficiente: false, motivo: 'Falta un snapshot de conteo en el inicio o el fin del rango — todavía no hay conteo físico registrado ahí.' };
+      var faltaSnap = { suficiente: false, motivo: 'Falta un conteo físico guardado al inicio o al final del rango — todavía no hay conteo registrado ahí.' };
       return { preparaciones: faltaSnap, materiaPrima: faltaSnap };
     }
     if (snapInicial.tipo !== 'conteo' || snapFinal.tipo !== 'conteo') {
-      var esSistema = { suficiente: false, motivo: 'El snapshot inicial y/o final es de tipo "sistema", no "conteo": la varianza daría cero por construcción (no porque no haya pérdidas). Hace falta un conteo físico real en ambos extremos del rango.' };
+      var esSistema = { suficiente: false, motivo: 'La foto de inventario del inicio y/o del final la hizo el sistema, no un conteo físico: la diferencia daría cero siempre (no porque no haya pérdidas). Hace falta un conteo físico real al inicio y al final del rango.' };
       return { preparaciones: esSistema, materiaPrima: esSistema };
     }
     function prepContado(snap) { return !!(snap.bucketsContados && snap.bucketsContados.preparaciones === true); }
     if (!prepContado(snapInicial) || !prepContado(snapFinal)) {
-      var faltaPrep = { suficiente: false, motivo: 'El bucket de preparaciones no se contó en el snapshot inicial y/o final — sin saber cuánta preparación quedó, no se puede separar lo consumido de lo que sigue en la nevera. Ningún nivel de varianza es confiable así.' };
+      var faltaPrep = { suficiente: false, motivo: 'Las preparaciones no se contaron en el conteo inicial y/o final — sin saber cuánta preparación quedó, no se puede separar lo consumido de lo que sigue en la nevera. Ningún nivel de varianza es confiable así.' };
       return { preparaciones: faltaPrep, materiaPrima: faltaPrep };
     }
 
@@ -3731,6 +3767,9 @@
   return {
     SCHEMA_VERSION: SCHEMA_VERSION,
     formatCOP: formatCOP,
+    formatCantidad: formatCantidad,
+    formatCostoUnitario: formatCostoUnitario,
+    unidadRecetaInsumo: unidadRecetaInsumo,
     escapeHtml: escapeHtml,
     getDateStart: getDateStart,
     getPeriodLabel: getPeriodLabel,
