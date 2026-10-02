@@ -4086,6 +4086,49 @@ test('agruparItemsPedido pone adiciones bajo su producto (sin sufijo) y deja los
   assert.strictEqual(C.agruparItemsPedido([{ adicionId: 'x', nombre: 'Queso (adición)', qty: 1 }]).length, 1);
 });
 
+console.log('\n== Venta en la caja: pago dividido y productos frecuentes ==');
+
+test('applyVenta con metodoPago dividido guarda montoEfectivo/montoTransferencia', () => {
+  const s = stateBase();
+  const venta = C.applyVenta(s, [{ productoId: 'p1', qty: 1, toppings: [] }], [], { metodoPago: 'dividido', montoEfectivo: 10000, montoTransferencia: 12000 });
+  assert.strictEqual(venta.metodoPago, 'dividido');
+  assert.strictEqual(venta.montoEfectivo, 10000);
+  assert.strictEqual(venta.montoTransferencia, 12000);
+  assert.deepStrictEqual(C.getMontosPagoVenta(venta), { efectivo: 10000, transferencia: 12000 });
+});
+
+test('applyVenta ignora los montos divididos si el método no es dividido', () => {
+  const s = stateBase();
+  const venta = C.applyVenta(s, [{ productoId: 'p1', qty: 1, toppings: [] }], [], { metodoPago: 'transferencia', montoEfectivo: 10000, montoTransferencia: 8000 });
+  assert.strictEqual(venta.montoEfectivo, 0);
+  assert.strictEqual(venta.montoTransferencia, 0);
+  assert.deepStrictEqual(C.getMontosPagoVenta(venta), { efectivo: 0, transferencia: venta.total });
+  assert.deepStrictEqual(C.getMontosPagoVenta({ total: 5000 }), { efectivo: 5000, transferencia: 0 }); // venta vieja sin metodoPago
+});
+
+test('getProductosPorFrecuencia: más vendidos de los últimos días primero, el resto alfabético', () => {
+  const s = C.migrateState({
+    productos: [
+      { id: 'a', nombre: 'Árbol', precio: 1, componentes: [] },
+      { id: 'b', nombre: 'Banano', precio: 1, componentes: [] },
+      { id: 'c', nombre: 'Chocolate', precio: 1, componentes: [] },
+      { id: 'd', nombre: 'Durazno', precio: 1, componentes: [] }
+    ],
+    ventas: [
+      { id: 'v1', fecha: '2026-09-28T12:00:00', items: [{ productoId: 'c', qty: 1 }, { productoId: 'd', qty: 3 }], total: 0, ganancia: 0 },
+      { id: 'v2', fecha: '2026-09-30T12:00:00', items: [{ productoId: 'c', qty: 1 }, { toppingId: 'b', qty: 50 }, { adicionId: 'b', qty: 9 }], total: 0, ganancia: 0 },
+      { id: 'v3', fecha: '2026-08-01T12:00:00', items: [{ productoId: 'b', qty: 99 }], total: 0, ganancia: 0 } // fuera de los 14 días
+    ]
+  });
+  const orden = C.getProductosPorFrecuencia(s, 14, '2026-10-02T12:00:00').map(p => p.id);
+  assert.deepStrictEqual(orden, ['d', 'c', 'a', 'b']);
+});
+
+test('getProductosPorFrecuencia sin ventas devuelve los productos en orden alfabético', () => {
+  const s = C.migrateState({ productos: [{ id: 'z', nombre: 'Zapote', precio: 1, componentes: [] }, { id: 'm', nombre: 'Mora', precio: 1, componentes: [] }] });
+  assert.deepStrictEqual(C.getProductosPorFrecuencia(s).map(p => p.id), ['m', 'z']);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);

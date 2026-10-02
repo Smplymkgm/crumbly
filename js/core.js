@@ -2049,6 +2049,7 @@
 
     if (!items.length) return null;
 
+    var metodoPago = opts.metodoPago || 'efectivo';
     var venta = {
       id: opts.id || genId(),
       fecha: opts.fecha || new Date().toISOString(),
@@ -2059,11 +2060,45 @@
       consumoReal: consumoReal,
       faltanteGenerado: faltanteGenerado,
       clienteId: opts.clienteId || null,
-      metodoPago: opts.metodoPago || 'efectivo',
-      comprobante: opts.comprobante || ''
+      metodoPago: metodoPago,
+      comprobante: opts.comprobante || '',
+      // Pago dividido (mismo criterio que registrarGasto): parte en
+      // efectivo, parte por transferencia. Solo se guardan con 'dividido'.
+      // Que sumen el total lo valida la pantalla ANTES de llamar acá —
+      // acá ya se descontó el stock y no se puede abortar limpio.
+      montoEfectivo: metodoPago === 'dividido' ? (Number(opts.montoEfectivo) || 0) : 0,
+      montoTransferencia: metodoPago === 'dividido' ? (Number(opts.montoTransferencia) || 0) : 0
     };
     state.ventas.push(venta);
     return venta;
+  }
+
+  // Cuánto de una venta entró en efectivo y cuánto por transferencia,
+  // para cualquier método de pago (los de 'dividido' vienen guardados;
+  // los demás son el total entero de un lado). Ventas viejas sin
+  // metodoPago cuentan como efectivo, igual que en migrateState.
+  function getMontosPagoVenta(v) {
+    var total = Number(v && v.total) || 0;
+    var metodo = (v && v.metodoPago) || 'efectivo';
+    if (metodo === 'dividido') return { efectivo: Number(v.montoEfectivo) || 0, transferencia: Number(v.montoTransferencia) || 0 };
+    if (metodo === 'transferencia') return { efectivo: 0, transferencia: total };
+    return { efectivo: total, transferencia: 0 };
+  }
+
+  // Productos en el orden en que el cajero los busca: primero los más
+  // vendidos (unidades) de los últimos `dias` días — solo ítems con
+  // productoId, no adiciones ni toppings —, después el resto en orden
+  // alfabético. Sin ventas recientes queda alfabético entero.
+  function getProductosPorFrecuencia(state, dias, ref) {
+    var conteo = {};
+    getVentasRolling(state.ventas, dias || 14, ref).forEach(function (v) {
+      (v.items || []).forEach(function (it) {
+        if (it.productoId) conteo[it.productoId] = (conteo[it.productoId] || 0) + (Number(it.qty) || 0);
+      });
+    });
+    return (state.productos || []).slice().sort(function (a, b) {
+      return (conteo[b.id] || 0) - (conteo[a.id] || 0) || String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es');
+    });
   }
 
   // Revierte exactamente lo que una venta dedujo (usa venta.consumoReal).
@@ -3719,6 +3754,8 @@
     computeSaleConsumption: computeSaleConsumption,
     checkStockShortage: checkStockShortage,
     applyVenta: applyVenta,
+    getMontosPagoVenta: getMontosPagoVenta,
+    getProductosPorFrecuencia: getProductosPorFrecuencia,
     revertVenta: revertVenta,
     getConsumptionRolling: getConsumptionRolling,
     getConsumptionEnRango: getConsumptionEnRango,

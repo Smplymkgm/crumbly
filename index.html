@@ -110,6 +110,50 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 .ins-mas > summary::-webkit-details-marker{display:none}
 .ins-mas > summary::after{content:'▾';color:var(--muted)}
 .ins-mas[open] > summary::after{content:'▴'}
+/* ─── Venta: formulario en secciones (Pedido · Productos · Esta venta ·
+   Pago), con la cuenta como tabla tipo factura. En el celular, una
+   columna y la tabla sin "Precio" para no desbordar a 375px. ─── */
+.venta-form .field{background:var(--bg)}
+.vf-seccion{padding:16px 0;border-top:1px solid var(--line)}
+.vf-seccion:first-of-type{border-top:none;padding-top:0}
+.vf-titulo{font-size:var(--fs-body);font-weight:var(--fw-bold);color:var(--ink)}
+.vf-sub{font-size:var(--fs-xs);color:var(--muted);margin:2px 0 12px}
+.vf-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.vf-grid > *{min-width:0}
+.vf-label-row{display:flex;align-items:center;gap:4px;margin-bottom:6px}
+.vf-label-row .field-label{margin-bottom:0}
+.vf-stepper{display:flex;align-items:center;border:1px solid var(--line);border-radius:999px;background:var(--bg);overflow:hidden;flex-shrink:0}
+.vf-stepper button{width:30px;height:100%;border:none;background:transparent;color:var(--ink);cursor:pointer;font-size:var(--fs-body)}
+.vf-stepper span{min-width:22px;text-align:center;font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--ink)}
+.vf-tabla{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.vf-fila{display:grid;grid-template-columns:minmax(0,1fr) 84px 68px 76px 24px;gap:6px;align-items:center;padding:9px 10px;border-top:1px solid var(--line);font-size:var(--fs-sm);color:var(--text)}
+.vf-encabezado{border-top:none;background:var(--bg);font-size:var(--fs-xs);font-weight:var(--fw-bold);color:var(--muted);padding:7px 10px}
+.vf-pie{grid-template-columns:1fr auto;font-weight:var(--fw-bold);color:var(--ink);background:var(--bg)}
+.vf-pie strong{font-size:var(--fs-h3)}
+.vf-num{text-align:right;white-space:nowrap}
+.vf-centro{text-align:center}
+.vf-producto{min-width:0}
+.vf-producto-nombre{font-weight:var(--fw-bold);color:var(--ink);overflow-wrap:anywhere}
+.vf-producto-extra{font-size:var(--fs-xs);color:var(--muted);margin-top:1px;overflow-wrap:anywhere}
+.vf-fila .vf-stepper{height:30px;justify-self:center}
+.vf-fila .vf-stepper button{width:26px}
+.vf-cant{display:flex;align-items:center;gap:3px;justify-self:center;font-size:var(--fs-xs);color:var(--muted)}
+.vf-cant input{width:54px;height:30px;border:1px solid var(--line);border-radius:999px;background:var(--bg);text-align:center;font-size:var(--fs-sm);color:var(--ink)}
+.vf-quitar{background:transparent;border:none;cursor:pointer;color:var(--muted);font-size:var(--fs-body);padding:0;width:24px;height:24px}
+.vf-vacio{display:flex;align-items:center;justify-content:center;gap:6px;padding:18px 10px;border-top:1px solid var(--line);color:var(--muted);font-size:var(--fs-sm)}
+@media (max-width:480px){
+  #modal-venta{padding:8px}
+  #modal-venta .modal{padding:18px 16px;max-height:94vh}
+  .vf-grid{grid-template-columns:1fr}
+  .vf-col-precio{display:none}
+  .vf-fila{grid-template-columns:minmax(0,1fr) 84px 72px 22px}
+  .vf-pie{grid-template-columns:1fr auto}
+}
+/* Caja: productos más vendidos, un toque = elegirlo (como en el buscador). */
+.venta-frecuentes{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.venta-frecuentes:empty{display:none}
+.venta-frecuente{border:1px solid var(--line);background:var(--white);color:var(--ink);border-radius:999px;padding:8px 12px;min-height:38px;font-size:var(--fs-sm);font-weight:var(--fw-medium);cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.venta-frecuente.active{background:var(--ink);border-color:var(--ink);color:var(--white)}
 .adiciones-lista{width:100%;border:1px solid var(--line);border-radius:12px;background:var(--white)}
 .adiciones-lista summary{display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--ink);list-style:none}
 .adiciones-lista summary::-webkit-details-marker{display:none}
@@ -1177,71 +1221,95 @@ textarea.field{height:auto}
 
 <!-- MODAL VENTA -->
 <div class="modal-overlay" id="modal-venta">
-  <div class="modal modal-wide">
+  <div class="modal modal-wide venta-form">
     <div class="modal-title-row">
       <span class="modal-title">Registrar venta</span>
       <button class="modal-close" onclick="closeSaleModal()"><i class="ph ph-x"></i></button>
     </div>
 
-    <!-- Pedidos: el nombre con el que se llama al cliente cuando está listo.
-         Aparte de "Cliente" a propósito: escribir ahí crea un cliente en
-         la lista, y en un local con gente de paso la llenaba de nombres sueltos. -->
-    <div style="margin-bottom:12px">
-      <label class="field-label" for="venta-nombre-pedido">Nombre para llamar</label>
-      <input type="text" id="venta-nombre-pedido" class="field" placeholder="Ej: Laura" autocomplete="off">
-    </div>
-
-    <div style="display:flex;gap:10px;margin-bottom:14px">
-      <div style="flex:1">
-        <label class="field-label">Cliente <span style="font-weight:var(--fw-medium)">(opcional)</span></label>
-        <input type="text" id="venta-cliente-nombre" class="field" placeholder="Nombre o teléfono" list="clientes-datalist" oninput="onVentaClienteInput()">
-        <datalist id="clientes-datalist"></datalist>
-        <span style="font-size:var(--fs-xs);color:var(--muted);display:block;margin-top:5px">Se busca o crea automáticamente.</span>
-        <div id="venta-cliente-nuevo-form" style="display:none;flex-direction:column;gap:8px;margin-top:10px;padding:10px;background:var(--bg);border:1px solid var(--line);border-radius:9px">
-          <span style="font-size:var(--fs-xs);font-weight:var(--fw-bold);color:var(--ink)">Cliente nuevo — completa sus datos</span>
-          <input type="text" id="venta-cliente-telefono" class="field field-sm" placeholder="Teléfono">
-          <input type="text" id="venta-cliente-direccion" class="field field-sm" placeholder="Dirección">
+    <!-- 1. Pedido. "Nombre para llamar" va aparte de "Cliente" a propósito:
+         escribir en Cliente crea un cliente en la lista, y en un local con
+         gente de paso la llenaba de nombres sueltos. Fecha y los datos del
+         cliente nuevo se cambian poco: viven abajo, en "Más opciones". -->
+    <section class="vf-seccion">
+      <div class="vf-titulo">Pedido</div>
+      <div class="vf-sub">A quién se lo llamamos</div>
+      <div class="vf-grid">
+        <div>
+          <label class="field-label" for="venta-nombre-pedido">Nombre para llamar</label>
+          <input type="text" id="venta-nombre-pedido" class="field" placeholder="Ej: Laura" autocomplete="off">
+        </div>
+        <div>
+          <div class="vf-label-row">
+            <label class="field-label" for="venta-cliente-nombre">Cliente <span style="font-weight:var(--fw-medium)">(opcional)</span></label>
+            <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Se busca por nombre o teléfono; si no existe, se crea solo. Teléfono y dirección de un cliente nuevo van en "Más opciones", abajo.</p></details>
+          </div>
+          <input type="text" id="venta-cliente-nombre" class="field" placeholder="Nombre o tel." list="clientes-datalist" oninput="onVentaClienteInput()">
+          <datalist id="clientes-datalist"></datalist>
         </div>
       </div>
-      <div style="width:148px">
-        <label class="field-label">Fecha</label>
-        <input type="date" id="venta-fecha" class="field">
-      </div>
-    </div>
+    </section>
 
-    <div style="border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px;background:var(--bg)">
-      <div style="display:flex;align-items:center;gap:6px;font-size:var(--fs-xs);font-weight:var(--fw-bold);color:var(--muted);margin-bottom:10px">
-        <i class="ph ph-plus-circle"></i> Agregar producto o complemento
-      </div>
+    <!-- 2. Productos -->
+    <section class="vf-seccion">
+      <div class="vf-titulo">Productos</div>
+      <div class="vf-sub">Elegí lo que lleva</div>
+      <div id="venta-frecuentes" class="venta-frecuentes"></div>
       <div style="display:flex;gap:8px;margin-bottom:8px">
-        <div style="flex:1;position:relative">
-          <input type="text" id="venta-draft-producto" class="field" style="background:var(--white)" placeholder="Buscar producto o complemento" autocomplete="off" oninput="onVentaBuscarInput()" onfocus="onVentaBuscarInput()">
+        <div style="flex:1;min-width:0;position:relative">
+          <input type="text" id="venta-draft-producto" class="field" placeholder="Buscar producto o complemento" autocomplete="off" oninput="onVentaBuscarInput()" onfocus="onVentaBuscarFocus()">
           <div id="venta-buscar-sugerencias" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--white);border:1px solid var(--line);border-radius:9px;box-shadow:0 8px 20px rgba(17,17,17,.10);max-height:220px;overflow-y:auto;z-index:20"></div>
         </div>
-        <div style="display:flex;align-items:center;border:1px solid var(--line);border-radius:8px;background:var(--white);overflow:hidden">
-          <button onclick="decDraftQty()" style="width:28px;height:36px;border:none;background:transparent;color:var(--ink);cursor:pointer;font-size:var(--fs-body)">−</button>
-          <span style="width:26px;text-align:center;font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--ink)" id="venta-draft-qty">1</span>
-          <button onclick="incDraftQty()" style="width:28px;height:36px;border:none;background:transparent;color:var(--ink);cursor:pointer;font-size:var(--fs-body)">+</button>
+        <div class="vf-stepper" style="height:38px">
+          <button type="button" onclick="decDraftQty()" aria-label="Menos">−</button>
+          <span id="venta-draft-qty">1</span>
+          <button type="button" onclick="incDraftQty()" aria-label="Más">+</button>
         </div>
       </div>
       <div id="venta-draft-adiciones" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px"></div>
       <button class="btn btn-block" onclick="addLineToCart()"><i class="ph ph-plus"></i> Agregar a la venta</button>
-    </div>
+    </section>
 
-    <div style="margin-bottom:16px">
-      <div style="font-size:var(--fs-xs);font-weight:var(--fw-bold);color:var(--muted);margin-bottom:10px">Productos en esta venta (<span id="venta-cart-count">0</span>)</div>
-      <div id="venta-cart-lines" style="display:flex;flex-direction:column;gap:8px"></div>
-    </div>
+    <!-- 3. La cuenta: tabla Producto · Cant. · Precio · Total. En pantallas
+         muy angostas se esconde "Precio" (queda en el total de la fila). -->
+    <section class="vf-seccion">
+      <div class="vf-titulo">Esta venta</div>
+      <div class="vf-sub"><span id="venta-cart-count">0</span> en la cuenta · podés cambiar cantidades acá</div>
+      <div class="vf-tabla">
+        <div class="vf-fila vf-encabezado">
+          <span>Producto</span><span class="vf-centro">Cant.</span><span class="vf-num vf-col-precio">Precio</span><span class="vf-num">Total</span><span></span>
+        </div>
+        <div id="venta-cart-lines"></div>
+        <div class="vf-fila vf-pie">
+          <span>Total</span><strong id="venta-cart-total" class="vf-num">$0</strong>
+        </div>
+      </div>
+      <p class="item-sub" id="venta-total-nota" style="display:none;margin-top:6px;text-align:right"></p>
+      <div style="margin-top:14px">
+        <label class="field-label" for="venta-nota">Nota para quien prepara (opcional)</label>
+        <textarea id="venta-nota" class="field" rows="2" style="border-radius:12px" placeholder="Ej: sin maní, helado aparte"></textarea>
+      </div>
+    </section>
 
-    <div style="margin-bottom:16px">
-      <label class="field-label" for="venta-nota">Nota para quien prepara (opcional)</label>
-      <textarea id="venta-nota" class="field" rows="2" style="border-radius:12px" placeholder="Ej: sin maní, helado aparte"></textarea>
-    </div>
-
-    <div style="margin-bottom:16px">
-      <label class="field-label">Método de pago</label>
-      <div class="pill-row" id="venta-metodo-pago" style="margin-bottom:14px"></div>
-      <div id="venta-comprobante-wrap" style="display:none">
+    <!-- 4. Pago -->
+    <section class="vf-seccion">
+      <div class="vf-titulo">Pago</div>
+      <div class="vf-sub">Cómo paga</div>
+      <div class="pill-row" id="venta-metodo-pago" style="margin-bottom:14px;width:fit-content;max-width:100%"></div>
+      <div id="venta-campos-dividido" style="display:none;margin-bottom:12px">
+        <div class="vf-grid">
+          <div>
+            <label class="field-label" for="venta-monto-efectivo">Efectivo ($)</label>
+            <input type="number" id="venta-monto-efectivo" class="field" inputmode="numeric" placeholder="0" min="0" step="1" oninput="onVentaMontoEfectivoInput()">
+          </div>
+          <div>
+            <label class="field-label" for="venta-monto-transferencia">Transferencia ($)</label>
+            <input type="number" id="venta-monto-transferencia" class="field" inputmode="numeric" placeholder="0" min="0" step="1" oninput="updateVentaDivididoPreview()">
+          </div>
+        </div>
+        <p class="item-sub" id="venta-dividido-preview" style="margin-top:6px"></p>
+      </div>
+      <div id="venta-comprobante-wrap" style="display:none;margin-bottom:12px">
         <label class="field-label">Comprobante</label>
         <label class="dropzone">
           <input type="file" id="venta-comprobante-input" accept="image/*,.pdf" onchange="onComprobanteChange(event,'venta-comprobante-label')">
@@ -1249,13 +1317,25 @@ textarea.field{height:auto}
           <span id="venta-comprobante-label" style="font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--text)">Subir comprobante</span>
         </label>
       </div>
-    </div>
 
-    <div class="total-row" style="margin-bottom:14px">
-      <span>Total</span>
-      <strong id="venta-cart-total" style="font-size:var(--fs-h2)">$0</strong>
-    </div>
-    <button class="btn btn-block" onclick="registrarVenta()"><i class="ph ph-check-circle"></i> Confirmar venta</button>
+      <details class="ins-mas" id="venta-mas-opciones" style="margin-bottom:14px">
+        <summary>Más opciones <span id="venta-mas-resumen" style="font-weight:var(--fw-medium);color:var(--muted)"></span></summary>
+        <div style="margin-bottom:10px">
+          <div class="vf-label-row">
+            <label class="field-label" for="venta-fecha">Fecha</label>
+            <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Solo para cargar una venta de otro día. Una venta con fecha pasada no entra a Pedidos. No se puede elegir una fecha futura.</p></details>
+          </div>
+          <input type="date" id="venta-fecha" class="field" style="max-width:180px" onchange="renderVentaMasResumen()">
+        </div>
+        <div id="venta-cliente-nuevo-form" style="display:none;flex-direction:column;gap:8px;padding:10px;background:var(--bg);border:1px solid var(--line);border-radius:9px">
+          <span style="font-size:var(--fs-xs);font-weight:var(--fw-bold);color:var(--ink)">Cliente nuevo — completa sus datos (opcional)</span>
+          <input type="text" id="venta-cliente-telefono" class="field field-sm" placeholder="Teléfono">
+          <input type="text" id="venta-cliente-direccion" class="field field-sm" placeholder="Dirección">
+        </div>
+      </details>
+
+      <button class="btn btn-block" onclick="registrarVenta()"><i class="ph ph-check-circle"></i> Confirmar venta · <span id="venta-confirmar-total">$0</span></button>
+    </section>
   </div>
 </div>
 
@@ -2917,10 +2997,15 @@ function formatSyncTime(iso) {
   return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }) + ' ' + d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
 }
 
-// accion (opcional): { label, fn } — agrega un botón (ej. "Deshacer") y
-// deja el aviso unos segundos más. Si fn devuelve false, el aviso sigue.
+// opcion (opcional): un número = cuántos ms queda visible (ej. el aviso de
+// stock faltante al vender necesita más de 2,4 s), o { label, fn } = un
+// botón (ej. "Deshacer") que deja el aviso 5 s; si fn devuelve false, el
+// aviso sigue. Un toast nuevo reinicia el tiempo (antes el timer del
+// anterior podía esconder el nuevo antes de tiempo).
 let toastTimer = null;
-function showToast(msg, accion) {
+function showToast(msg, opcion) {
+  const accion = opcion && typeof opcion === 'object' ? opcion : null;
+  const ms = typeof opcion === 'number' ? opcion : (accion ? 5000 : 2400);
   const t = document.getElementById('toast');
   t.textContent = '';
   const texto = document.createElement('span');
@@ -2938,7 +3023,7 @@ function showToast(msg, accion) {
   }
   t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(ocultar, accion ? 5000 : 2400);
+  toastTimer = setTimeout(ocultar, ms);
 }
 
 // Banner de error que NO desaparece solo (a diferencia del toast) — para
@@ -4335,6 +4420,9 @@ let ventaDraftAdiciones = [];
 let ventaDraftSelected = null; // { tipo: 'producto'|'topping', id }
 let ventaMetodoPago = 'efectivo';
 let ventaComprobante = '';
+// Productos ordenados por lo más vendido en 14 días (y el resto
+// alfabético) — se calcula una vez al abrir el modal, no en cada tecla.
+let ventaProductosOrden = [];
 
 // Día de HOY en hora de Colombia (YYYY-MM-DD). Nunca `toISOString().slice(0, 10)`:
 // eso es el día UTC, que después de las 7 pm ya es "mañana".
@@ -4342,6 +4430,10 @@ function todayLocalISO() { return CrumblyCore.fechaLocalISO(); }
 function openSaleModal() {
   ventaCart = []; ventaDraftQty = 1; ventaDraftAdiciones = []; ventaDraftSelected = null; adicionesFiltro = '';
   ventaMetodoPago = 'efectivo'; ventaComprobante = '';
+  ventaProductosOrden = CrumblyCore.getProductosPorFrecuencia(state, 14);
+  document.getElementById('venta-monto-efectivo').value = '';
+  document.getElementById('venta-monto-transferencia').value = '';
+  document.getElementById('venta-mas-opciones').open = false;
   document.getElementById('venta-cliente-nombre').value = '';
   document.getElementById('venta-cliente-telefono').value = '';
   document.getElementById('venta-cliente-direccion').value = '';
@@ -4356,8 +4448,10 @@ function openSaleModal() {
   reiniciarComprobante_('venta-comprobante-label', 'venta-comprobante-input');
   document.getElementById('clientes-datalist').innerHTML = state.clientes.map(c => `<option value="${esc(c.nombre)}">`).join('');
   renderVentaMetodoPago();
+  renderVentaFrecuentes();
   renderDraftAdiciones();
   renderCartLines();
+  renderVentaMasResumen();
   openModal('modal-venta');
 }
 function closeSaleModal() { closeModal('modal-venta'); }
@@ -4368,13 +4462,60 @@ function onVentaClienteInput() {
   // de nuevo teléfono/dirección.
   const match = val && CrumblyCore.buscarCliente(state, val, '');
   document.getElementById('venta-cliente-nuevo-form').style.display = (val.length > 1 && !match) ? 'flex' : 'none';
+  renderVentaMasResumen();
 }
+// "Más opciones" está cerrado casi siempre: el resumen al lado del
+// título avisa si adentro hay algo distinto de lo normal (otra fecha, o
+// un cliente nuevo al que se le pueden poner teléfono/dirección).
+function renderVentaMasResumen() {
+  const partes = [];
+  const fecha = document.getElementById('venta-fecha').value;
+  if (fecha && fecha !== todayLocalISO()) {
+    const [y, m, d] = fecha.split('-');
+    partes.push('fecha ' + d + '/' + m + '/' + y);
+  }
+  if (document.getElementById('venta-cliente-nuevo-form').style.display !== 'none') partes.push('datos del cliente nuevo');
+  document.getElementById('venta-mas-resumen').textContent = partes.length ? '· ' + partes.join(' · ') : '';
+}
+// Efectivo / Transferencia / Dividido (parte y parte, igual que en
+// Gastos). Con transferencia de por medio se muestra el comprobante.
 function renderVentaMetodoPago() {
-  document.getElementById('venta-metodo-pago').innerHTML = [['efectivo', 'Efectivo'], ['transferencia', 'Transferencia']]
+  document.getElementById('venta-metodo-pago').innerHTML = [['efectivo', 'Efectivo'], ['transferencia', 'Transferencia'], ['dividido', 'Dividido']]
     .map(([id, label]) => `<button class="pill-btn ${ventaMetodoPago === id ? 'active' : ''}" onclick="setVentaMetodoPago('${id}')">${label}</button>`).join('');
   document.getElementById('venta-comprobante-wrap').style.display = ventaMetodoPago !== 'efectivo' ? 'block' : 'none';
+  document.getElementById('venta-campos-dividido').style.display = ventaMetodoPago === 'dividido' ? 'block' : 'none';
+  updateVentaDivididoPreview();
 }
-function setVentaMetodoPago(m) { ventaMetodoPago = m; renderVentaMetodoPago(); }
+function setVentaMetodoPago(m) {
+  ventaMetodoPago = m;
+  renderVentaMetodoPago();
+  if (m === 'dividido' && !document.getElementById('venta-monto-efectivo').value) document.getElementById('venta-monto-efectivo').focus();
+}
+// Total de la venta redondeado a pesos (carrito + lo elegido sin
+// agregar) — contra esto se valida que el pago dividido cuadre.
+function ventaCartTotal_() {
+  const draft = lineaDesdeDraft_();
+  return Math.round(ventaCart.reduce((a, l) => a + cartLineSubtotal(l), 0) + (draft ? cartLineSubtotal(draft) : 0));
+}
+// Al escribir el efectivo, la transferencia se llena sola con lo que
+// falta (se puede corregir a mano; la suma se valida al confirmar).
+function onVentaMontoEfectivoInput() {
+  const efectivoTxt = document.getElementById('venta-monto-efectivo').value;
+  const transf = document.getElementById('venta-monto-transferencia');
+  transf.value = efectivoTxt === '' ? '' : Math.max(0, ventaCartTotal_() - (parseFloat(efectivoTxt) || 0));
+  updateVentaDivididoPreview();
+}
+function updateVentaDivididoPreview() {
+  const el = document.getElementById('venta-dividido-preview');
+  if (ventaMetodoPago !== 'dividido') { el.textContent = ''; return; }
+  const total = ventaCartTotal_();
+  const efectivoTxt = document.getElementById('venta-monto-efectivo').value;
+  const transfTxt = document.getElementById('venta-monto-transferencia').value;
+  if (efectivoTxt === '' && transfTxt === '') { el.textContent = 'Escribe cuánto paga en efectivo; el resto queda en transferencia.'; el.style.color = 'var(--muted)'; return; }
+  const suma = Math.round((parseFloat(efectivoTxt) || 0) + (parseFloat(transfTxt) || 0));
+  if (suma === total) { el.textContent = 'Suma ' + fmt(suma) + ' ✓'; el.style.color = 'var(--muted)'; }
+  else { el.textContent = 'Suma ' + fmt(suma) + ' — el total de la venta es ' + fmt(total); el.style.color = 'var(--danger)'; }
+}
 // Subida de comprobante en curso, por modal. Bug real: confirmar mientras
 // decía "Subiendo…" guardaba la venta sin comprobante, y cuando la subida
 // terminaba escribía la URL igual — pegándosela a la venta SIGUIENTE. Cada
@@ -4448,11 +4589,12 @@ async function onComprobanteChange(e, labelId) {
     if (token === subida.token) subida.subiendo = false;
   }
 }
-function decDraftQty() { ventaDraftQty = Math.max(1, ventaDraftQty - 1); document.getElementById('venta-draft-qty').textContent = ventaDraftQty; }
-function incDraftQty() { ventaDraftQty++; document.getElementById('venta-draft-qty').textContent = ventaDraftQty; }
+function decDraftQty() { ventaDraftQty = Math.max(1, ventaDraftQty - 1); document.getElementById('venta-draft-qty').textContent = ventaDraftQty; renderVentaTotal_(); }
+function incDraftQty() { ventaDraftQty++; document.getElementById('venta-draft-qty').textContent = ventaDraftQty; renderVentaTotal_(); }
 function toggleDraftAdicion(id) {
   ventaDraftAdiciones = ventaDraftAdiciones.includes(id) ? ventaDraftAdiciones.filter(x => x !== id) : [...ventaDraftAdiciones, id];
   renderDraftAdiciones();
+  renderVentaTotal_();
 }
 // Las "adiciones" (extras marcados esAdicion) solo tienen sentido sobre un
 // producto (ej: nutella extra en un waffle) — al elegir un complemento
@@ -4513,19 +4655,44 @@ function precioVentaTexto_(tipo, item) {
   const u = tipo === 'topping' ? unidadCortaInsumo_(item) : 'unidad';
   return fmt(item.precio) + (u === 'unidad' ? '' : '/' + u);
 }
+// Orden: productos (los más vendidos primero, después alfabético) y
+// detrás los complementos, alfabéticos.
 function getVentaBuscables() {
+  const productos = ventaProductosOrden.length ? ventaProductosOrden : CrumblyCore.getProductosPorFrecuencia(state, 14);
   return [
-    ...state.productos.map(p => ({ id: p.id, tipo: 'producto', nombre: p.nombre, precio: p.precio, precioTexto: precioVentaTexto_('producto', p) })),
+    ...productos.map(p => ({ id: p.id, tipo: 'producto', nombre: p.nombre, precio: p.precio, precioTexto: precioVentaTexto_('producto', p) })),
     ...state.toppings.filter(t => Number(t.precio) > 0)
+      .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre), 'es'))
       .map(t => ({ id: t.id, tipo: 'topping', nombre: t.nombre, precio: t.precio, precioTexto: precioVentaTexto_('topping', t) }))
   ];
 }
+// Fila de botones con los ~8 productos más vendidos de las últimas 2
+// semanas: tocar uno es lo mismo que elegirlo en el buscador (aparecen
+// sus adiciones). El elegido queda marcado.
+function renderVentaFrecuentes() {
+  const sel = ventaDraftSelected && ventaDraftSelected.tipo === 'producto' ? ventaDraftSelected.id : null;
+  document.getElementById('venta-frecuentes').innerHTML = ventaProductosOrden.slice(0, 8).map(p =>
+    `<button type="button" class="venta-frecuente${p.id === sel ? ' active' : ''}" onclick="selectVentaBuscado('producto','${p.id}')">${esc(p.nombre)}</button>`).join('');
+}
 function onVentaBuscarInput() {
-  if (ventaDraftSelected) { ventaDraftSelected = null; renderDraftAdiciones(); }
-  const q = document.getElementById('venta-draft-producto').value.trim().toLowerCase();
+  if (ventaDraftSelected) { ventaDraftSelected = null; renderDraftAdiciones(); renderVentaFrecuentes(); renderVentaTotal_(); }
+  renderVentaSugerencias_(document.getElementById('venta-draft-producto').value);
+}
+// Al tocar el buscador: con el campo vacío ya muestra los frecuentes (y
+// el resto). Si había algo elegido, el texto ("Waffle — $18.000") se
+// selecciona entero para que escribir lo reemplace — lo elegido y sus
+// adiciones no se pierden solo por tocar el campo.
+function onVentaBuscarFocus() {
+  const input = document.getElementById('venta-draft-producto');
+  if (ventaDraftSelected) { input.select(); renderVentaSugerencias_(''); return; }
+  renderVentaSugerencias_(input.value);
+}
+// Búsqueda sin tildes ni mayúsculas ("crepe" encuentra "Crêpe").
+function renderVentaSugerencias_(texto) {
+  const q = normalizarBusqueda_(String(texto || '').trim());
   const wrap = document.getElementById('venta-buscar-sugerencias');
-  if (!q) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
-  const matches = getVentaBuscables().filter(x => x.nombre.toLowerCase().includes(q)).slice(0, 30);
+  const matches = getVentaBuscables().filter(x => !q || normalizarBusqueda_(x.nombre).includes(q)).slice(0, 30);
+  if (!q && !matches.length) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
   wrap.innerHTML = matches.length
     ? matches.map(m => `<button type="button" class="venta-sugerencia" onclick="selectVentaBuscado('${m.tipo}','${m.id}')" style="display:block;width:100%;text-align:left;padding:9px 12px;border:none;border-bottom:1px solid var(--line);background:transparent;cursor:pointer;font-size:var(--fs-sm);color:var(--text)">${esc(m.nombre)} — ${m.precioTexto}</button>`).join('')
     : '<div style="padding:10px 12px;font-size:var(--fs-sm);color:var(--muted)">Sin resultados</div>';
@@ -4535,83 +4702,159 @@ function selectVentaBuscado(tipo, id) {
   const item = (tipo === 'producto' ? state.productos : state.toppings).find(x => x.id === id);
   if (!item) return;
   ventaDraftSelected = { tipo, id };
-  document.getElementById('venta-draft-producto').value = item.nombre + ' — ' + precioVentaTexto_(tipo, item);
+  const input = document.getElementById('venta-draft-producto');
+  input.value = item.nombre + ' — ' + precioVentaTexto_(tipo, item);
+  input.blur(); // en el celular baja el teclado y deja ver las adiciones
   document.getElementById('venta-buscar-sugerencias').style.display = 'none';
+  renderVentaFrecuentes();
   renderDraftAdiciones();
+  renderVentaTotal_();
 }
-function addLineToCart() {
-  if (!ventaDraftSelected) { showToast('Busca y selecciona un producto o complemento'); return; }
+// Tocar fuera del buscador cierra la lista de sugerencias (ahora se abre
+// sola al tocar el campo, aunque esté vacío).
+document.addEventListener('click', e => {
+  const wrap = document.getElementById('venta-buscar-sugerencias');
+  if (wrap && wrap.style.display !== 'none' && !wrap.parentElement.contains(e.target)) wrap.style.display = 'none';
+});
+// La línea de carrito que saldría de lo elegido arriba (producto o
+// complemento, cantidad y adiciones), sin agregarla todavía — la usan
+// "Agregar a la venta" y el Total (que ya cuenta lo elegido, porque
+// "Confirmar venta" lo agrega solo). null si no hay nada elegido.
+function lineaDesdeDraft_() {
+  if (!ventaDraftSelected) return null;
+  const lineId = 'line-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
   if (ventaDraftSelected.tipo === 'producto') {
     const p = state.productos.find(x => x.id === ventaDraftSelected.id);
-    if (!p) { showToast('Producto no encontrado'); return; }
+    if (!p) return null;
     const adiciones = CrumblyCore.getAdiciones(state).filter(a => ventaDraftAdiciones.includes(a.id));
-    ventaCart.push({
-      id: 'line-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+    return {
+      id: lineId,
       productoId: p.id, nombre: p.nombre, precio: p.precio, qty: ventaDraftQty,
       adiciones: adiciones.map(a => ({ id: a.id, label: a.nombreAdicion || a.nombre, precio: a.precioAdicion }))
-    });
-  } else {
-    const t = state.toppings.find(x => x.id === ventaDraftSelected.id);
-    if (!t) { showToast('Complemento no encontrado'); return; }
-    // qty de un topping suelto va en escala de receta (gramos si el
-    // topping se mide en g/kg, ml, o unidades) y applyVenta cobra
-    // precioPorGramoInsumo × qty — el carrito muestra exactamente eso
-    // (antes mostraba precio × qty: en kg, 1000× lo que se cobraba).
-    ventaCart.push({
-      id: 'line-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-      toppingId: t.id, nombre: t.nombre, precio: CrumblyCore.precioPorGramoInsumo(t), qty: ventaDraftQty,
-      unidadQty: t.unidad === 'kg' ? 'g' : (t.unidad === 'g' || t.unidad === 'ml' ? t.unidad : ''),
-      adiciones: []
-    });
+    };
   }
+  const t = state.toppings.find(x => x.id === ventaDraftSelected.id);
+  if (!t) return null;
+  // qty de un topping suelto va en escala de receta (gramos si el
+  // topping se mide en g/kg, ml, o unidades) y applyVenta cobra
+  // precioPorGramoInsumo × qty — el carrito muestra exactamente eso
+  // (antes mostraba precio × qty: en kg, 1000× lo que se cobraba).
+  return {
+    id: lineId,
+    toppingId: t.id, nombre: t.nombre, precio: CrumblyCore.precioPorGramoInsumo(t), qty: ventaDraftQty,
+    unidadQty: t.unidad === 'kg' ? 'g' : (t.unidad === 'g' || t.unidad === 'ml' ? t.unidad : ''),
+    adiciones: []
+  };
+}
+// Devuelve true si agregó la línea — registrarVenta la usa para meter al
+// carrito lo que quedó elegido sin tocar "Agregar a la venta".
+function addLineToCart() {
+  if (!ventaDraftSelected) { showToast('Busca y selecciona un producto o complemento'); return false; }
+  const linea = lineaDesdeDraft_();
+  if (!linea) { showToast(ventaDraftSelected.tipo === 'producto' ? 'Producto no encontrado' : 'Complemento no encontrado'); return false; }
+  ventaCart.push(linea);
   ventaDraftQty = 1; ventaDraftAdiciones = []; ventaDraftSelected = null; adicionesFiltro = '';
   document.getElementById('venta-draft-producto').value = '';
   document.getElementById('venta-draft-qty').textContent = '1';
+  renderVentaFrecuentes();
   renderDraftAdiciones();
   renderCartLines();
+  return true;
 }
 function removeLineFromCart(id) { ventaCart = ventaCart.filter(l => l.id !== id); renderCartLines(); }
 function cartLineSubtotal(l) { return (l.precio + l.adiciones.reduce((a, x) => a + x.precio, 0)) * l.qty; }
+// Cambiar la cantidad de una línea ya agregada, desde la tabla. Una
+// línea de complemento suelto por peso (g/ml) acepta cualquier número
+// positivo; un producto, enteros desde 1 (para quitarla está la ×).
+function setCartLineQty(id, qty) {
+  const l = ventaCart.find(x => x.id === id);
+  if (!l) return;
+  const n = Number(qty);
+  if (n > 0) l.qty = l.unidadQty ? n : Math.max(1, Math.round(n));
+  renderCartLines();
+}
+function cambiarCantLinea_(id, delta) {
+  const l = ventaCart.find(x => x.id === id);
+  if (l) setCartLineQty(id, l.qty + delta);
+}
 function renderCartLines() {
   document.getElementById('venta-cart-count').textContent = ventaCart.length;
   const wrap = document.getElementById('venta-cart-lines');
   wrap.innerHTML = !ventaCart.length
-    ? '<div style="display:flex;flex-direction:column;align-items:center;gap:6px;border:1px dashed var(--soft);border-radius:10px;padding:22px;color:var(--muted)"><i class="ph ph-shopping-cart" style="font-size:var(--fs-h1);color:var(--soft)"></i><span style="font-size:var(--fs-sm)">Aún no has agregado productos.</span></div>'
-    : ventaCart.map(l => `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:10px;background:var(--bg)">
-        <div style="display:flex;align-items:center;gap:10px;min-width:0">
-          <div style="min-width:30px;height:30px;padding:0 4px;box-sizing:border-box;white-space:nowrap;border-radius:8px;background:var(--white);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:var(--fs-xs);font-weight:var(--fw-bold);color:var(--ink)">${l.unidadQty ? l.qty + ' ' + l.unidadQty : l.qty + '×'}</div>
-          <div style="min-width:0"><div style="font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--ink)">${esc(l.nombre)}</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:1px">${l.adiciones.length ? esc(l.adiciones.map(a => a.label).join(', ')) : (l.toppingId ? 'Topping suelto' : 'Sin adiciones')}</div></div>
-        </div>
-        <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
-          <span style="font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--ink)">${fmt(cartLineSubtotal(l))}</span>
-          <button onclick="removeLineFromCart('${l.id}')" style="background:transparent;border:none;cursor:pointer;color:var(--muted)"><i class="ph ph-trash"></i></button>
-        </div>
-      </div>`).join('');
-  document.getElementById('venta-cart-total').textContent = fmt(ventaCart.reduce((a, l) => a + cartLineSubtotal(l), 0));
+    ? '<div class="vf-vacio"><i class="ph ph-shopping-cart"></i> Aún no has agregado productos.</div>'
+    : ventaCart.map(l => {
+      const precioUnit = l.precio + l.adiciones.reduce((a, x) => a + x.precio, 0);
+      const extra = l.adiciones.length ? l.adiciones.map(a => '+ ' + a.label).join(' · ') : (l.toppingId ? 'Topping suelto' : '');
+      const cant = l.unidadQty
+        ? `<label class="vf-cant"><input type="number" min="1" step="1" inputmode="numeric" value="${l.qty}" aria-label="Cantidad en ${l.unidadQty}" onchange="setCartLineQty('${l.id}', this.value)">${l.unidadQty}</label>`
+        : `<div class="vf-stepper"><button type="button" onclick="cambiarCantLinea_('${l.id}',-1)" aria-label="Menos">−</button><span>${l.qty}</span><button type="button" onclick="cambiarCantLinea_('${l.id}',1)" aria-label="Más">+</button></div>`;
+      return `<div class="vf-fila">
+        <div class="vf-producto"><div class="vf-producto-nombre">${esc(l.nombre)}</div>${extra ? `<div class="vf-producto-extra">${esc(extra)}</div>` : ''}</div>
+        ${cant}
+        <span class="vf-num vf-col-precio">${fmt(precioUnit)}${l.unidadQty ? '/' + l.unidadQty : ''}</span>
+        <span class="vf-num" style="font-weight:var(--fw-bold);color:var(--ink)">${fmt(cartLineSubtotal(l))}</span>
+        <button type="button" class="vf-quitar" onclick="removeLineFromCart('${l.id}')" aria-label="Quitar"><i class="ph ph-x"></i></button>
+      </div>`;
+    }).join('');
+  renderVentaTotal_();
+}
+// Total = carrito + lo elegido arriba sin agregar (entra solo al
+// confirmar). Se llama cada vez que cambia cualquiera de los dos.
+let ventaTotalMostrado_ = 0;
+function renderVentaTotal_() {
+  const draft = lineaDesdeDraft_();
+  const total = ventaCartTotal_();
+  document.getElementById('venta-cart-total').textContent = fmt(total);
+  document.getElementById('venta-confirmar-total').textContent = fmt(total);
+  const nota = document.getElementById('venta-total-nota');
+  nota.textContent = draft ? 'Incluye ' + draft.nombre + (draft.unidadQty ? ' ' + draft.qty + ' ' + draft.unidadQty : ' ×' + draft.qty) + ' (se agrega al confirmar)' : '';
+  nota.style.display = draft ? 'block' : 'none';
+  // Pago dividido: si CAMBIÓ el total, la transferencia se recalcula
+  // desde el efectivo ya escrito. Si no cambió (ej. "Confirmar" pasando
+  // lo elegido al carrito) no se toca: pisaría lo corregido a mano.
+  const cambio = total !== ventaTotalMostrado_;
+  ventaTotalMostrado_ = total;
+  if (cambio && ventaMetodoPago === 'dividido' && document.getElementById('venta-monto-efectivo').value !== '') onVentaMontoEfectivoInput();
+  else updateVentaDivididoPreview();
 }
 
 function registrarVenta() {
+  // Un producto elegido (con su cantidad y adiciones) pero sin tocar
+  // "Agregar a la venta" entra al carrito acá — antes la venta fallaba con
+  // "Agrega al menos un producto" y en la caja eso es un toque perdido.
+  if (ventaDraftSelected && !addLineToCart()) return;
   if (!ventaCart.length) { showToast('Agrega al menos un producto'); return; }
   const conComprobante = ventaMetodoPago !== 'efectivo'; // en efectivo el campo ni se muestra
   if (conComprobante && comprobanteSubida_['venta-comprobante-label'].subiendo) {
     showToast('Esperá a que termine de subir el comprobante');
     return;
   }
+  let montoEfectivo = 0, montoTransferencia = 0;
+  if (ventaMetodoPago === 'dividido') {
+    const efectivoTxt = document.getElementById('venta-monto-efectivo').value;
+    const transfTxt = document.getElementById('venta-monto-transferencia').value;
+    montoEfectivo = parseFloat(efectivoTxt) || 0;
+    montoTransferencia = parseFloat(transfTxt) || 0;
+    const total = ventaCartTotal_();
+    if (efectivoTxt === '' && transfTxt === '') { showToast('Pago dividido: escribe cuánto paga en efectivo'); document.getElementById('venta-monto-efectivo').focus(); return; }
+    if (montoEfectivo < 0 || montoTransferencia < 0) { showToast('Pago dividido: los montos no pueden ser negativos'); return; }
+    if (Math.round(montoEfectivo + montoTransferencia) !== total) {
+      showToast('Pago dividido: efectivo + transferencia suman ' + fmt(montoEfectivo + montoTransferencia) + ', pero la venta es de ' + fmt(total), 4000);
+      return;
+    }
+  }
   const lineas = ventaCart.filter(l => l.productoId).map(l => ({ productoId: l.productoId, qty: l.qty, adiciones: l.adiciones.map(a => a.id) }));
   const toppingsSueltos = ventaCart.filter(l => l.toppingId).map(l => ({ toppingId: l.toppingId, qty: l.qty }));
 
   // P0-3: valida el consumo total contra el stock ANTES de tocar nada.
+  // Ya NO pregunta (confirm) — en la caja, con fila, frenaba casi toda
+  // venta (muchos complementos se importaron con stock 0) y la respuesta
+  // siempre era "sí". Se registra igual, marcada stockInsuficiente (el
+  // faltante queda como deuda de inventario, ver A2 en applyVenta), y se
+  // avisa con un toast que no bloquea.
   const consumo = CrumblyCore.computeSaleConsumption(lineas, toppingsSueltos, state);
   const faltantes = CrumblyCore.checkStockShortage(consumo, state);
-  let stockInsuficiente = false;
-  if (faltantes.length) {
-    const detalle = faltantes.map(f =>
-      '- ' + f.nombre + ': disponible ' + f.disponible.toFixed(0) + ', necesario ' + f.necesario.toFixed(0) + ', faltan ' + f.faltante.toFixed(0)
-    ).join('\n');
-    const seguir = confirm('No hay suficiente stock para registrar la venta:\n\n' + detalle + '\n\n¿Registrar de todas formas? La venta quedará marcada con stock insuficiente.');
-    if (!seguir) return;
-    stockInsuficiente = true;
-  }
+  const stockInsuficiente = faltantes.length > 0;
 
   // T2: aviso de venta a pérdida — advertencia, no bloqueo (caso real: una
   // venta con ganancia de -$1.473.291 se registró sin que nada avisara).
@@ -4629,7 +4872,7 @@ function registrarVenta() {
     document.getElementById('venta-cliente-direccion').value
   );
   const fechaInput = document.getElementById('venta-fecha').value;
-  const opts = { stockInsuficiente, clienteId, metodoPago: ventaMetodoPago, comprobante: conComprobante ? ventaComprobante : '' };
+  const opts = { stockInsuficiente, clienteId, metodoPago: ventaMetodoPago, comprobante: conComprobante ? ventaComprobante : '', montoEfectivo, montoTransferencia };
   if (fechaInput && fechaInput !== todayLocalISO()) {
     const [y, m, d] = fechaInput.split('-').map(Number);
     const now = new Date();
@@ -4657,7 +4900,13 @@ function registrarVenta() {
   renderCaja();
   renderInventario();
   renderReportes();
-  showToast('Venta registrada · ' + fmt(venta.total) + (stockInsuficiente ? ' ⚠ stock insuficiente' : ' ✓'));
+  if (stockInsuficiente) {
+    const nombres = [...new Set(faltantes.map(f => f.nombre))];
+    const lista = nombres.slice(0, 3).join(', ') + (nombres.length > 3 ? ' y ' + (nombres.length - 3) + ' más' : '');
+    showToast('Venta registrada ✓ · ' + fmt(venta.total) + ' · ⚠ faltó stock de ' + lista, 5000);
+  } else {
+    showToast('Venta registrada ✓ · ' + fmt(venta.total));
+  }
 }
 
 // P0-1: revierte el stock consumido por una venta y la elimina del
