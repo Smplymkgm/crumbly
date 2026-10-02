@@ -1646,6 +1646,100 @@
     return ventas.reduce(function (a, v) { return a + v.total; }, 0) / ventas.length;
   }
 
+  // Unidades vendidas = solo los productos (ítems con productoId). Las
+  // adiciones y los toppings no son "unidades" — un topping suelto además
+  // guarda qty en gramos (escala de receta), y sumaba 50 "unidades" por
+  // 50 g de Nutella en el cierre de caja.
+  function contarUnidades(ventas) {
+    return (ventas || []).reduce(function (a, v) {
+      return a + (v.items || []).reduce(function (b, i) { return b + (i.productoId ? (Number(i.qty) || 0) : 0); }, 0);
+    }, 0);
+  }
+
+  // ─── Cierre de caja por medio de pago ───
+  // Cuánto de un registro (venta o gasto) fue en efectivo / transferencia /
+  // otro medio. Formas posibles de metodoPago:
+  //   - sin campo (registros viejos) o 'efectivo' → todo en efectivo
+  //   - 'transferencia' → todo por transferencia
+  //   - 'dividido' → montoEfectivo + montoTransferencia, tal cual se
+  //     anotaron (registrarGasto no valida que sumen el total, acá
+  //     tampoco se inventa nada). Un dividido sin ninguno de los dos montos
+  //     cuenta como efectivo, igual que un registro sin metodoPago.
+  //   - cualquier otro valor → "otro" (no es efectivo en la caja ni una
+  //     transferencia conocida).
+  function partesPago_(registro, monto) {
+    var m = registro.metodoPago || 'efectivo';
+    if (m === 'efectivo') return { efectivo: monto, transferencia: 0, otro: 0 };
+    if (m === 'transferencia') return { efectivo: 0, transferencia: monto, otro: 0 };
+    if (m === 'dividido') {
+      var ef = Number(registro.montoEfectivo) || 0;
+      var tr = Number(registro.montoTransferencia) || 0;
+      if (ef + tr <= 0) return { efectivo: monto, transferencia: 0, otro: 0 };
+      return { efectivo: ef, transferencia: tr, otro: 0 };
+    }
+    return { efectivo: 0, transferencia: 0, otro: monto };
+  }
+  // ventas/gastos YA filtrados (ej. los de hoy). efectivoEnCaja = lo que
+  // entró en efectivo por ventas − lo que salió en efectivo por gastos
+  // (incluida la parte en efectivo de los divididos). No incluye la base
+  // con la que se abrió la caja — la app no la registra.
+  function getCierrePorMedioPago(ventas, gastos) {
+    var r = { ventasEfectivo: 0, transferenciasRecibidas: 0, otrosRecibidos: 0, gastosEfectivo: 0, transferenciasPagadas: 0, otrosPagados: 0 };
+    (ventas || []).forEach(function (v) {
+      var p = partesPago_(v, Number(v.total) || 0);
+      r.ventasEfectivo += p.efectivo; r.transferenciasRecibidas += p.transferencia; r.otrosRecibidos += p.otro;
+    });
+    (gastos || []).forEach(function (g) {
+      var p = partesPago_(g, Number(g.monto) || 0);
+      r.gastosEfectivo += p.efectivo; r.transferenciasPagadas += p.transferencia; r.otrosPagados += p.otro;
+    });
+    r.efectivoEnCaja = r.ventasEfectivo - r.gastosEfectivo;
+    return r;
+  }
+
+  // ─── Pedidos (pantalla de quien prepara) ───
+  // Turno automático: posición de cada pedido entre los pedidos de SU día
+  // local (Colombia), por hora de registro, empezando en 1. Se calcula al
+  // mostrar — no se guarda nada. Pedido = venta con `estado` (las ventas
+  // anteriores a Pedidos no lo tienen y no cuentan). Devuelve { id: n }.
+  function getTurnosPedidos(ventas) {
+    var porDia = {};
+    (ventas || []).forEach(function (v) {
+      if (!v.estado) return;
+      var dia = fechaLocalISO(v.fecha);
+      (porDia[dia] = porDia[dia] || []).push(v);
+    });
+    var turnos = {};
+    Object.keys(porDia).forEach(function (dia) {
+      porDia[dia]
+        .sort(function (a, b) { return new Date(a.fecha) - new Date(b.fecha); })
+        .forEach(function (v, i) { turnos[v.id] = i + 1; });
+    });
+    return turnos;
+  }
+  // Agrupa los ítems de una venta para la tarjeta del pedido: cada producto
+  // con sus adiciones (y toppings de la línea, en ventas viejas) debajo.
+  // applyVenta empuja cada producto seguido de sus toppings y adiciones, y
+  // los toppings sueltos al final — esos quedan como línea propia.
+  // Devuelve [{ item, adiciones: [{ item, nombre }] }]; `nombre` sin el
+  // sufijo " (adición)"/" (topping)".
+  function agruparItemsPedido(items) {
+    var grupos = [];
+    var actual = null;
+    (items || []).forEach(function (i) {
+      var esSuelto = /\(topping suelto\)\s*$/.test(i.nombre || '');
+      var esDeLinea = !i.productoId && !esSuelto && (i.adicionId || i.toppingId);
+      if (esDeLinea && actual) {
+        actual.adiciones.push({ item: i, nombre: String(i.nombre || '').replace(/\s*\((adición|topping)\)\s*$/, '') });
+        return;
+      }
+      var g = { item: i, adiciones: [] };
+      grupos.push(g);
+      actual = i.productoId ? g : null;
+    });
+    return grupos;
+  }
+
   // ─── Movimientos (Caja) — ventas y gastos de un período, en una sola
   // lista ordenada por fecha descendente, para la pantalla "Caja" del
   // rediseño. No inventa datos nuevos, solo normaliza/combina lo que ya
@@ -3701,6 +3795,10 @@
     findOrCreateCliente: findOrCreateCliente,
     buscarCliente: buscarCliente,
     getTicketPromedio: getTicketPromedio,
+    contarUnidades: contarUnidades,
+    getCierrePorMedioPago: getCierrePorMedioPago,
+    getTurnosPedidos: getTurnosPedidos,
+    agruparItemsPedido: agruparItemsPedido,
     getVentasByRange: getVentasByRange,
     getGastosByRange: getGastosByRange,
     getDepreciacionRango: getDepreciacionRango,

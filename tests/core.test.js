@@ -4001,6 +4001,91 @@ test('costoPorGramoInsumo/precioPorGramoInsumo/factorUnidadAGramos convierten kg
   assert.strictEqual(C.precioPorGramoInsumo({ unidad: 'unidad', precio: 2000 }), 2000);
 });
 
+console.log('\n== Cierre de caja: unidades y medios de pago ==');
+
+test('contarUnidades cuenta solo productos (no adiciones ni toppings, que además vienen en gramos)', () => {
+  const ventas = [
+    { items: [{ productoId: 'p1', qty: 2 }, { adicionId: 'a1', qty: 2 }, { toppingId: 't1', qty: 50 }] },
+    { items: [{ productoId: 'p2', qty: 1 }] },
+    { items: [{ toppingId: 't1', nombre: 'Nutella (topping suelto)', qty: 30 }] }
+  ];
+  assert.strictEqual(C.contarUnidades(ventas), 3);
+  assert.strictEqual(C.contarUnidades([]), 0);
+});
+
+test('getCierrePorMedioPago: efectivo, transferencia, dividido y registros sin metodoPago (= efectivo)', () => {
+  const ventas = [
+    { total: 20000, metodoPago: 'efectivo' },
+    { total: 15000 },                                   // venta vieja sin campo → efectivo
+    { total: 30000, metodoPago: 'transferencia' },
+    { total: 25000, metodoPago: 'dividido', montoEfectivo: 10000, montoTransferencia: 15000 }
+  ];
+  const gastos = [
+    { monto: 5000, metodoPago: 'efectivo' },
+    { monto: 8000, metodoPago: 'transferencia' },
+    { monto: 12000, metodoPago: 'dividido', montoEfectivo: 2000, montoTransferencia: 10000 },
+    { monto: 1000 }                                     // gasto viejo sin campo → efectivo
+  ];
+  const r = C.getCierrePorMedioPago(ventas, gastos);
+  assert.strictEqual(r.ventasEfectivo, 45000);
+  assert.strictEqual(r.transferenciasRecibidas, 45000);
+  assert.strictEqual(r.gastosEfectivo, 8000);
+  assert.strictEqual(r.transferenciasPagadas, 18000);
+  assert.strictEqual(r.efectivoEnCaja, 37000);
+  assert.strictEqual(r.otrosRecibidos, 0);
+  assert.strictEqual(r.otrosPagados, 0);
+});
+
+test('getCierrePorMedioPago: dividido sin montos cuenta como efectivo; un medio desconocido va a "otros"', () => {
+  const r = C.getCierrePorMedioPago(
+    [{ total: 10000, metodoPago: 'dividido' }, { total: 7000, metodoPago: 'tarjeta' }],
+    [{ monto: 3000, metodoPago: 'dividido', montoEfectivo: 0, montoTransferencia: 0 }]
+  );
+  assert.strictEqual(r.ventasEfectivo, 10000);
+  assert.strictEqual(r.otrosRecibidos, 7000);
+  assert.strictEqual(r.gastosEfectivo, 3000);
+  assert.strictEqual(r.efectivoEnCaja, 7000);
+  assert.deepStrictEqual(C.getCierrePorMedioPago([], []).efectivoEnCaja, 0);
+});
+
+console.log('\n== Pedidos: turno automático y adiciones bajo su waffle ==');
+
+test('getTurnosPedidos numera por día local y por hora, ignorando ventas sin estado', () => {
+  const ventas = [
+    { id: 'b', estado: 'listo', fecha: new Date(2026, 9, 2, 11, 0).toISOString() },
+    { id: 'a', estado: 'entregado', fecha: new Date(2026, 9, 2, 10, 0).toISOString() },
+    { id: 'c', estado: 'pendiente', fecha: new Date(2026, 9, 2, 12, 0).toISOString() },
+    { id: 'viejo', fecha: new Date(2026, 9, 2, 9, 0).toISOString() },              // sin estado: no es pedido
+    { id: 'ayer', estado: 'pendiente', fecha: new Date(2026, 9, 1, 20, 0).toISOString() }
+  ];
+  const t = C.getTurnosPedidos(ventas);
+  assert.strictEqual(t.a, 1);
+  assert.strictEqual(t.b, 2);
+  assert.strictEqual(t.c, 3);
+  assert.strictEqual(t.ayer, 1);
+  assert.strictEqual(t.viejo, undefined);
+});
+
+test('agruparItemsPedido pone adiciones bajo su producto (sin sufijo) y deja los toppings sueltos aparte', () => {
+  const items = [
+    { productoId: 'p1', nombre: 'Waffle New York', qty: 1 },
+    { adicionId: 'a1', nombre: 'Nutella (adición)', qty: 1 },
+    { adicionId: 'a2', nombre: 'Fresa (adición)', qty: 1 },
+    { productoId: 'p2', nombre: 'Waffle Clásico', qty: 2 },
+    { toppingId: 't1', nombre: 'Arequipe (topping)', qty: 40 },
+    { toppingId: 't2', nombre: 'Nutella (topping suelto)', qty: 30 }
+  ];
+  const g = C.agruparItemsPedido(items);
+  assert.strictEqual(g.length, 3);
+  assert.strictEqual(g[0].item.nombre, 'Waffle New York');
+  assert.deepStrictEqual(g[0].adiciones.map(a => a.nombre), ['Nutella', 'Fresa']);
+  assert.deepStrictEqual(g[1].adiciones.map(a => a.nombre), ['Arequipe']);
+  assert.strictEqual(g[2].item.nombre, 'Nutella (topping suelto)');
+  assert.strictEqual(g[2].adiciones.length, 0);
+  // una adición sin producto antes (dato raro) no se pierde: queda como línea propia
+  assert.strictEqual(C.agruparItemsPedido([{ adicionId: 'x', nombre: 'Queso (adición)', qty: 1 }]).length, 1);
+});
+
 console.log('\n== Resumen ==');
 console.log(`${passed} pasaron, ${failed} fallaron\n`);
 process.exit(failed > 0 ? 1 : 0);

@@ -95,6 +95,11 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 .info summary{list-style:none;cursor:pointer;color:var(--muted);display:inline-flex;align-items:center;font-size:15px;line-height:1;padding:2px}
 .info summary::-webkit-details-marker{display:none}
 .info[open] summary{color:var(--ink)}
+.info.en-oscuro summary,.info.en-oscuro[open] summary{color:rgba(255,255,255,.7)}
+.info.en-oscuro p{background:var(--white);color:var(--ink);top:100%;left:0;width:100%}
+.cc-medios{margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.18);display:flex;flex-direction:column;gap:6px;font-size:var(--fs-sm)}
+.cc-medio-fila{position:relative;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.cc-medio-fila span{color:rgba(255,255,255,.75)}
 .info p{position:absolute;z-index:20;left:16px;width:min(340px,calc(100% - 32px));margin:6px 0 0;padding:10px 12px;background:var(--ink);color:var(--white);border-radius:10px;font-size:var(--fs-xs);font-weight:var(--fw-medium);line-height:1.45;text-transform:none;letter-spacing:0;white-space:normal;box-shadow:0 8px 24px rgba(0,0,0,.18)}
 .conteo-fila{border:1px solid var(--line);border-radius:9px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
 .conteo-fila.falta-motivo{border-color:var(--danger);box-shadow:inset 3px 0 0 var(--danger)}
@@ -132,6 +137,9 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 .pedido-espera{font-size:var(--fs-sm);color:var(--muted);white-space:nowrap}
 .pedido-espera.tarde{color:var(--danger);font-weight:var(--fw-bold)}
 .pedido-items{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:var(--fs-body)}
+.pedido-turno{font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--muted);white-space:nowrap}
+.pedido-adicion{padding-left:22px;color:var(--text)}
+.pedido-espera .btn-icon{vertical-align:middle;margin-left:4px}
 .pedido-nota{background:var(--bg);border-radius:10px;padding:8px 10px;font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--ink)}
 .card-title{font-weight:var(--fw-bold);font-size:var(--fs-h2);line-height:var(--lh-tight);color:var(--ink)}
 .page-title{font-weight:var(--fw-bold);font-size:var(--fs-h1);line-height:var(--lh-tight);color:var(--ink)}
@@ -228,6 +236,10 @@ textarea.field{height:auto}
 .add-ing-btn{background:var(--white);color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:9px 14px;font-size:var(--fs-sm);cursor:pointer;font-family:inherit;width:100%;margin-bottom:12px}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--white);padding:10px 22px;border-radius:999px;font-size:var(--fs-sm);z-index:300;opacity:0;transition:opacity 0.3s;pointer-events:none;white-space:nowrap}
 .toast.show{opacity:1}
+.toast.con-accion{display:flex;align-items:center;gap:12px;padding:6px 6px 6px 18px;max-width:calc(100% - 32px)}
+.toast.show.con-accion{pointer-events:auto}
+.toast-texto{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.toast-accion{flex-shrink:0;background:var(--white);color:var(--ink);border:none;border-radius:999px;padding:9px 16px;font-size:var(--fs-sm);font-weight:var(--fw-bold);font-family:inherit;cursor:pointer}
 .total-row{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg);border-radius:16px;margin-top:8px}
 .total-row span{font-size:var(--fs-sm);color:var(--muted)}
 .total-row strong{font-size:var(--fs-body);color:var(--ink)}
@@ -397,6 +409,12 @@ textarea.field{height:auto}
               <div><div style="font-size:var(--fs-body);font-weight:var(--fw-bold)" id="cc-gastos">$0</div><div style="font-size:var(--fs-xs);color:rgba(255,255,255,.6);margin-top:2px">Gastos</div></div>
               <div><div style="font-size:var(--fs-body);font-weight:var(--fw-bold)" id="cc-utilidad-neta">$0</div><div style="font-size:var(--fs-xs);color:rgba(255,255,255,.6);margin-top:2px">Utilidad neta</div></div>
               <div><div style="font-size:var(--fs-body);font-weight:var(--fw-bold)" id="cc-ticket-promedio">$0</div><div style="font-size:var(--fs-xs);color:rgba(255,255,255,.6);margin-top:2px">Ticket prom.</div></div>
+            </div>
+            <div class="cc-medios">
+              <div class="cc-medio-fila"><span>Efectivo en caja <details class="info en-oscuro"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Ventas de hoy cobradas en efectivo, menos los gastos de hoy pagados en efectivo (incluye la parte en efectivo de los pagos divididos). No incluye la base con la que abriste la caja: sumala para saber cuánto debería haber en el cajón.</p></details></span><b id="cc-efectivo-caja">$0</b></div>
+              <div class="cc-medio-fila"><span>Transferencias recibidas</span><b id="cc-transf-recibidas">$0</b></div>
+              <div class="cc-medio-fila"><span>Transferencias pagadas</span><b id="cc-transf-pagadas">$0</b></div>
+              <div class="cc-medio-fila" id="cc-otros-medios" style="display:none"><span>Otros medios (recibido / pagado)</span><b id="cc-otros-valor">$0</b></div>
             </div>
             <button class="btn btn-block" style="margin-top:10px;background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.3)" onclick="generateCierreCajaPDF()"><i class="ph ph-download-simple"></i> Reporte PDF</button>
           </div>
@@ -1546,19 +1564,24 @@ function mensajeErrorSubida_(err) {
 let mutacionesLocales = 0;
 function saveState() {
   mutacionesLocales++;
+  let ok = true;
   try {
     localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso()));
     saveConteoEnProgresoLocal();
     schedulePush();
-    return true;
   } catch (e) {
     showPersistentError(
       'No se pudo guardar — el almacenamiento del navegador está lleno o no disponible.',
       'Exportar respaldo ahora',
       () => { exportVentasCSV(); exportInventarioCSV(); }
     );
-    return false;
+    ok = false;
   }
+  // Pedidos (el "(n)" del menú y la pantalla): toda venta registrada o
+  // borrada y todo cambio de estado pasa por acá — así el número nunca
+  // queda viejo. Es barato (solo los pedidos en curso + los de hoy).
+  try { renderPedidos(); } catch (e) { console.error(e); }
+  return ok;
 }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 
@@ -1841,27 +1864,59 @@ document.addEventListener('visibilitychange', () => {
    Una venta nueva nace 'pendiente' (registrarVenta). Las ventas sin
    `estado` (todas las anteriores a esto) cuentan como entregadas. */
 const PEDIDO_ESPERA_TARDE_MIN = 10;
+// Nombre para llamar el pedido: el que se anotó en caja (o el del
+// cliente) + su turno del día ("Laura · #4"); sin nombre, "Turno 4". El
+// turno es la posición entre los pedidos del día por hora de registro —
+// se calcula al mostrar, no se guarda (CrumblyCore.getTurnosPedidos).
+function nombrePedidoPartes_(v, turnos) {
+  const cliente = v.clienteId && state.clientes.find(c => c.id === v.clienteId);
+  const nombre = v.nombrePedido || (cliente && cliente.nombre) || '';
+  const turno = turnos[v.id];
+  if (!nombre) return { nombre: turno ? 'Turno ' + turno : 'Sin nombre', turno: '' };
+  return { nombre, turno: turno ? '#' + turno : '' };
+}
+function nombrePedidoHtml_(v, turnos) {
+  const p = nombrePedidoPartes_(v, turnos);
+  return esc(p.nombre) + (p.turno ? ` <span class="pedido-turno">· ${p.turno}</span>` : '');
+}
+function nombrePedidoTexto_(v) {
+  const p = nombrePedidoPartes_(v, CrumblyCore.getTurnosPedidos(state.ventas));
+  return p.nombre + (p.turno ? ' · ' + p.turno : '');
+}
+// Ítems del pedido: cada waffle con sus adiciones debajo ("+ Nutella");
+// los toppings sueltos (vendidos solos) quedan como línea propia.
+function itemsPedidoHtml_(v) {
+  return CrumblyCore.agruparItemsPedido(v.items).map(g => `<li><b>${g.item.qty}×</b> ${esc(g.item.nombre)}${
+    g.adiciones.map(a => `<div class="pedido-adicion">+ ${esc(a.nombre)}</div>`).join('')}</li>`).join('');
+}
+function itemsPedidoTexto_(v) {
+  return CrumblyCore.agruparItemsPedido(v.items).map(g =>
+    g.item.qty + '× ' + g.item.nombre + g.adiciones.map(a => ' + ' + a.nombre).join('')).join(', ');
+}
 function renderPedidos() {
+  const hoy = todayLocalISO();
+  const esDeHoy = v => CrumblyCore.fechaLocalISO(v.fecha) === hoy;
   const activos = state.ventas
     .filter(v => v.estado === 'pendiente' || v.estado === 'listo')
     .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
-  const pendientes = activos.filter(v => v.estado === 'pendiente');
+  // Pedidos que quedaron sin marcar de días anteriores: aparte y
+  // plegados, para que no se mezclen con la fila de hoy (ni cuentan en el
+  // número del menú).
+  const anteriores = activos.filter(v => !esDeHoy(v));
+  const deHoy = activos.filter(esDeHoy);
+  const pendientes = deHoy.filter(v => v.estado === 'pendiente');
+  const listos = deHoy.filter(v => v.estado === 'listo');
   const badge = document.getElementById('pedidos-badge');
   if (badge) badge.textContent = pendientes.length ? '(' + pendientes.length + ')' : '';
   const el = document.getElementById('pedidos-list');
   if (!el) return;
-  const nombreDe = v => {
-    const cliente = v.clienteId && state.clientes.find(c => c.id === v.clienteId);
-    return esc(v.nombrePedido || (cliente && cliente.nombre) || 'Sin nombre');
-  };
+  const turnos = CrumblyCore.getTurnosPedidos(state.ventas);
   // Historial de HOY (entregados), el más reciente arriba. Las ventas de
   // antes de Pedidos no tienen `estado` y no aparecen.
-  const hoy = todayLocalISO();
-  const esDeHoy = v => CrumblyCore.fechaLocalISO(v.fecha) === hoy;
   const hora = iso => new Date(iso).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
   const entregados = state.ventas.filter(v => v.estado === 'entregado' && esDeHoy(v))
     .sort((a, b) => new Date(b.entregadoEn || b.estadoFecha || b.fecha) - new Date(a.entregadoEn || a.estadoFecha || a.fecha));
-  const histPrevio = el.querySelector('.pedidos-historial');
+  const histPrevio = el.querySelector('.pedidos-historial:not(.pedidos-anteriores)');
   const historial = entregados.length ? `
     <details class="adiciones-lista pedidos-historial"${histPrevio && histPrevio.open ? ' open' : ''}>
       <summary><span>Historial de hoy</span><span class="adiciones-resumen">${entregados.length} entregado${entregados.length === 1 ? '' : 's'}</span></summary>
@@ -1870,24 +1925,41 @@ function renderPedidos() {
         const tardo = fin ? Math.max(0, Math.round((new Date(fin) - new Date(v.fecha)) / 60000)) : null;
         return `<div class="historial-fila">
           <div style="flex:1;min-width:0">
-            <div><b>${nombreDe(v)}</b> <span class="item-sub">· ${hora(v.fecha)}${tardo !== null ? ' · tardó ' + tardo + ' min' : ''}</span></div>
-            <div class="item-sub">${v.items.map(i => i.qty + '× ' + esc(i.nombre)).join(', ')}</div>
+            <div><b>${nombrePedidoHtml_(v, turnos)}</b> <span class="item-sub">· ${hora(v.fecha)}${tardo !== null ? ' · tardó ' + tardo + ' min' : ''}</span></div>
+            <div class="item-sub">${esc(itemsPedidoTexto_(v))}</div>
           </div>
           <button class="btn-icon" title="Volver a Listos" onclick="deshacerEntregado('${v.id}')"><i class="ph ph-arrow-counter-clockwise"></i></button>
         </div>`;
       }).join('')}</div>
     </details>` : '';
-  if (!activos.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">No hay pedidos en curso</p>' + historial; return; }
+  const antPrevio = el.querySelector('.pedidos-anteriores');
+  const diaCorto = iso => new Date(iso).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' });
+  const seccionAnteriores = anteriores.length ? `
+    <details class="adiciones-lista pedidos-historial pedidos-anteriores"${antPrevio && antPrevio.open ? ' open' : ''}>
+      <summary><span>De días anteriores (${anteriores.length})</span></summary>
+      <div class="adiciones-opciones">
+        <div class="historial-fila item-sub">Pedidos de otros días que quedaron sin marcar. Seguramente ya se entregaron — por eso no se mezclan con los de hoy. Marcarlos no cambia las ventas.</div>
+        ${anteriores.map(v => `<div class="historial-fila">
+          <div style="flex:1;min-width:0">
+            <div><b>${nombrePedidoHtml_(v, turnos)}</b> <span class="item-sub">· ${diaCorto(v.fecha)} ${hora(v.fecha)} · ${v.estado === 'listo' ? 'listo' : 'por preparar'}</span></div>
+            <div class="item-sub">${esc(itemsPedidoTexto_(v))}</div>
+          </div>
+        </div>`).join('')}
+        <div style="padding:10px 14px"><button class="btn btn-outline btn-block" onclick="entregarPedidosAnteriores()"><i class="ph ph-checks"></i> Marcar todos como entregados</button></div>
+      </div>
+    </details>` : '';
+  if (!deHoy.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">No hay pedidos en curso</p>' + seccionAnteriores + historial; return; }
   const tarjeta = v => {
     const min = Math.floor((Date.now() - new Date(v.fecha)) / 60000);
     const listo = v.estado === 'listo';
     return `
       <div class="card pedido-card${listo ? ' listo' : ''}">
         <div class="pedido-cabecera">
-          <span class="pedido-nombre">${nombreDe(v)}</span>
-          <span class="pedido-espera${!listo && min >= PEDIDO_ESPERA_TARDE_MIN ? ' tarde' : ''}">${min < 1 ? 'recién' : 'hace ' + min + ' min'}</span>
+          <span class="pedido-nombre">${nombrePedidoHtml_(v, turnos)}</span>
+          <span class="pedido-espera${!listo && min >= PEDIDO_ESPERA_TARDE_MIN ? ' tarde' : ''}">${min < 1 ? 'recién' : 'hace ' + min + ' min'}${
+            listo ? ` <button class="btn-icon" title="Volver a Por preparar" aria-label="Volver a Por preparar" onclick="volverAPreparar('${v.id}')"><i class="ph ph-arrow-counter-clockwise"></i></button>` : ''}</span>
         </div>
-        <ul class="pedido-items">${v.items.map(i => `<li><b>${i.qty}×</b> ${esc(i.nombre)}</li>`).join('')}</ul>
+        <ul class="pedido-items">${itemsPedidoHtml_(v)}</ul>
         ${v.nota ? `<div class="pedido-nota"><i class="ph ph-note-pencil"></i> ${esc(v.nota)}</div>` : ''}
         <button class="btn btn-block" onclick="avanzarPedido('${v.id}')">${listo ? '<i class="ph ph-hand-coins"></i> Entregado' : '<i class="ph ph-check"></i> Listo'}</button>
       </div>`;
@@ -1895,27 +1967,73 @@ function renderPedidos() {
   const seccion = (titulo, lista) => lista.length
     ? `<div class="card-title" style="margin:6px 0 10px">${titulo} (${lista.length})</div><div class="pedidos-grid">${lista.map(tarjeta).join('')}</div>`
     : '';
-  el.innerHTML = seccion('Por preparar', pendientes) + seccion('Listos para entregar', activos.filter(v => v.estado === 'listo')) + historial;
+  el.innerHTML = seccion('Por preparar', pendientes) + seccion('Listos para entregar', listos) + seccionAnteriores + historial;
 }
+// Doble toque: al marcar "Listo" la grilla se redibuja y la tarjeta de al
+// lado queda bajo el dedo — un segundo toque rápido marcaba OTRO pedido
+// (o el mismo directo a Entregado). Después de cada cambio de estado se
+// ignoran los toques en botones de pedidos por un momento.
+const PEDIDOS_PAUSA_MS = 700;
+let ultimoCambioPedido_ = 0;
+function pedidosEnPausa_() { return Date.now() - ultimoCambioPedido_ < PEDIDOS_PAUSA_MS; }
 function avanzarPedido(id) {
+  if (pedidosEnPausa_()) return;
   const v = state.ventas.find(x => x.id === id);
-  if (!v) return;
+  if (!v || (v.estado !== 'pendiente' && v.estado !== 'listo')) return;
   const ahora = new Date().toISOString();
   if (v.estado === 'pendiente') { v.estado = 'listo'; v.listoEn = ahora; }
   else { v.estado = 'entregado'; v.entregadoEn = ahora; }
   v.estadoFecha = ahora;
+  const nuevo = v.estado;
+  ultimoCambioPedido_ = Date.now();
+  saveState(); // también redibuja Pedidos (ver saveState)
+  showToast(nombrePedidoTexto_(v) + (nuevo === 'listo' ? ' · listo' : ' · entregado'),
+    { label: 'Deshacer', fn: () => retrocederPedido_(id, nuevo) });
+}
+// Deshace UN paso exacto: entregado → listo, o listo → por preparar. Si el
+// pedido ya no está en `desde` (ej. ya se movió de nuevo), no toca nada.
+// Devuelve false si el toque se ignoró (el toast con "Deshacer" sigue).
+function retrocederPedido_(id, desde) {
+  if (pedidosEnPausa_()) return false;
+  const v = state.ventas.find(x => x.id === id);
+  if (!v || v.estado !== desde) return;
+  if (desde === 'entregado') { v.estado = 'listo'; delete v.entregadoEn; }
+  else if (desde === 'listo') { v.estado = 'pendiente'; delete v.listoEn; }
+  else return;
+  v.estadoFecha = new Date().toISOString();
+  ultimoCambioPedido_ = Date.now();
   saveState();
-  renderPedidos();
 }
 // Desde el historial: un "Entregado" tocado sin querer vuelve a Listos.
-function deshacerEntregado(id) {
-  const v = state.ventas.find(x => x.id === id);
-  if (!v || v.estado !== 'entregado') return;
-  v.estado = 'listo';
-  delete v.entregadoEn;
-  v.estadoFecha = new Date().toISOString();
+function deshacerEntregado(id) { retrocederPedido_(id, 'entregado'); }
+// Desde una tarjeta lista: un "Listo" tocado sin querer vuelve a Por preparar.
+function volverAPreparar(id) { retrocederPedido_(id, 'listo'); }
+// Pedidos de días anteriores que quedaron pendientes/listos: se marcan
+// entregados de una vez (con "Deshacer" en el aviso).
+function entregarPedidosAnteriores() {
+  if (pedidosEnPausa_()) return;
+  const hoy = todayLocalISO();
+  const viejos = state.ventas.filter(v => (v.estado === 'pendiente' || v.estado === 'listo') && CrumblyCore.fechaLocalISO(v.fecha) !== hoy);
+  if (!viejos.length) return;
+  const n = viejos.length;
+  if (!confirm(n === 1 ? '¿Marcar el pedido de días anteriores como entregado?' : '¿Marcar los ' + n + ' pedidos de días anteriores como entregados?')) return;
+  const ahora = new Date().toISOString();
+  const previos = viejos.map(v => ({ id: v.id, estado: v.estado }));
+  viejos.forEach(v => { v.estado = 'entregado'; v.entregadoEn = ahora; v.estadoFecha = ahora; });
+  ultimoCambioPedido_ = Date.now();
   saveState();
-  renderPedidos();
+  showToast(n === 1 ? '1 pedido marcado como entregado' : n + ' pedidos marcados como entregados', {
+    label: 'Deshacer',
+    fn: () => {
+      if (pedidosEnPausa_()) return false;
+      previos.forEach(p => {
+        const v = state.ventas.find(x => x.id === p.id);
+        if (v && v.estado === 'entregado' && v.entregadoEn === ahora) { v.estado = p.estado; delete v.entregadoEn; v.estadoFecha = new Date().toISOString(); }
+      });
+      ultimoCambioPedido_ = Date.now();
+      saveState();
+    }
+  });
 }
 // Con Pedidos a la vista: el tiempo de espera avanza, y cada 15 s se
 // revisa si hay pedidos nuevos (respaldo del tiempo real — un pull
@@ -2799,10 +2917,28 @@ function formatSyncTime(iso) {
   return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }) + ' ' + d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
 }
 
-function showToast(msg) {
+// accion (opcional): { label, fn } — agrega un botón (ej. "Deshacer") y
+// deja el aviso unos segundos más. Si fn devuelve false, el aviso sigue.
+let toastTimer = null;
+function showToast(msg, accion) {
   const t = document.getElementById('toast');
-  t.textContent = msg; t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2400);
+  t.textContent = '';
+  const texto = document.createElement('span');
+  texto.className = 'toast-texto';
+  texto.textContent = msg;
+  t.appendChild(texto);
+  t.classList.toggle('con-accion', !!accion);
+  const ocultar = () => { clearTimeout(toastTimer); t.classList.remove('show'); };
+  if (accion) {
+    const btn = document.createElement('button');
+    btn.className = 'toast-accion';
+    btn.textContent = accion.label;
+    btn.onclick = () => { if (accion.fn() !== false) ocultar(); };
+    t.appendChild(btn);
+  }
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(ocultar, accion ? 5000 : 2400);
 }
 
 // Banner de error que NO desaparece solo (a diferencia del toast) — para
@@ -4535,7 +4671,13 @@ function eliminarVenta(id) {
   const aviso = aproximado
     ? '¿Eliminar esta venta? Es una venta antigua sin registro exacto de consumo — se devolverá el inventario usando la receta ACTUAL de cada producto, aproximado si la receta cambió desde entonces.'
     : '¿Eliminar esta venta? Se devolverá exactamente el stock que consumió.';
-  if (!confirm(aviso)) return;
+  // Un pedido que todavía se está preparando: que quien borra sepa que
+  // también desaparece de la pantalla de Pedidos (saveState la redibuja).
+  const enPreparacion = venta.estado === 'pendiente' || venta.estado === 'listo';
+  const avisoPedido = enPreparacion
+    ? 'Este pedido todavía está en preparación (' + (venta.estado === 'listo' ? 'listo para entregar' : 'por preparar') + ') — si lo eliminás, también desaparece de la pantalla de Pedidos.\n\n'
+    : '';
+  if (!confirm(avisoPedido + aviso)) return;
   borrarConSync_('ventas', id, () => CrumblyCore.revertVenta(state, venta));
   renderCaja();
   renderInventario();
@@ -4641,7 +4783,8 @@ function renderChartBars() {
 const DONUT_COLORS = ['#111111', '#444444', '#7A7A7A', '#C2C2C2'];
 function renderDonut(ventas) {
   const counts = {};
-  ventas.forEach(v => v.items.forEach(i => { counts[i.nombre] = (counts[i.nombre] || 0) + i.qty; }));
+  // Solo productos: una adición no es un waffle vendido, y un topping guarda qty en gramos.
+  ventas.forEach(v => v.items.forEach(i => { if (i.productoId) counts[i.nombre] = (counts[i.nombre] || 0) + i.qty; }));
   const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 4);
   const el = document.getElementById('dash-donut');
   if (!top.length) { el.innerHTML = '<p class="empty">Aún no hay ventas</p>'; return; }
@@ -4878,14 +5021,21 @@ function renderCierreCaja() {
   const ventas = getVentasByPeriod('dia');
   const gastos = CrumblyCore.getGastosByPeriod(state.gastos, 'dia');
   const casc = CrumblyCore.getCascadaUtilidad(state, 'dia');
-  const unidades = ventas.reduce((a,v) => a + v.items.reduce((b,i) => b + i.qty, 0), 0);
+  const unidades = CrumblyCore.contarUnidades(ventas); // solo productos, no adiciones/toppings
   const totalGastos = gastos.reduce((a,g) => a + g.monto, 0);
+  const medios = CrumblyCore.getCierrePorMedioPago(ventas, gastos);
   document.getElementById('cc-num-ventas').textContent = ventas.length;
   document.getElementById('cc-unidades').textContent = unidades;
   document.getElementById('cc-ingresos').textContent = fmt(casc.ingresos);
   document.getElementById('cc-gastos').textContent = '-' + fmt(totalGastos);
   document.getElementById('cc-utilidad-neta').textContent = fmt(casc.utilidadNeta);
   document.getElementById('cc-ticket-promedio').textContent = fmt(CrumblyCore.getTicketPromedio(ventas));
+  document.getElementById('cc-efectivo-caja').textContent = (medios.efectivoEnCaja < 0 ? '-' : '') + fmt(Math.abs(medios.efectivoEnCaja));
+  document.getElementById('cc-transf-recibidas').textContent = fmt(medios.transferenciasRecibidas);
+  document.getElementById('cc-transf-pagadas').textContent = '-' + fmt(medios.transferenciasPagadas);
+  const otros = document.getElementById('cc-otros-medios');
+  otros.style.display = (medios.otrosRecibidos || medios.otrosPagados) ? 'flex' : 'none';
+  document.getElementById('cc-otros-valor').textContent = fmt(medios.otrosRecibidos) + ' / -' + fmt(medios.otrosPagados);
 }
 
 /* ─── Detalle financiero (cascada de utilidad + productos más rentables)
@@ -4919,6 +5069,13 @@ function renderDetalleFinanciero() {
       </div>`).join('')
     : '<p class="empty">Sin ventas en este período</p>';
 }
+// Medio de pago de una venta o gasto para las tablas del cierre (sin
+// campo = efectivo, mismo criterio que CrumblyCore.getCierrePorMedioPago).
+function medioPagoCorto_(r) {
+  const m = r.metodoPago || 'efectivo';
+  if (m === 'dividido') return 'Ef. ' + fmt(Number(r.montoEfectivo) || 0) + ' + Tr. ' + fmt(Number(r.montoTransferencia) || 0);
+  return { efectivo: 'Efectivo', transferencia: 'Transferencia' }[m] || m;
+}
 function generateCierreCajaPDF() {
   if (!window.jspdf) { showToast('No se pudo cargar el generador de PDF'); return; }
   const { jsPDF } = window.jspdf;
@@ -4926,8 +5083,9 @@ function generateCierreCajaPDF() {
   const ventas = getVentasByPeriod('dia');
   const gastos = CrumblyCore.getGastosByPeriod(state.gastos, 'dia');
   const casc = CrumblyCore.getCascadaUtilidad(state, 'dia');
-  const unidades = ventas.reduce((a,v) => a + v.items.reduce((b,i) => b + i.qty, 0), 0);
+  const unidades = CrumblyCore.contarUnidades(ventas); // solo productos, no adiciones/toppings
   const totalGastos = gastos.reduce((a,g) => a + g.monto, 0);
+  const medios = CrumblyCore.getCierrePorMedioPago(ventas, gastos);
 
   let y = pdfHeader(doc, 'Cierre de caja', getPeriodLabel('dia'), getPeriodRangeLabel('dia'));
 
@@ -4938,18 +5096,37 @@ function generateCierreCajaPDF() {
     columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } }
   }) + 14;
 
+  pdfSectionLabel(doc, 'Efectivo y transferencias', y); y += 7;
+  const filasMedios = [
+    ['Ventas en efectivo', fmt(medios.ventasEfectivo)],
+    ['Gastos pagados en efectivo', '-' + fmt(medios.gastosEfectivo)],
+    ['Efectivo en caja (sin la base de apertura)', (medios.efectivoEnCaja < 0 ? '-' : '') + fmt(Math.abs(medios.efectivoEnCaja))],
+    ['Transferencias recibidas', fmt(medios.transferenciasRecibidas)],
+    ['Transferencias pagadas', '-' + fmt(medios.transferenciasPagadas)]
+  ];
+  if (medios.otrosRecibidos || medios.otrosPagados) {
+    filasMedios.push(['Otros medios recibidos', fmt(medios.otrosRecibidos)], ['Otros medios pagados', '-' + fmt(medios.otrosPagados)]);
+  }
+  y = pdfMinimalTable(doc, {
+    startY: y,
+    head: [['Concepto', 'Monto']],
+    body: filasMedios,
+    columnStyles: { 1: { halign: 'right' } }
+  }) + 14;
+  y = pdfCheckPageBreak(doc, y);
+
   pdfSectionLabel(doc, 'Ventas del día', y); y += 7;
   const rows = ventas.map(v => {
     const d = new Date(v.fecha);
     const hora = d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
     const cliente = v.clienteId ? (state.clientes.find(c => c.id === v.clienteId) || {}).nombre : '';
-    return [hora, v.items.map(i => i.nombre + ' x' + i.qty).join(', '), cliente || '—', fmt(v.total)];
+    return [hora, v.items.map(i => i.nombre + ' x' + i.qty).join(', '), cliente || '—', medioPagoCorto_(v), fmt(v.total)];
   });
   y = pdfMinimalTable(doc, {
     startY: y,
-    head: [['Hora', 'Productos', 'Cliente', 'Total']],
-    body: rows.length ? rows : [['—', 'Sin ventas hoy', '—', '—']],
-    columnStyles: { 1: { cellWidth: 70 }, 3: { halign: 'right' } }
+    head: [['Hora', 'Productos', 'Cliente', 'Pago', 'Total']],
+    body: rows.length ? rows : [['—', 'Sin ventas hoy', '—', '—', '—']],
+    columnStyles: { 1: { cellWidth: 70 }, 4: { halign: 'right' } }
   }) + 14;
 
   if (gastos.length) {
@@ -4957,9 +5134,9 @@ function generateCierreCajaPDF() {
     pdfSectionLabel(doc, 'Gastos del día', y); y += 7;
     pdfMinimalTable(doc, {
       startY: y,
-      head: [['Tipo', 'Categoría', 'Descripción', 'Monto']],
-      body: gastos.map(g => [GASTO_TIPO_LABEL[g.tipo], g.categoria, g.descripcion || g.proveedor || '—', fmt(g.monto)]),
-      columnStyles: { 3: { halign: 'right' } }
+      head: [['Tipo', 'Categoría', 'Descripción', 'Pago', 'Monto']],
+      body: gastos.map(g => [GASTO_TIPO_LABEL[g.tipo], g.categoria, g.descripcion || g.proveedor || '—', medioPagoCorto_(g), fmt(g.monto)]),
+      columnStyles: { 4: { halign: 'right' } }
     });
   }
 
@@ -5039,7 +5216,7 @@ function generateSalesReportPDF() {
   const ingresos = ventas.reduce((a, v) => a + v.total, 0);
   const ganancias = ventas.reduce((a, v) => a + v.ganancia, 0);
   const costos = ingresos - ganancias;
-  const unidades = ventas.reduce((a, v) => a + v.items.reduce((b, i) => b + i.qty, 0), 0);
+  const unidades = CrumblyCore.contarUnidades(ventas); // solo productos, no adiciones/toppings
 
   let y = pdfHeader(doc, 'Reporte de ventas', getReportLabel(), getReportRangeLabel());
 
