@@ -500,6 +500,12 @@ test('registrarGasto: metodoPago dividido guarda ambos montos', () => {
   assert.strictEqual(gasto.montoTransferencia, 2000);
 });
 
+test('#32 registrarGasto: rechaza montos negativos en un pago dividido', () => {
+  const s = stateConGastos();
+  assert.throws(() => C.registrarGasto(s, { tipo: 'operativo', categoria: 'Publicidad', monto: 5000, metodoPago: 'dividido', montoEfectivo: -1000, montoTransferencia: 6000 }), /negativos/);
+  assert.strictEqual(s.gastos.length, 0);
+});
+
 test('registrarGasto: montoEfectivo/montoTransferencia se ignoran si metodoPago no es dividido', () => {
   const s = stateConGastos();
   const gasto = C.registrarGasto(s, { tipo: 'operativo', categoria: 'Publicidad', monto: 5000, metodoPago: 'transferencia', montoEfectivo: 3000, montoTransferencia: 2000 });
@@ -2142,6 +2148,38 @@ test("registrarMerma con origenTipo 'preparacion' descuenta el WIP 1:1 al costo 
   assert.strictEqual(merma.valorTotal, 24000);
   C.eliminarMerma(s, merma.id);
   assert.strictEqual(s.preparaciones[0].cantidad, 8000);
+});
+
+test("#28 registrarMerma de una preparación no vuelve a tocar la materia prima (ya se descontó al producir)", () => {
+  const s = statePrepWIP();
+  C.producirPreparacion(s, { preparacionId: 'masa', multiplicador: 1, gramosObtenidos: 1000 });
+  const harinaAntes = s.materia[0].cantidad;
+  const merma = C.registrarMerma(s, { origenTipo: 'preparacion', origenId: 'masa', cantidad: 250, motivo: 'Quemado' });
+  assert.strictEqual(s.preparaciones[0].cantidad, 750);
+  assert.strictEqual(s.materia[0].cantidad, harinaAntes);
+  assert.deepStrictEqual(merma.consumoReal.materia, {});
+  assert.strictEqual(merma.valorTotal, 250 * 3); // $3/g: 600 g de harina a $5 / 1000 g
+  assert.strictEqual(C.getMermaOrigenNombre(s, merma), 'Masa');
+});
+
+test('#28 registrarMerma de una preparación sin stock la deja en 0 con faltante, y eliminarla lo revierte', () => {
+  const s = statePrepWIP();
+  s.preparaciones[0].cantidad = 100;
+  const merma = C.registrarMerma(s, { origenTipo: 'preparacion', origenId: 'masa', cantidad: 300, motivo: 'Derrame', stockInsuficiente: true });
+  assert.strictEqual(s.preparaciones[0].cantidad, 0);
+  assert.strictEqual(s.preparaciones[0].faltante, 200);
+  assert.strictEqual(merma.stockInsuficiente, true);
+  C.eliminarMerma(s, merma.id);
+  assert.strictEqual(s.preparaciones[0].cantidad, 100);
+  assert.strictEqual(s.preparaciones[0].faltante, 0);
+});
+
+test('#28 registrarMerma de una preparación sin campo `cantidad` no deja el stock en NaN', () => {
+  const s = statePrepWIP();
+  delete s.preparaciones[0].cantidad;
+  C.registrarMerma(s, { origenTipo: 'preparacion', origenId: 'masa', cantidad: 50, motivo: 'Vencido' });
+  assert.strictEqual(s.preparaciones[0].cantidad, 0);
+  assert.strictEqual(s.preparaciones[0].faltante, 50);
 });
 
 console.log('\n== C6/I3: los reportes por período tienen cota superior, no solo inferior ==');

@@ -544,7 +544,7 @@ textarea.field{height:auto}
                  mitad de mes, "hay que vender HOY" leía como una meta del
                  día que no era. Solo cambia el texto — el cálculo sigue
                  siendo el mismo bepDiarioContable/bepDiarioCaja de siempre. -->
-            <div class="item-sub" style="color:rgba(255,255,255,.6);margin-bottom:6px">Punto de equilibrio del período — lo más accionable del sistema</div>
+            <div class="item-sub" style="color:rgba(255,255,255,.6);margin-bottom:6px;position:relative">Punto de equilibrio del período <details class="info en-oscuro"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Cuánto hay que vender por día, en promedio, para cubrir todos los costos del período (sin ganar ni perder). Es un promedio del período elegido, no una meta calculada solo para hoy.</p></details></div>
             <div id="costeo-bep-suficiente">
               <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
                 <div style="font-size:var(--fs-display);line-height:var(--lh-tight);font-weight:var(--fw-bold)" id="costeo-bep-diario">$0</div>
@@ -558,11 +558,11 @@ textarea.field{height:auto}
             <p class="item-sub" id="costeo-bep-motivo" style="color:rgba(255,255,255,.75);display:none"></p>
           </div>
 
-          <div class="card">
+          <div class="card" style="position:relative">
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
               <div class="card-title">Costo principal <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Lo que cuesta lo vendido (ingredientes y empaques) más la nómina con prestaciones, como porcentaje de las ventas. Si pasa de 65%, queda poco para arriendo, servicios y ganancia.</p></details></div>
               <div style="display:flex;align-items:center;gap:8px">
-                <span class="item-sub">Factor prestacional</span>
+                <span class="item-sub">Factor prestacional <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Multiplica la nómina registrada para sumar prestaciones, seguridad social y parafiscales. Confirmá el valor con tu contador (también se cambia en Ajustes).</p></details></span>
                 <input type="number" id="costeo-factor-prestacional" class="field field-sm" style="width:70px" min="1" step="0.01" oninput="saveConfigFactorPrestacional(this)">
               </div>
             </div>
@@ -581,8 +581,8 @@ textarea.field{height:auto}
             <p class="item-sub" id="costeo-primecost-motivo" style="display:none"></p>
           </div>
 
-          <div class="card">
-            <div class="card-title" style="margin-bottom:10px">Costo de ventas — tres líneas, nunca sumadas en una</div>
+          <div class="card" style="position:relative">
+            <div class="card-title" style="margin-bottom:10px">Costo de ventas <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Tres porcentajes de lo vendido, cada uno por separado: ingredientes, empaques y el total de los dos.</p></details></div>
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">
               <div><div style="font-size:var(--fs-h2);font-weight:var(--fw-bold)" id="costeo-foodcost-pct">0%</div><div class="item-sub">Costo de alimentos %</div></div>
               <div><div style="font-size:var(--fs-h2);font-weight:var(--fw-bold)" id="costeo-papercost-pct">0%</div><div class="item-sub">Costo de empaques %</div></div>
@@ -595,8 +595,8 @@ textarea.field{height:auto}
             <div id="costeo-menu-engineering"></div>
           </div>
 
-          <div class="card">
-            <div class="card-title" style="margin-bottom:10px">Varianza — preparaciones (mostrador) y materia prima (cocina/recepción)</div>
+          <div class="card" style="position:relative">
+            <div class="card-title" style="margin-bottom:10px">Varianza <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Diferencia entre lo que el sistema esperaba gastar y lo que el conteo físico encontró. Preparaciones: pérdidas en el mostrador (porciones de más). Materia prima: pérdidas en cocina o al recibir. Necesita un conteo físico al inicio y otro al final del período.</p></details></div>
             <div id="costeo-varianza-preparaciones"></div>
             <div id="costeo-varianza-materia" style="margin-top:14px"></div>
           </div>
@@ -693,11 +693,12 @@ textarea.field{height:auto}
           <div id="inv-necesidades-list" style="display:none;flex-direction:column;gap:8px;margin-top:12px"></div>
         </div>
 
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px">
-          <div class="page-title" style="font-size:var(--fs-sm)">Mermas</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;position:relative">
+          <div class="page-title" style="font-size:var(--fs-sm)">Mermas
+            <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Producto, preparación o insumo perdido, vencido, dañado o desechado. Descuenta el inventario, nunca la caja.</p></details>
+          </div>
           <button class="btn btn-outline" style="padding:7px 12px" onclick="openModalMerma()"><i class="ph ph-plus"></i> Registrar merma</button>
         </div>
-        <p class="item-sub">Producto o insumo perdido, vencido, dañado o desechado — descuenta el inventario, nunca la caja.</p>
         <div class="pill-row" id="merma-period-row" style="width:fit-content">
           <button class="pill-btn" onclick="setMermaPeriodo('semana',this)">Semana</button>
           <button class="pill-btn active" onclick="setMermaPeriodo('mes',this)">Mes</button>
@@ -769,7 +770,7 @@ textarea.field{height:auto}
   <div class="modal">
     <div class="modal-title-row">
       <span class="modal-title" id="ins-modal-title">Agregar insumo</span>
-      <button class="modal-close" onclick="closeModal('modal-insumo')"><i class="ph ph-x"></i></button>
+      <button class="modal-close" onclick="pedirCerrarModal('modal-insumo')"><i class="ph ph-x"></i></button>
     </div>
 
     <div class="ins-seccion" style="border-top:none;padding-top:0;margin-top:4px">Datos</div>
@@ -895,7 +896,7 @@ textarea.field{height:auto}
 <!-- MODAL PREPARACIÓN -->
 <div class="modal-overlay" id="modal-preparacion">
   <div class="modal">
-    <button class="close-modal" onclick="closeModal('modal-preparacion')">✕</button>
+    <button class="close-modal" onclick="pedirCerrarModal('modal-preparacion')">✕</button>
     <div class="modal-title" id="modal-preparacion-title">Nueva preparación</div>
     <div class="modal-field">
       <label>Nombre</label>
@@ -909,7 +910,9 @@ textarea.field{height:auto}
       </select>
     </div>
     <div class="modal-field" id="prep-base-wrap">
-      <label>Gramos del ingrediente base (100%)</label>
+      <label>Gramos del ingrediente base (100%)
+        <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Cada componente de abajo se calcula como % de este valor. El componente que sea el 100% también va en la lista, con porcentaje 100.</p></details>
+      </label>
       <input type="number" id="prep-base-gramos" placeholder="100" min="0" step="0.01" oninput="calcPrepCosto()">
       <!-- Y0 (auditoría Ronda 7): el texto decía "porcentaje 1" para el
            100% (notación de fracción) — pero en producción el 100% real
@@ -922,7 +925,6 @@ textarea.field{height:auto}
            esa falta de división infló todo 100×. Corregido el cálculo
            (÷100) y este texto, para que los dos coincidan con cómo se usa
            el campo de verdad. -->
-      <p class="item-sub" style="margin-top:4px">Cada componente de abajo se calcula como % de este valor. El componente que sea el 100% también va en la lista, con porcentaje 100.</p>
     </div>
     <div style="margin-bottom:8px">
       <label style="font-size:var(--fs-xs);color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;font-weight:var(--fw-medium);display:block">Componentes</label>
@@ -942,6 +944,7 @@ textarea.field{height:auto}
       <button class="btn-cancel" onclick="closeModal('modal-preparacion')">Cancelar</button>
       <button class="btn-save" onclick="savePreparacionUI()">Guardar</button>
     </div>
+    <button class="btn-cancel" id="prep-delete-btn" style="display:none;color:var(--danger);margin-top:14px" onclick="deletePreparacion(document.getElementById('prep-edit-id').value)">Eliminar preparación</button>
   </div>
 </div>
 
@@ -951,12 +954,14 @@ textarea.field{height:auto}
      Ronda 2 pero no tenían pantalla — sin esto era código muerto. -->
 <div class="modal-overlay" id="modal-lote">
   <div class="modal">
-    <button class="close-modal" onclick="closeModal('modal-lote')">✕</button>
+    <button class="close-modal" onclick="pedirCerrarModal('modal-lote')">✕</button>
     <div class="modal-title" id="modal-lote-title">Producir lote</div>
     <input type="hidden" id="lote-prep-id">
 
     <div class="modal-field">
-      <label>Tamaño del lote (múltiplo de la receta base)</label>
+      <label>Tamaño del lote
+        <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Cuántas veces la receta base: 1 es una receta, 2 el doble, 0,5 la mitad.</p></details>
+      </label>
       <input type="number" id="lote-multiplicador" value="1" min="0.01" step="0.01" oninput="renderLoteConsumoTeorico()">
     </div>
     <div class="total-row">
@@ -968,14 +973,16 @@ textarea.field{height:auto}
       <div id="lote-consumo-teorico" style="display:flex;flex-direction:column;gap:4px"></div>
     </div>
     <div class="modal-field">
-      <label>Gramos realmente obtenidos (pesado real, post-cocción/merma)</label>
+      <label>Gramos obtenidos
+        <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Pesá la preparación ya terminada (después de cocinar o reducir). Eso es lo que entra al stock; la diferencia con lo teórico es el rendimiento real del lote.</p></details>
+      </label>
       <input type="number" id="lote-gramos-obtenidos" placeholder="0" min="0" step="0.01">
     </div>
     <button class="btn-save" onclick="producirLoteUI()">Producir lote</button>
 
     <div style="border-top:1px solid var(--line);margin:16px 0 14px;padding-top:14px">
       <div class="total-row" style="margin-top:0">
-        <span>Rendimiento configurado (receta)</span>
+        <span>Rendimiento de la receta <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Qué porcentaje de lo que entra queda al final (lo demás se pierde al cocinar). Se usa para costear cada gramo. Nunca cambia solo: si el promedio de los lotes es distinto, podés adoptarlo con el botón de abajo.</p></details></span>
         <strong id="lote-rendimiento-config">100%</strong>
       </div>
       <div class="total-row">
@@ -995,7 +1002,7 @@ textarea.field{height:auto}
 <!-- MODAL PRODUCTO -->
 <div class="modal-overlay" id="modal-producto">
   <div class="modal">
-    <button class="close-modal" onclick="closeModal('modal-producto')">✕</button>
+    <button class="close-modal" onclick="pedirCerrarModal('modal-producto')">✕</button>
     <div class="modal-title" id="modal-prod-title">Nuevo producto</div>
     <div class="modal-field" id="p-foto-wrap" style="display:none">
       <div style="width:100%;height:140px;border-radius:8px;overflow:hidden;background:var(--bg);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;position:relative">
@@ -1068,11 +1075,13 @@ textarea.field{height:auto}
     <button class="close-modal" onclick="closeModal('modal-gasto')">✕</button>
     <div class="modal-title">Registrar gasto</div>
     <div class="modal-field">
-      <label>Tipo de gasto</label>
+      <div class="field-label">Tipo de gasto
+        <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p><b>Inventario:</b> compras de materia prima, empaques o toppings; suben el stock. <b>Operativo:</b> arriendo, servicios, nómina, publicidad. <b>Implementos:</b> equipos y mobiliario; su costo se reparte en los meses de vida útil.</p></details>
+      </div>
       <select id="g-tipo" onchange="onGastoTipoChange()">
-        <option value="inventario">Inventario (materia prima, empaque, toppings)</option>
-        <option value="operativo">Operativo (publicidad, arriendo, servicios...)</option>
-        <option value="capex">Implementos (equipos, mobiliario...)</option>
+        <option value="inventario">Inventario</option>
+        <option value="operativo">Operativo</option>
+        <option value="capex">Implementos</option>
       </select>
     </div>
     <div style="display:flex;gap:10px">
@@ -1171,7 +1180,7 @@ textarea.field{height:auto}
 <!-- MODAL MERMA -->
 <div class="modal-overlay" id="modal-merma">
   <div class="modal">
-    <button class="close-modal" onclick="closeModal('modal-merma')">✕</button>
+    <button class="close-modal" onclick="pedirCerrarModal('modal-merma')">✕</button>
     <div class="modal-title">Registrar merma</div>
     <div style="display:flex;gap:10px">
       <div class="modal-field" style="flex:1">
@@ -1192,6 +1201,7 @@ textarea.field{height:auto}
           <option value="empaques">Empaque</option>
           <option value="toppings">Topping</option>
           <option value="producto">Producto preparado</option>
+          <option value="preparacion">Preparación (masa, salsa…)</option>
         </select>
       </div>
       <div class="modal-field" style="flex:2;margin-bottom:0">
@@ -1423,12 +1433,14 @@ textarea.field{height:auto}
       <div>
         <div class="card-title" style="margin-bottom:10px">Costeo</div>
         <div class="modal-field">
-          <label class="field-label">Factor prestacional (nómina)</label>
+          <div class="field-label">Factor prestacional (nómina)
+            <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Multiplica la nómina registrada para sacar el costo laboral real: cubre prestaciones sociales, seguridad social y parafiscales. No asumas 1,52 sin más: con salarios bajo 10 SMMLV puede aplicar la exoneración del art. 114-1 del ET (sin SENA, ICBF ni salud del empleador) y el factor real es menor. Confírmalo con tu contador.</p></details>
+          </div>
           <input type="number" id="cfg-factor-prestacional" class="field" min="1" step="0.01" oninput="saveConfigFactorPrestacional(this)">
         </div>
-        <p class="item-sub" style="margin-bottom:14px">Multiplica la nómina registrada para el costo principal — cubre prestaciones sociales, seguridad social y parafiscales. No asumas 1,52 sin más: con salarios bajo 10 SMMLV puede aplicar la exoneración del art. 114-1 del ET (sin SENA, ICBF ni salud del empleador) y el factor real es menor. Confírmalo con tu contador.</p>
-        <label class="field-label">Clasificación de gastos operativos (fijo / variable)</label>
-        <p class="item-sub" style="margin-bottom:10px">Afecta el punto de equilibrio y el costo principal. Sin clasificar, una categoría cuenta como fija — el criterio conservador.</p>
+        <div class="field-label" style="margin-top:14px">Clasificación de gastos operativos (fijo / variable)
+          <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Cambia el punto de equilibrio y el costo principal. Una categoría sin clasificar cuenta como fija, que es lo más prudente.</p></details>
+        </div>
         <div id="cfg-categorias-comportamiento" style="display:flex;flex-direction:column;gap:8px"></div>
       </div>
       <div>
@@ -2766,9 +2778,9 @@ function abrirResolverDuplicado_(idA, idB) {
       <button class="btn-primary" style="width:100%" onclick="previewRepunte_('${idDescartar}','${idConservar}')">Conservar este</button>
     </div>`;
   document.getElementById('resolver-duplicado-contenido').innerHTML =
+    '<div class="item-sub">Elegí el que tiene los datos correctos <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>El que elijas se conserva; las recetas del otro pasan a usar el elegido y el otro queda libre para borrarlo aparte. Conservar uno no cambia su tipo.</p></details></div>' +
     '<div style="display:flex;gap:10px">' + tarjeta(fa, usoA, idA, idB) + tarjeta(fb, usoB, idB, idA) + '</div>' +
-    (fa.tipo !== fb.tipo ? '<div style="font-size:var(--fs-xs);color:var(--danger)">Están en tipos distintos (' + (TIPO_INSUMO_LABEL[fa.tipo] || fa.tipo) + ' / ' + (TIPO_INSUMO_LABEL[fb.tipo] || fb.tipo) + ') — conservar uno no cambia su clasificación, solo repunta las referencias del otro hacia este.</div>' : '') +
-    '<div style="font-size:var(--fs-xs);color:var(--muted)">El que elijas se conserva; el otro pierde sus referencias (se repuntan al que elegiste) y queda disponible para borrar aparte.</div>';
+    (fa.tipo !== fb.tipo ? '<div style="font-size:var(--fs-xs);color:var(--danger)">Están en tipos distintos (' + (TIPO_INSUMO_LABEL[fa.tipo] || fa.tipo) + ' / ' + (TIPO_INSUMO_LABEL[fb.tipo] || fb.tipo) + ') — conservar uno no cambia su clasificación, solo repunta las referencias del otro hacia este.</div>' : '');
   openModal('modal-resolver-duplicado');
 }
 function previewRepunte_(idDescartado, idConservado) {
@@ -2783,7 +2795,7 @@ function previewRepunte_(idDescartado, idConservado) {
     document.body.appendChild(overlay);
   }
   document.getElementById('preview-repunte-contenido').innerHTML = `
-    <div style="font-size:var(--fs-sm);color:var(--muted)">Todas las recetas que usan el insumo descartado van a apuntar a "${esc(conservado.nombre)}" — el costo de cada producto SÍ cambia, es el punto de esta operación.</div>
+    <div style="font-size:var(--fs-sm);color:var(--muted)">Las recetas pasan a usar "${esc(conservado.nombre)}" <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Todas las recetas que usan el insumo descartado van a apuntar a "${esc(conservado.nombre)}". El costo de cada producto sí cambia: abajo ves el antes y el después.</p></details></div>
     ${preview.productos.length ? preview.productos.map(p => desgloseFila_(p.productoNombre, p.desgloseAntes, p.desgloseDespues)).join('') : '<div style="font-size:var(--fs-xs);color:var(--muted)">Ninguna receta usa el insumo descartado — no hay nada que repuntar, pero igual queda huérfano y se puede borrar.</div>'}
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn-secondary" onclick="closeModal('modal-preview-repunte')">Cancelar</button>
@@ -3466,9 +3478,23 @@ function saveInsumo() {
     porcion: esAdicion ? (parseFloat(document.getElementById('ins-porcion').value) || 0) : 0
   };
   const editId = document.getElementById('ins-edit-id').value;
+  // #32: nada negativo (costo, mínimo, stock inicial, precio y porción de adición).
+  const cantidadInicialIns = editId ? 0 : (parseFloat(document.getElementById('ins-cantidad').value) || 0);
+  if ([datos.costo, datos.minimo, datos.precioAdicion, datos.porcion, cantidadInicialIns].some(n => n < 0)) {
+    showToast('Los precios y cantidades no pueden ser negativos');
+    return;
+  }
   const editTipo = document.getElementById('ins-edit-tipo').value;
   const unidadElegida = TIPO_MEDICION_UNIDAD[tipoMedicion];
   const itemAntes = editId ? state[editTipo].find(x => x.id === editId) : null;
+  // #32: aviso (no bloqueo) al crear un insumo —o renombrarlo— con un
+  // nombre que ya existe, sin importar mayúsculas ni tildes ("Azucar" =
+  // "azúcar"). Editar otra cosa de un duplicado viejo no vuelve a avisar.
+  const nombreNorm = normalizarBusqueda_(nombre);
+  if (!itemAntes || normalizarBusqueda_(String(itemAntes.nombre || '').trim()) !== nombreNorm) {
+    const mismoNombre = CrumblyCore.getInsumosUnificados(state).find(i => i.id !== editId && normalizarBusqueda_(String(i.nombre || '').trim()) === nombreNorm);
+    if (mismoNombre && !confirm('Ya existe un insumo llamado "' + mismoNombre.nombre + '" (' + (TIPO_INSUMO_LABEL[mismoNombre.tipo] || mismoNombre.tipo) + ').\n\n¿Guardar de todas formas?')) return;
+  }
   // Cambiar la medición g ↔ kg de un insumo existente antes solo cambiaba
   // la etiqueta: 5000 g quedaban "5000 kg" y $10/g pasaba a $10/kg (en las
   // recetas, 1000× más barato). Así se llegó a varios insumos reales con
@@ -3733,19 +3759,21 @@ function renderInventario() {
 
   // Z3/Z4: tipo "preparaciones" muestra la lista de preparaciones en el
   // mismo lugar — antes vivían en una sección aparte, alcanzable solo
-  // desplazándose hasta el final de la página.
-  if (insInventarioTipo === 'preparaciones') {
-    const preps = state.preparaciones.filter(p => coincide(p.nombre)).sort(alfabetico);
-    if (!state.preparaciones.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">No hay preparaciones registradas</p>'; return; }
-    if (!preps.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">Ninguna preparación coincide con "' + esc(insInventarioBusqueda) + '"</p>'; return; }
-    el.innerHTML = preps.map(prep => {
+  // desplazándose hasta el final de la página. #29: también salen en
+  // "Todos" (sin categoría elegida: las preparaciones no tienen), mezcladas
+  // en orden alfabético con los insumos.
+  const filasPrep = []; // { nombre, html }
+  if (insInventarioTipo === 'preparaciones' || (insInventarioTipo === 'todos' && insInventarioCategoria === 'todos')) {
+    state.preparaciones.filter(p => coincide(p.nombre)).forEach(prep => {
       let costo, error = null;
       try { costo = CrumblyCore.getPreparacionCosto(state, prep.id); }
       catch (e) { error = e.message; costo = { gramosTotal: 0, costoPorGramo: 0 }; }
       const modoLabel = prep.modo === 'directo' ? 'Directo' : 'Porcentaje panadero';
       // Y0: gramosTotal ya viene corregido (antes de esta ronda mostraba
       // 84.000g donde debía mostrar 840 — ver PROGRESO.md § Y0).
-      return `<div class="list-row" style="padding:12px 16px;cursor:pointer" onclick="openModalPreparacion('${prep.id}')">
+      // #34: sin papelera al lado de "Producir lote" (era fácil tocar la
+      // equivocada) — se elimina desde adentro de la preparación.
+      filasPrep.push({ nombre: prep.nombre, html: `<div class="list-row" style="padding:12px 16px;cursor:pointer" onclick="openModalPreparacion('${prep.id}')">
         <div style="flex:1;min-width:0">
           <div class="item-name">${esc(prep.nombre)}</div>
           <div class="item-sub" style="${error ? 'color:var(--danger)' : ''}">${modoLabel} · ${fmtCant(costo.gramosTotal, 'g')} totales · ${error ? error : fmtGramoCosto(costo.costoPorGramo) + '/g'}</div>
@@ -3753,11 +3781,15 @@ function renderInventario() {
         </div>
         <div style="display:flex;gap:4px;align-items:center;flex-shrink:0" onclick="event.stopPropagation()">
           <button class="btn-icon" onclick="openModalLote('${prep.id}')" title="Producir lote"><i class="ph ph-cooking-pot"></i></button>
-          <button class="btn-icon danger" onclick="deletePreparacion('${prep.id}')" title="Eliminar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
         </div>
         <i class="ph ph-caret-right" style="color:var(--soft);font-size:var(--fs-sm);margin-left:6px"></i>
-      </div>`;
-    }).join('');
+      </div>` });
+    });
+  }
+  if (insInventarioTipo === 'preparaciones') {
+    if (!state.preparaciones.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">No hay preparaciones registradas</p>'; return; }
+    if (!filasPrep.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">Ninguna preparación coincide con "' + esc(insInventarioBusqueda) + '"</p>'; return; }
+    el.innerHTML = filasPrep.sort(alfabetico).map(f => f.html).join('');
     return;
   }
 
@@ -3767,7 +3799,7 @@ function renderInventario() {
     .filter(i => insInventarioCategoria === 'todos' || i.categoria === insInventarioCategoria)
     .filter(i => coincide(i.nombre)) // Z2: buscador, combinado con los filtros de arriba
     .sort(alfabetico);
-  if (!items.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">' + (busq ? 'Ningún insumo coincide con "' + esc(insInventarioBusqueda) + '"' : 'No hay insumos en esta categoría') + '</p>'; return; }
+  if (!items.length && !filasPrep.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">' + (busq ? 'Ningún insumo coincide con "' + esc(insInventarioBusqueda) + '"' : 'No hay insumos en esta categoría') + '</p>'; return; }
   // Umbral de "esto probablemente está mal cargado" — distinto por unidad
   // de medida: nada medido por gramo/mililitro (harina, mantequilla,
   // salsas...) debería costar más de unos pocos cientos de pesos por
@@ -3778,7 +3810,7 @@ function renderInventario() {
   // encontrar el insumo que dispara un margen absurdo sin revisar
   // producto por producto.
   const COSTO_SOSPECHOSO_POR_UNIDAD = { g: 200, ml: 200, kg: 50000, unidad: 50000 };
-  el.innerHTML = items.map(it => {
+  const filasInsumo = items.map(it => {
     const bajo = it.cantidad <= it.minimo;
     const sospechoso = it.costo > (COSTO_SOSPECHOSO_POR_UNIDAD[it.unidad] || 50000);
     // T2: insumo con unidad undefined/inválida (nunca se adivina — ver
@@ -3786,7 +3818,7 @@ function renderInventario() {
     const sub = it.unidadPendiente
       ? esc(it.categoria || '—') + ' · ' + fmtCant(it.cantidad) + ' (unidad sin definir) · ' + fmtCostoUnitario_(it.costo)
       : esc(it.categoria || '—') + ' · ' + esc(fmtCant(it.cantidad, it.unidad)) + ' · ' + fmtCostoUnitario_(it.costo) + '/' + esc(unidadCorta_(it.unidad)) + (sospechoso ? ' · revisá este costo' : '');
-    return `<div class="list-row" style="padding:12px 16px;cursor:pointer" onclick="openInsumoModal('${it.id}')">
+    return { nombre: it.nombre, html: `<div class="list-row" style="padding:12px 16px;cursor:pointer" onclick="openInsumoModal('${it.id}')">
       <div style="flex:1;min-width:0">
         <div class="item-name">${esc(it.nombre)}</div>
         <div class="item-sub" style="${(sospechoso || it.unidadPendiente) ? 'color:var(--danger)' : ''}">${sub}</div>
@@ -3794,8 +3826,9 @@ function renderInventario() {
       ${it.unidadPendiente ? '<span class="badge" style="background:var(--danger)">Unidad pendiente</span>' : ''}
       ${bajo ? '<span class="badge">Bajo stock</span>' : ''}
       <i class="ph ph-caret-right" style="color:var(--soft);font-size:var(--fs-sm);margin-left:10px"></i>
-    </div>`;
-  }).join('');
+    </div>` };
+  });
+  el.innerHTML = filasInsumo.concat(filasPrep).sort(alfabetico).map(f => f.html).join('');
   renderDashboardAlerts();
 }
 // Z3/Z4: la lista de preparaciones vive ahora dentro de renderInventario
@@ -3831,8 +3864,9 @@ function openModalPreparacion(id) {
     document.getElementById('prep-edit-id').value = '';
     addPrepComponenteRow();
   }
+  document.getElementById('prep-delete-btn').style.display = id ? 'block' : 'none';
   onPrepModoChange();
-  document.getElementById('modal-preparacion').classList.add('open');
+  openModal('modal-preparacion');
 }
 function onPrepModoChange() {
   const modo = document.getElementById('prep-modo').value;
@@ -3997,6 +4031,7 @@ function deletePreparacion(id) {
   if (!confirm('¿Eliminar esta preparación?')) return;
   state.preparaciones = state.preparaciones.filter(x => x.id !== id);
   saveState();
+  closeModal('modal-preparacion');
   renderPreparaciones();
   showToast('Preparación eliminada');
 }
@@ -4015,7 +4050,7 @@ function openModalLote(prepId) {
   renderLoteConsumoTeorico();
   renderLoteRendimiento();
   renderLoteHistorial();
-  document.getElementById('modal-lote').classList.add('open');
+  openModal('modal-lote');
 }
 function renderLoteConsumoTeorico() {
   const prepId = document.getElementById('lote-prep-id').value;
@@ -4116,6 +4151,7 @@ function producirLoteUI() {
   }
   saveState();
   document.getElementById('lote-gramos-obtenidos').value = '';
+  fotoModal_['modal-lote'] = fotoCamposModal_('modal-lote'); // #30: lo de recién ya se guardó
   renderLoteRendimiento();
   renderLoteHistorial();
   renderPreparaciones();
@@ -4338,7 +4374,8 @@ function calcProdCost() {
   document.getElementById('p-costo-calc').textContent = fmt(r.costo);
   document.getElementById('p-gan-calc').textContent = fmt(r.ganancia);
   document.getElementById('p-gan-calc').style.color = r.ganancia >= 0 ? 'var(--success)' : 'var(--danger)';
-  document.getElementById('p-margen-calc').textContent = Math.round(r.margenPct * 100) + '%';
+  // #32: sin receta el costo es $0 y el margen saldría 100% — no es un dato.
+  document.getElementById('p-margen-calc').textContent = candidate.componentes.length ? Math.round(r.margenPct * 100) + '%' : 'sin receta';
   // Precio objetivo: costo / margen mínimo de la casa (50%), redondeado
   // hacia arriba al múltiplo de 500 más cercano (spec del rediseño).
   document.getElementById('p-precio-objetivo-calc').textContent = fmt(Math.ceil((r.costo / 0.5) / 500) * 500);
@@ -4418,7 +4455,7 @@ function renderProductos() {
           <span style="font-size:var(--fs-sm);color:var(--ink);text-decoration:underline;cursor:pointer" onclick="event.stopPropagation();abrirDesgloseCosto('${p.id}')" title="Ver de dónde sale el costo">${fmt(p.precio)}</span>
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
-          <span style="font-size:var(--fs-xs);color:${marginColor}">margen ${margenPct}%${r.costo ? ' · ' + fmt(r.ganancia) : ''}</span>
+          <span style="font-size:var(--fs-xs);color:${marginColor}">${(p.componentes || []).length ? 'margen ' + margenPct + '%' + (r.costo ? ' · ' + fmt(r.ganancia) : '') : 'sin receta'}</span>
           ${insignia}
         </div>
       </div>
@@ -4452,7 +4489,7 @@ function abrirDesgloseCosto(productoId) {
   }
   document.getElementById('desglose-costo-titulo').textContent = 'Costo de ' + producto.nombre;
   document.getElementById('desglose-costo-resumen').textContent =
-    'Costo total: ' + fmt(costoTotal) + ' · precio de venta: ' + fmt(precio) + (precio ? ' · margen ' + Math.round(((precio - costoTotal) / precio) * 100) + '%' : '');
+    'Costo total: ' + fmt(costoTotal) + ' · precio de venta: ' + fmt(precio) + (!(producto.componentes || []).length ? ' · sin receta' : precio ? ' · margen ' + Math.round(((precio - costoTotal) / precio) * 100) + '%' : '');
   const grupoLabel = { alimento: 'Alimento', empaque: 'Empaque' };
   document.getElementById('desglose-costo-lista').innerHTML = lineas.length ? lineas.map(l => {
     const anomalo = l.pctDelPrecio !== null && l.pctDelPrecio > APORTE_ANOMALO_UMBRAL;
@@ -6172,6 +6209,10 @@ function calcMermaValor() {
   if (origen) {
     if (tipo === 'producto') {
       costoUnitario = CrumblyCore.getCostoProducto(origen, state);
+    } else if (tipo === 'preparacion') {
+      // Mismo costo por gramo con el que registrarMerma la valoriza.
+      try { costoUnitario = CrumblyCore.getPreparacionCosto(state, origen.id).costoPorGramo; } catch (e) { costoUnitario = 0; }
+      unidad = 'g';
     } else {
       costoUnitario = Number(origen.costo) || 0;
       unidad = origen.unidad || (tipo === 'materia' ? 'g' : 'unidad');
@@ -6208,8 +6249,9 @@ function saveMerma() {
   } else {
     const list = CrumblyCore.getMermaOrigenList(state, origenTipo) || [];
     const origen = list.find(x => x.id === origenId);
-    if (origen && cantidad > origen.cantidad) {
-      if (!confirm('Solo hay ' + fmtCant(origen.cantidad, origen.unidad) + ' disponible — la merma dejará el stock en 0.\n\n¿Registrarla de todas formas?')) return;
+    const disponible = origen ? (Number(origen.cantidad) || 0) : 0; // una preparación nunca producida no trae `cantidad`
+    if (origen && cantidad > disponible) {
+      if (!confirm('Solo hay ' + fmtCant(disponible, origen.unidad) + ' disponible — la merma dejará el stock en 0.\n\n¿Registrarla de todas formas?')) return;
       stockInsuficiente = true;
     }
   }
@@ -6444,6 +6486,7 @@ function getMermasPeriodoActivo() {
 }
 function mermaOrigenUnidad(m) {
   if (m.origenTipo === 'producto') return 'unidad';
+  if (m.origenTipo === 'preparacion') return 'g';
   const list = CrumblyCore.getMermaOrigenList(state, m.origenTipo) || [];
   const item = list.find(x => x.id === m.origenId);
   return (item && item.unidad) || (m.origenTipo === 'materia' ? 'g' : 'unidad');
@@ -6601,6 +6644,7 @@ function deleteCliente() {
 
 function openModal(id) {
   document.getElementById(id).classList.add('open');
+  if (MODALES_FORMULARIO_.includes(id)) fotoModal_[id] = fotoCamposModal_(id); // #30
   // T0/T2.1/U3/W3.1: se calculan al abrir, no en cada guardado.
   if (id === 'modal-ajustes') {
     // El tope de la celda y la migración a filas son cosas de Sheets: con
@@ -6615,6 +6659,27 @@ document.addEventListener('click', e => {
   document.querySelectorAll('details.info[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; });
 });
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+// ─── #30: un formulario a medio llenar no se cierra sin preguntar ───────
+// Ni tocando el fondo oscuro ni con la X. Al abrir (openModal) se guarda
+// una foto de todos sus campos; al intentar cerrar se compara con la
+// actual. Las filas de receta agregadas o quitadas también cuentan (son
+// <select>/<input> dentro del modal). El insumo ya tenía su propia foto
+// (Z5, hayCambiosSinGuardarInsumo_) y se reusa tal cual.
+const MODALES_FORMULARIO_ = ['modal-producto', 'modal-preparacion', 'modal-lote', 'modal-merma'];
+const fotoModal_ = {};
+function fotoCamposModal_(id) {
+  return Array.from(document.querySelectorAll('#' + id + ' input:not([type=search]), #' + id + ' select, #' + id + ' textarea'))
+    .map(el => (el.type === 'checkbox' || el.type === 'radio') ? el.checked : el.value).join('\u0001');
+}
+function modalConCambios_(id) {
+  if (id === 'modal-insumo') return hayCambiosSinGuardarInsumo_();
+  return MODALES_FORMULARIO_.includes(id) && fotoModal_[id] !== undefined && fotoCamposModal_(id) !== fotoModal_[id];
+}
+// La X de los formularios llama a esta en vez de closeModal.
+function pedirCerrarModal(id) {
+  if (modalConCambios_(id) && !confirm('¿Descartar los cambios?')) return;
+  closeModal(id);
+}
 // ─── Z5 (Ronda 7): tocar el fondo oscuro cierra el modal ────────────────
 // En el celular, con el pulgar, la X es el objetivo más chico y más
 // lejano de la pantalla. Un solo manejador delegado en `document` para
@@ -6625,14 +6690,15 @@ function closeModal(id) { document.getElementById(id).classList.remove('open'); 
 // el contenido). Excepción obligatoria: los modales con datos sin
 // guardar no se cierran por un toque accidental — perder un conteo a
 // medias sería exactamente el tipo de pérdida que T0.1 se construyó
-// para evitar. La X se queda donde estaba, para cerrar sin condiciones.
+// para evitar. La X del conteo se queda como estaba, para cerrar sin
+// condiciones; la de los formularios pregunta igual que acá (#30).
 document.addEventListener('click', function (e) {
   if (!e.target.classList.contains('modal-overlay') || !e.target.classList.contains('open')) return;
   const id = e.target.id;
   if (id === 'modal-conteo') {
     if (!confirm('¿Cerrar el conteo? Lo contado hasta ahora se guarda solo y podés seguir después.')) return;
-  } else if (id === 'modal-insumo' && hayCambiosSinGuardarInsumo_()) {
-    if (!confirm('Hay cambios sin guardar en este insumo — ¿cerrar igual?')) return;
+  } else if (modalConCambios_(id)) { // #30: insumo, producto, preparación, lote, merma
+    if (!confirm('¿Descartar los cambios?')) return;
   } else if (id === 'modal-venta' && ventaCart.length) {
     if (!confirm('Hay una venta con productos en el carrito — ¿cerrar igual? Se perderá el carrito.')) return;
   } else if (id === 'modal-conflictos-catalogo') {

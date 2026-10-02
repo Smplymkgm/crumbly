@@ -2262,6 +2262,9 @@
     // 'dividido'; no se valida que sumen el monto total (queda a criterio
     // de quien registra, la app solo lo refleja).
     var metodoPago = input.metodoPago || 'efectivo';
+    if (metodoPago === 'dividido' && ((Number(input.montoEfectivo) || 0) < 0 || (Number(input.montoTransferencia) || 0) < 0)) {
+      throw new Error('Los montos en efectivo y transferencia no pueden ser negativos');
+    }
     var gasto = {
       id: input.id || genId(),
       fecha: input.fecha || new Date().toISOString(),
@@ -2440,7 +2443,9 @@
       var l = state[bucket];
       var m = (l || []).find(function (x) { return x.id === id; });
       if (!m || cant <= 0) return;
-      var antes = m.cantidad;
+      // Una preparación nunca producida no trae `cantidad`: sin el
+      // Number() quedaba NaN y el stock se perdía.
+      var antes = Number(m.cantidad) || 0;
       var deficit = Math.max(0, cant - antes);
       m.cantidad = Math.max(0, antes - cant);
       var real = antes - m.cantidad;
