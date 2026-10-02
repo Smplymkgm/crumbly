@@ -559,13 +559,14 @@ test('registrarGasto ya NO aplica +8%: doce compras seguidas a $10/g dejan el co
   assert.strictEqual(s.gastos[0].margenVariabilidadAplicado, undefined);
 });
 
-test('getCostoConVolatilidad muestra el costo con insumos volátiles subidos pct, sin tocar la valuación real', () => {
+test('precio variable: el costeo del producto lleva +8% y la valuación queda al precio pagado', () => {
   const s = stateConGastosVolatil();
   C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 1000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 100 });
-  assert.strictEqual(s.materia[0].costo, 10);
-  const costoConAlza = C.getCostoConVolatilidad(s, 'p1', 0.08);
-  assert.ok(Math.abs(costoConAlza - 50 * 10.8) < 0.001);
-  assert.strictEqual(s.materia[0].costo, 10); // no muta la valuación real
+  assert.strictEqual(s.materia[0].costo, 10); // stock al precio pagado
+  const p = s.productos.find(x => x.id === 'p1');
+  assert.ok(Math.abs(C.getCostoProducto(p, s) - 50 * 10.8) < 0.001);
+  s.materia[0].margenVariable = false;
+  assert.ok(Math.abs(C.getCostoProducto(p, s) - 50 * 10) < 0.001);
 });
 
 console.log('\n== Migración v9: recalcular valuación contaminada por el +8% ==');

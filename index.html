@@ -9,7 +9,7 @@
 * { box-sizing: border-box; margin: 0; padding: 0; letter-spacing: 0.01em; }
 :root{
   --bg:#FAFAFA; --line:#E4E4E4; --soft:#D6D6D6; --mid:#8C8C8C; --ink:#111111; --text:#1A1A1A; --muted:#767676; --white:#FFFFFF;
-  --danger:#B23B3B; --success:#3B7A57;
+  --danger:#B23B3B; --success:#111111;
   /* alias retenidos: algo de JS viejo referencia estos nombres */
   --cream:#FAFAFA; --beige:#E4E4E4; --warm:#D6D6D6; --brown:#767676; --dark:#111111; --accent:#111111;
   /* ─── W1 (Ronda 6): escala tipográfica ───────────────────────────────
@@ -89,31 +89,29 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 /* ─── Cards / pills / chips ─── */
 .card{background:var(--white);border:1px solid var(--line);border-radius:16px;padding:18px}
 /* Ingresos por día: tarjeta oscura */
-.ing-card{background:#121212;border-color:#121212;color:#f2f2f2}
 .ing-titulo{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:var(--fw-bold);font-size:var(--fs-body);margin-bottom:14px}
-.ing-titulo i{color:#9a9a9a;margin-right:4px}
-.ing-rango{display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-xs);font-weight:var(--fw-medium);color:#d6d6d6;border:1px solid #2c2c2c;border-radius:999px;padding:6px 10px;white-space:nowrap}
-.ing-rango i{margin:0;color:#9a9a9a}
+.ing-titulo i{color:var(--muted);margin-right:4px}
+.ing-rango{display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-xs);font-weight:var(--fw-medium);color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:6px 10px;white-space:nowrap}
+.ing-rango i{margin:0;color:var(--muted)}
 .ing-hero{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:14px}
-.ing-total{font-size:var(--fs-h1);font-weight:var(--fw-bold);letter-spacing:-.01em;color:#fff}
-.ing-delta{font-size:var(--fs-sm);color:#9a9a9a}
-.ing-delta.sube{color:#3ecf8e;font-weight:var(--fw-bold)}
-.ing-delta.baja{color:#ff6b6b;font-weight:var(--fw-bold)}
+.ing-total{font-size:var(--fs-h1);font-weight:var(--fw-bold);letter-spacing:-.01em;color:var(--ink)}
+.ing-delta{font-size:var(--fs-sm);color:var(--muted)}
+.ing-delta.sube,.ing-delta.baja{color:var(--ink);font-weight:var(--fw-bold)}
 .ing-plot{position:relative;padding-right:46px}
 .ing-area{position:relative;height:190px}
-.ing-gl{position:absolute;left:0;right:-46px;border-top:1px solid rgba(255,255,255,.07)}
-.ing-gl span{position:absolute;right:0;transform:translateY(-50%);font-size:var(--fs-xs);color:#8a8a8a;width:42px;text-align:right}
+.ing-gl{position:absolute;left:0;right:-46px;border-top:1px solid var(--line)}
+.ing-gl span{position:absolute;right:0;transform:translateY(-50%);font-size:var(--fs-xs);color:var(--muted);width:42px;text-align:right;background:var(--white)}
 .ing-cols{position:absolute;inset:0;display:flex;align-items:flex-end}
 .ing-col{flex:1;height:100%;display:flex;align-items:flex-end;justify-content:center;background:none;border:none;padding:0 4px;cursor:pointer}
-.ing-bar{display:block;width:100%;max-width:46px;border-radius:9px 9px 3px 3px;background:linear-gradient(180deg,#363636 0%,#1d1d1d 100%);border:1px solid rgba(255,255,255,.06);border-bottom:none;transition:background .15s}
-.ing-col:hover .ing-bar{background:linear-gradient(180deg,#4a4a4a 0%,#262626 100%)}
-.ing-col.sel .ing-bar{background:linear-gradient(180deg,#ffffff 0%,#8c8c8c 100%);border-color:transparent}
-.ing-guia{position:absolute;right:-46px;border-top:1px dashed rgba(255,255,255,.55);pointer-events:none}
-.ing-tip{position:absolute;transform:translate(calc(-100% - 10px),50%);background:#1f2633;color:#fff;border:1px solid #33405a;border-radius:7px;padding:4px 9px;font-size:var(--fs-xs);font-weight:var(--fw-bold);white-space:nowrap;pointer-events:none}
+.ing-bar{display:block;width:100%;max-width:46px;border-radius:9px 9px 3px 3px;background:var(--soft);transition:background .15s}
+.ing-col:hover .ing-bar{background:var(--mid)}
+.ing-col.sel .ing-bar{background:var(--ink)}
+.ing-guia{position:absolute;right:-46px;border-top:1px dashed var(--mid);pointer-events:none}
+.ing-tip{position:absolute;transform:translate(calc(-100% - 10px),50%);background:var(--ink);color:var(--white);border-radius:7px;padding:4px 9px;font-size:var(--fs-xs);font-weight:var(--fw-bold);white-space:nowrap;pointer-events:none}
 .ing-tip.derecha{transform:translate(10px,50%)}
 .ing-dias{display:flex;margin-top:10px}
-.ing-dias span{flex:1;text-align:center;font-size:var(--fs-xs);color:#8a8a8a}
-.ing-dias span.sel{color:#fff;font-weight:var(--fw-bold)}
+.ing-dias span{flex:1;text-align:center;font-size:var(--fs-xs);color:var(--muted)}
+.ing-dias span.sel{color:var(--ink);font-weight:var(--fw-bold)}
 /* La burbuja se ubica contra el MODAL (no contra el ícono): queda justo
    debajo del ícono en lo vertical, pero siempre dentro del ancho del
    formulario — pegada al ícono se salía de la pantalla en el celular. */
@@ -121,11 +119,9 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 .info summary{list-style:none;cursor:pointer;color:var(--muted);display:inline-flex;align-items:center;font-size:15px;line-height:1;padding:2px}
 .info summary::-webkit-details-marker{display:none}
 .info[open] summary{color:var(--ink)}
-.info.en-oscuro summary,.info.en-oscuro[open] summary{color:rgba(255,255,255,.7)}
-.info.en-oscuro p{background:var(--white);color:var(--ink);top:100%;left:0;width:100%}
-.cc-medios{margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.18);display:flex;flex-direction:column;gap:6px;font-size:var(--fs-sm)}
+.cc-medios{margin-top:12px;padding-top:10px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px;font-size:var(--fs-sm)}
 .cc-medio-fila{position:relative;display:flex;align-items:center;justify-content:space-between;gap:10px}
-.cc-medio-fila span{color:rgba(255,255,255,.75)}
+.cc-medio-fila span{color:var(--muted)}
 .info p{position:absolute;z-index:20;left:16px;width:min(340px,calc(100% - 32px));margin:6px 0 0;padding:10px 12px;background:var(--ink);color:var(--white);border-radius:10px;font-size:var(--fs-xs);font-weight:var(--fw-medium);line-height:1.45;text-transform:none;letter-spacing:0;white-space:normal;box-shadow:0 8px 24px rgba(0,0,0,.18)}
 .conteo-fila{border:1px solid var(--line);border-radius:9px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
 .conteo-fila.falta-motivo{border-color:var(--danger);box-shadow:inset 3px 0 0 var(--danger)}
@@ -360,7 +356,7 @@ textarea.field{height:auto}
         <button class="hamburger-btn" onclick="openMobileMenu()" style="background:var(--white);border:1px solid var(--line);color:var(--ink)"><i class="ph ph-list"></i></button>
         <div style="min-width:0">
           <div class="header-greeting">Hola</div>
-          <div class="header-date" id="header-date">—</div>
+          <div class="header-date" id="header-date"></div>
         </div>
       </div>
       <div class="header-right">
@@ -463,26 +459,26 @@ textarea.field{height:auto}
         </div>
 
         <div class="cod-grid">
-          <div style="background:var(--ink);border-radius:10px;padding:13px;color:var(--white)">
+          <div class="card">
             <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px">
               <div style="font-weight:var(--fw-bold);font-size:var(--fs-sm)">Cierre de caja de hoy</div>
-              <i class="ph ph-cash-register" style="font-size:var(--fs-h3);color:rgba(255,255,255,.7)"></i>
+              <i class="ph ph-cash-register" style="font-size:var(--fs-h3);color:var(--muted)"></i>
             </div>
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-              <div><div style="font-size:var(--fs-body);font-weight:var(--fw-bold)" id="cc-num-ventas">0</div><div style="font-size:var(--fs-xs);color:rgba(255,255,255,.6);margin-top:2px">Ventas</div></div>
-              <div><div style="font-size:var(--fs-body);font-weight:var(--fw-bold)" id="cc-unidades">0</div><div style="font-size:var(--fs-xs);color:rgba(255,255,255,.6);margin-top:2px">Unidades</div></div>
-              <div><div style="font-size:var(--fs-body);font-weight:var(--fw-bold)" id="cc-ingresos">$0</div><div style="font-size:var(--fs-xs);color:rgba(255,255,255,.6);margin-top:2px">Ingresos</div></div>
-              <div><div style="font-size:var(--fs-body);font-weight:var(--fw-bold)" id="cc-gastos">$0</div><div style="font-size:var(--fs-xs);color:rgba(255,255,255,.6);margin-top:2px">Gastos</div></div>
-              <div><div style="font-size:var(--fs-body);font-weight:var(--fw-bold)" id="cc-utilidad-neta">$0</div><div style="font-size:var(--fs-xs);color:rgba(255,255,255,.6);margin-top:2px">Utilidad neta</div></div>
-              <div><div style="font-size:var(--fs-body);font-weight:var(--fw-bold)" id="cc-ticket-promedio">$0</div><div style="font-size:var(--fs-xs);color:rgba(255,255,255,.6);margin-top:2px">Ticket prom.</div></div>
+              <div><div style="font-size:var(--fs-body);font-weight:var(--fw-bold)" id="cc-num-ventas">0</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:2px">Ventas</div></div>
+              <div><div style="font-size:var(--fs-body);font-weight:var(--fw-bold)" id="cc-unidades">0</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:2px">Unidades</div></div>
+              <div><div style="font-size:var(--fs-body);font-weight:var(--fw-bold)" id="cc-ingresos">$0</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:2px">Ingresos</div></div>
+              <div><div style="font-size:var(--fs-body);font-weight:var(--fw-bold)" id="cc-gastos">$0</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:2px">Gastos</div></div>
+              <div><div style="font-size:var(--fs-body);font-weight:var(--fw-bold)" id="cc-utilidad-neta">$0</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:2px">Utilidad neta</div></div>
+              <div><div style="font-size:var(--fs-body);font-weight:var(--fw-bold)" id="cc-ticket-promedio">$0</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:2px">Ticket prom.</div></div>
             </div>
             <div class="cc-medios">
-              <div class="cc-medio-fila"><span>Efectivo en caja <details class="info en-oscuro"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Ventas de hoy cobradas en efectivo, menos los gastos de hoy pagados en efectivo (incluye la parte en efectivo de los pagos divididos). No incluye la base con la que abriste la caja: sumala para saber cuánto debería haber en el cajón.</p></details></span><b id="cc-efectivo-caja">$0</b></div>
+              <div class="cc-medio-fila"><span>Efectivo en caja <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Ventas de hoy cobradas en efectivo, menos los gastos de hoy pagados en efectivo (incluye la parte en efectivo de los pagos divididos). No incluye la base con la que abriste la caja: sumala para saber cuánto debería haber en el cajón.</p></details></span><b id="cc-efectivo-caja">$0</b></div>
               <div class="cc-medio-fila"><span>Transferencias recibidas</span><b id="cc-transf-recibidas">$0</b></div>
               <div class="cc-medio-fila"><span>Transferencias pagadas</span><b id="cc-transf-pagadas">$0</b></div>
               <div class="cc-medio-fila" id="cc-otros-medios" style="display:none"><span>Otros medios (recibido / pagado)</span><b id="cc-otros-valor">$0</b></div>
             </div>
-            <button class="btn btn-block" style="margin-top:10px;background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.3)" onclick="generateCierreCajaPDF()"><i class="ph ph-download-simple"></i> Reporte PDF</button>
+            <button class="btn btn-outline btn-block" style="margin-top:10px" onclick="generateCierreCajaPDF()"><i class="ph ph-download-simple"></i> Reporte PDF</button>
           </div>
 
           <div class="card">
@@ -531,7 +527,7 @@ textarea.field{height:auto}
              motivo, nunca un guion ni un cero (ver renderReportesCosteo). -->
         <div id="dash-tab-costeo" style="display:none">
 
-          <div class="card" style="background:var(--ink);color:var(--white)">
+          <div class="card">
             <!-- T4 (auditoría, Ronda 3): bepDiarioContable/bepDiarioCaja
                  (js/core.js) son bepContable/bepCaja del PERÍODO
                  seleccionado dividido entre sus días — un promedio, no un
@@ -539,18 +535,18 @@ textarea.field{height:auto}
                  mitad de mes, "hay que vender HOY" leía como una meta del
                  día que no era. Solo cambia el texto — el cálculo sigue
                  siendo el mismo bepDiarioContable/bepDiarioCaja de siempre. -->
-            <div class="item-sub" style="color:rgba(255,255,255,.6);margin-bottom:6px;position:relative">Punto de equilibrio del período <details class="info en-oscuro"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Cuánto hay que vender por día, en promedio, para cubrir todos los costos del período (sin ganar ni perder). Es un promedio del período elegido, no una meta calculada solo para hoy.</p></details></div>
+            <div class="item-sub" style="margin-bottom:6px;position:relative">Punto de equilibrio del período <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Cuánto hay que vender por día, en promedio, para cubrir todos los costos del período (sin ganar ni perder). Es un promedio del período elegido, no una meta calculada solo para hoy.</p></details></div>
             <div id="costeo-bep-suficiente">
               <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
                 <div style="font-size:var(--fs-display);line-height:var(--lh-tight);font-weight:var(--fw-bold)" id="costeo-bep-diario">$0</div>
-                <div class="item-sub" style="color:rgba(255,255,255,.6)">meta diaria promedio del período</div>
+                <div class="item-sub">meta diaria promedio del período</div>
               </div>
               <div style="display:flex;gap:18px;margin-top:10px;flex-wrap:wrap">
-                <div><span class="item-sub" style="color:rgba(255,255,255,.6)">Llevas vendido hoy: </span><strong id="costeo-bep-llevado">$0</strong></div>
-                <div><span class="item-sub" style="color:rgba(255,255,255,.6)">De caja (sin depreciación, con compras de equipos): </span><strong id="costeo-bep-caja">$0</strong></div>
+                <div><span class="item-sub">Llevas vendido hoy: </span><strong id="costeo-bep-llevado">$0</strong></div>
+                <div><span class="item-sub">De caja (sin depreciación, con compras de equipos): </span><strong id="costeo-bep-caja">$0</strong></div>
               </div>
             </div>
-            <p class="item-sub" id="costeo-bep-motivo" style="color:rgba(255,255,255,.75);display:none"></p>
+            <p class="item-sub" id="costeo-bep-motivo" style="display:none"></p>
           </div>
 
           <div class="card" style="position:relative">
@@ -854,7 +850,7 @@ textarea.field{height:auto}
           <input type="checkbox" id="ins-precio-variable" style="width:18px;height:18px;accent-color:var(--ink)">
           <span style="font-size:var(--fs-sm);color:var(--text)">Precio variable</span>
         </label>
-        <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Solo informativo: lo marca en Reportes como un insumo cuyo precio cambia seguido. No modifica el costo.</p></details>
+        <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Para insumos cuyo precio sube seguido: las recetas y el costo de cada venta lo toman con +8%, para no quedarte corto. El stock y lo que pagaste no cambian.</p></details>
       </div>
       <label class="checkbox-row">
         <input type="checkbox" id="ins-es-adicion" style="width:18px;height:18px;accent-color:var(--ink)" onchange="document.getElementById('ins-adicion-fields').style.display=this.checked?'block':'none'; actualizarMargenAdicion()">
@@ -2528,7 +2524,7 @@ function renderPayloadPanel() {
   const faseEl = document.getElementById('payload-fase-estado');
   if (info.fase === 'post') { faseEl.textContent = '🟢 Fase confirmada: POST-migración'; faseEl.style.color = 'var(--muted)'; }
   else if (info.fase === 'pre') { faseEl.textContent = '🟡 Fase confirmada: PRE-migración'; faseEl.style.color = 'var(--muted)'; }
-  else { faseEl.textContent = '⚪ Fase SIN CONFIRMAR: advierte, nunca bloquea'; faseEl.style.color = '#c98a1f'; }
+  else { faseEl.textContent = '⚪ Fase SIN CONFIRMAR: advierte, nunca bloquea'; faseEl.style.color = 'var(--ink)'; }
   document.getElementById('payload-alarma-motivo').textContent =
     'Midiendo: ' + info.motivo + '.';
   document.getElementById('payload-tamano').textContent = info.tam.toLocaleString('es-CO');
@@ -2537,11 +2533,11 @@ function renderPayloadPanel() {
   document.getElementById('payload-transferencia').textContent = CrumblySync.getTransferSize(snapshot).toLocaleString('es-CO');
   const barra = document.getElementById('payload-barra');
   barra.style.width = Math.min(100, info.pct * 100) + '%';
-  barra.style.background = info.nivel === 'bloqueado' ? 'var(--danger)' : (info.nivel === 'advertencia' ? '#c98a1f' : 'var(--ink)');
+  barra.style.background = info.nivel === 'bloqueado' ? 'var(--danger)' : (info.nivel === 'advertencia' ? 'var(--ink)' : 'var(--ink)');
   const msg = document.getElementById('payload-nivel-msg');
   const queMide = info.fase === 'post' ? 'el catálogo' : 'el estado completo';
   if (info.nivel === 'bloqueado') { msg.textContent = 'Bloqueado: ' + queMide + ' supera el tope de una celda de Sheets. La sincronización se rechaza para no perder datos en silencio.'; msg.style.color = 'var(--danger)'; }
-  else if (info.nivel === 'advertencia') { msg.textContent = queMide.charAt(0).toUpperCase() + queMide.slice(1) + ' se acerca al tope de una celda de Sheets' + (info.fase === 'sin_confirmar' ? ' (sin confirmar todavía, no bloquearía aunque lo superara)' : '') + '.'; msg.style.color = '#c98a1f'; }
+  else if (info.nivel === 'advertencia') { msg.textContent = queMide.charAt(0).toUpperCase() + queMide.slice(1) + ' se acerca al tope de una celda de Sheets' + (info.fase === 'sin_confirmar' ? ' (sin confirmar todavía, no bloquearía aunque lo superara)' : '') + '.'; msg.style.color = 'var(--ink)'; }
   else { msg.textContent = 'Dentro de rango normal.'; msg.style.color = 'var(--muted)'; }
 
   const fila = d => `
@@ -4437,9 +4433,9 @@ function renderProductos() {
     const insignia = perdida
       ? '<span class="badge" style="background:var(--danger);color:#fff;font-size:var(--fs-xs);white-space:nowrap">⚠ costo &gt; precio</span>'
       : margenBajo
-        ? '<span class="badge" style="background:#c98a1f;color:#fff;font-size:var(--fs-xs);white-space:nowrap">costo &gt; 60% precio</span>'
+        ? '<span class="badge" style="background:var(--ink);color:#fff;font-size:var(--fs-xs);white-space:nowrap">costo &gt; 60% precio</span>'
         : '';
-    const marginColor = perdida ? 'var(--danger)' : (margenBajo ? '#c98a1f' : (r.costo && margenPct < 50 ? 'var(--danger)' : 'var(--muted)'));
+    const marginColor = perdida ? 'var(--danger)' : (margenBajo ? 'var(--ink)' : (r.costo && margenPct < 50 ? 'var(--danger)' : 'var(--muted)'));
     const foto = p.foto ? `<img src="${p.foto}" style="width:100%;height:100%;object-fit:cover">` : '';
     return `<div class="prod-card" onclick="openModalProducto('${p.id}')" style="background:var(--white);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;cursor:pointer">
       <div style="width:100%;height:150px;background:var(--bg)">${foto}</div>
@@ -5098,6 +5094,8 @@ function onReportRangeChange() {
 let chartDiaSel = null; // fecha (YYYY-MM-DD local) elegida; null = hoy
 function selChartDia(fecha) { chartDiaSel = fecha; renderChartBars(); }
 // $84k / $1,2M — para el eje y la etiqueta (el total va completo con fmt).
+// "-$5.000" para un gasto/resta; sin signo cuando es 0 ("-$0" se ve raro).
+function fmtResta_(v) { return (Number(v) ? '-' : '') + fmt(v); }
 function fmtCompacto_(v) {
   if (v >= 1e6) return '$' + (v / 1e6).toLocaleString('es-CO', { maximumFractionDigits: 1 }) + 'M';
   if (v >= 1000) return '$' + Math.round(v / 1000) + 'k';
@@ -5390,12 +5388,12 @@ function renderCierreCaja() {
   document.getElementById('cc-num-ventas').textContent = ventas.length;
   document.getElementById('cc-unidades').textContent = unidades;
   document.getElementById('cc-ingresos').textContent = fmt(casc.ingresos);
-  document.getElementById('cc-gastos').textContent = '-' + fmt(totalGastos);
+  document.getElementById('cc-gastos').textContent = fmtResta_(totalGastos);
   document.getElementById('cc-utilidad-neta').textContent = fmt(casc.utilidadNeta);
   document.getElementById('cc-ticket-promedio').textContent = fmt(CrumblyCore.getTicketPromedio(ventas));
   document.getElementById('cc-efectivo-caja').textContent = (medios.efectivoEnCaja < 0 ? '-' : '') + fmt(Math.abs(medios.efectivoEnCaja));
   document.getElementById('cc-transf-recibidas').textContent = fmt(medios.transferenciasRecibidas);
-  document.getElementById('cc-transf-pagadas').textContent = '-' + fmt(medios.transferenciasPagadas);
+  document.getElementById('cc-transf-pagadas').textContent = fmtResta_(medios.transferenciasPagadas);
   const otros = document.getElementById('cc-otros-medios');
   otros.style.display = (medios.otrosRecibidos || medios.otrosPagados) ? 'flex' : 'none';
   document.getElementById('cc-otros-valor').textContent = fmt(medios.otrosRecibidos) + ' / -' + fmt(medios.otrosPagados);
@@ -5418,8 +5416,8 @@ function renderDetalleFinanciero() {
   if (!dashDetalleOpen) return;
   const casc = getReportCascada();
   document.getElementById('df-utilidad-bruta').textContent = fmt(casc.utilidadBruta);
-  document.getElementById('df-gastos-operativos').textContent = '-' + fmt(casc.totalOperativos);
-  document.getElementById('df-depreciacion').textContent = '-' + fmt(casc.depreciacion);
+  document.getElementById('df-gastos-operativos').textContent = fmtResta_(casc.totalOperativos);
+  document.getElementById('df-depreciacion').textContent = fmtResta_(casc.depreciacion);
   document.getElementById('df-mermas').textContent = fmt(casc.mermas); // C2: informativo, ya está dentro de utilidadBruta
   document.getElementById('df-utilidad-neta').textContent = fmt(casc.utilidadNeta);
   document.getElementById('df-flujo-caja').textContent = fmt(casc.flujoCaja);
@@ -5462,13 +5460,13 @@ function generateCierreCajaPDF() {
   pdfSectionLabel(doc, 'Efectivo y transferencias', y); y += 7;
   const filasMedios = [
     ['Ventas en efectivo', fmt(medios.ventasEfectivo)],
-    ['Gastos pagados en efectivo', '-' + fmt(medios.gastosEfectivo)],
+    ['Gastos pagados en efectivo', fmtResta_(medios.gastosEfectivo)],
     ['Efectivo en caja (sin la base de apertura)', (medios.efectivoEnCaja < 0 ? '-' : '') + fmt(Math.abs(medios.efectivoEnCaja))],
     ['Transferencias recibidas', fmt(medios.transferenciasRecibidas)],
-    ['Transferencias pagadas', '-' + fmt(medios.transferenciasPagadas)]
+    ['Transferencias pagadas', fmtResta_(medios.transferenciasPagadas)]
   ];
   if (medios.otrosRecibidos || medios.otrosPagados) {
-    filasMedios.push(['Otros medios recibidos', fmt(medios.otrosRecibidos)], ['Otros medios pagados', '-' + fmt(medios.otrosPagados)]);
+    filasMedios.push(['Otros medios recibidos', fmt(medios.otrosRecibidos)], ['Otros medios pagados', fmtResta_(medios.otrosPagados)]);
   }
   y = pdfMinimalTable(doc, {
     startY: y,
@@ -5655,7 +5653,7 @@ function generateSalesReportPDF() {
     // Nunca sale de la caja tampoco, igual que la depreciaci\u00f3n. Ver
     // CrumblyCore.computeCascada.
     head: [['Utilidad bruta', 'Gastos operativos', 'Depreciaci\u00f3n', 'Mermas (en costo de ventas)', 'Utilidad neta', 'Flujo de caja']],
-    body: [[fmt(casc.utilidadBruta), '-' + fmt(casc.totalOperativos), '-' + fmt(casc.depreciacion), fmt(casc.mermas), fmt(casc.utilidadNeta), fmt(casc.flujoCaja)]],
+    body: [[fmt(casc.utilidadBruta), fmtResta_(casc.totalOperativos), fmtResta_(casc.depreciacion), fmt(casc.mermas), fmt(casc.utilidadNeta), fmt(casc.flujoCaja)]],
     columnStyles: { 0: { halign: 'right' }, 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } }
   }) + 14;
 

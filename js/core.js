@@ -903,8 +903,14 @@
   function factorUnidadAGramos_(unidad) {
     return unidad === 'kg' ? 1000 : 1;
   }
+  // Precio variable (decisión del dueño, reafirmada 2 oct 2026): los
+  // insumos marcados llevan +8% en el COSTEO (recetas, márgenes, costo de
+  // cada venta). El stock y el costo de compra quedan al precio pagado
+  // (v9): el recargo se aplica al leer, nunca se guarda.
   function costoPorGramoInsumo_(insumo) {
-    return insumo ? (Number(insumo.costo) || 0) / factorUnidadAGramos_(insumo.unidad) : 0;
+    if (!insumo) return 0;
+    var recargo = insumo.margenVariable ? 1 + MARGEN_VARIABILIDAD_PCT : 1;
+    return (Number(insumo.costo) || 0) * recargo / factorUnidadAGramos_(insumo.unidad);
   }
   function cantidadEnUnidadInsumo_(insumo, cantidadEnGramos) {
     return insumo ? (Number(cantidadEnGramos) || 0) / factorUnidadAGramos_(insumo.unidad) : 0;
@@ -948,28 +954,6 @@
       if (m) total += costoPorGramoInsumo_(m) * (Number(e.cantidad) || 0);
     });
     return total;
-  }
-
-  // Costo del producto si los insumos de precio volátil (margenVariable)
-  // subieran `pct` — escenario informativo (auditoría de costeo, hallazgo
-  // raíz de C9/A1: el +8% ya NO se mete en la valuación real). Se reusa
-  // getCostoProducto sobre una copia de las listas de insumos con el costo
-  // ya subido, en vez de reescribir el recorrido de componentes.
-  function getCostoConVolatilidad(state, productoId, pct) {
-    var p = (state.productos || []).find(function (x) { return x.id === productoId; });
-    if (!p) return 0;
-    var factor = 1 + (Number(pct) || 0);
-    function bump(list) {
-      return (list || []).map(function (i) {
-        return i.margenVariable ? Object.assign({}, i, { costo: (Number(i.costo) || 0) * factor }) : i;
-      });
-    }
-    var stateBump = Object.assign({}, state, {
-      materia: bump(state.materia),
-      empaques: bump(state.empaques),
-      toppings: bump(state.toppings)
-    });
-    return getCostoProducto(p, stateBump);
   }
 
   // C1 (auditoría de costeo): el empaque hoy va MEZCLADO dentro del costo
@@ -2296,8 +2280,7 @@
 
       // v9 (auditoría de costeo, hallazgo raíz): el costo de inventario es
       // el precio pagado, sin recargo. margenVariable ya NO toca la
-      // valuación — solo alimenta getCostoConVolatilidad() como escenario
-      // informativo. Antes de v9 esto aplicaba un +8% aquí mismo; retirado.
+      // valuación: el +8% se aplica al costear (costoPorGramoInsumo_). Antes de v9 esto aplicaba un +8% aquí mismo; retirado.
       var costoCompraUnitario = monto / cantidad;
       // A2: esta compra salda primero la deuda de faltante (ventas que se
       // descontaron de más porque no había stock) — solo lo que sobra
@@ -3802,7 +3785,6 @@
     getCostoProducto: getCostoProducto,
     getEmpaqueTotalProducto: getEmpaqueTotalProducto,
     aplicarComponentes: aplicarComponentes,
-    getCostoConVolatilidad: getCostoConVolatilidad,
     getCostoProductoDesglosado: getCostoProductoDesglosado,
     getDesgloseCostoProducto: getDesgloseCostoProducto,
     getAportesComponentes: getAportesComponentes,
