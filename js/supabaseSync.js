@@ -205,7 +205,7 @@
         ausentes = (base[col] || []).filter(function (r) { return r && r.id != null && !vivos[r.id]; }).map(function (r) { return r.id; });
         var enBaseTotal = (base[col] || []).length;
         if (ausentes.length > 5 && ausentes.length > enBaseTotal / 2) {
-          return Promise.resolve({ ok: false, code: 'BORRADO_MASIVO', error: col + ': se borrarían ' + ausentes.length + ' de ' + enBaseTotal + ' registros de una vez — no se sincronizó nada' });
+          return Promise.resolve({ ok: false, code: 'BORRADO_MASIVO', error: col + ': se borrarían ' + ausentes.length + ' de ' + enBaseTotal + ' registros de una vez. No se sincronizó nada' });
         }
       }
       var union = explicitos.concat(ausentes.filter(function (id) { return explicitos.indexOf(id) === -1; }));
@@ -322,14 +322,14 @@
       });
     });
     if (problemas.length) {
-      return Promise.resolve({ ok: false, error: 'Migración cancelada, no se escribió nada — registros con id inválido: ' + problemas.join('; ') });
+      return Promise.resolve({ ok: false, error: 'Migración cancelada, no se escribió nada. Registros con id inválido: ' + problemas.join('; ') });
     }
     return contarTodas(client).then(function (previos) {
       var conDatos = COLECCIONES.filter(function (c) { return previos[c] > 0; });
       if (conDatos.length && !forzar) {
         return {
           ok: false,
-          error: 'Migración cancelada, no se escribió nada — Supabase ya tiene datos en: ' +
+          error: 'Migración cancelada, no se escribió nada. Supabase ya tiene datos en: ' +
             conDatos.map(function (c) { return c + ' (' + previos[c] + ')'; }).join(', ') +
             '. Si de verdad querés subir el estado encima, volvé a correrla con { forzar: true }.'
         };

@@ -91,7 +91,7 @@
     if (supabaseClient) return supabaseClient;
     var lib = typeof window !== 'undefined' ? window.supabase : undefined;
     if (!lib || typeof lib.createClient !== 'function') {
-      throw new Error('No se pudo cargar Supabase — revisá tu conexión y recargá la página');
+      throw new Error('No se pudo cargar Supabase. Revisá tu conexión y recargá la página');
     }
     supabaseClient = lib.createClient(SUPABASE_URL, SUPABASE_KEY);
     return supabaseClient;
