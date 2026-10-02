@@ -67,6 +67,35 @@ test('formatCOP maneja negativos', () => {
   assert.strictEqual(C.formatCOP(-500), '-$500');
 });
 
+console.log('\n== Formato de cantidades y costo por unidad (Tanda 3 #23) ==');
+
+test('formatCantidad: separadores es-CO, máx 2 decimales sin ceros de sobra', () => {
+  assert.strictEqual(C.formatCantidad(1000, 'g'), '1.000 g');
+  assert.strictEqual(C.formatCantidad(0.4, 'kg'), '0,4 kg');
+  assert.strictEqual(C.formatCantidad(2.005 + 1e-9, 'ml'), '2,01 ml');
+  assert.strictEqual(C.formatCantidad(5, 'unidad'), '5 und');
+  assert.strictEqual(C.formatCantidad(12.5), '12,5');
+});
+
+test('formatCantidad no muestra "-0" ni NaN', () => {
+  assert.strictEqual(C.formatCantidad(-0.001, 'g'), '0 g');
+  assert.strictEqual(C.formatCantidad(undefined, 'kg'), '0 kg');
+});
+
+test('formatCostoUnitario: decimales según el tamaño del costo', () => {
+  assert.strictEqual(C.formatCostoUnitario(8333.3333), '$8.333');
+  assert.strictEqual(C.formatCostoUnitario(4.72), '$4,72');
+  assert.strictEqual(C.formatCostoUnitario(0.00354), '$0,0035');
+  assert.strictEqual(C.formatCostoUnitario(0), '$0');
+});
+
+test('unidadRecetaInsumo: kg se lee en g en la receta; ml y unidad se respetan', () => {
+  assert.strictEqual(C.unidadRecetaInsumo({ unidad: 'kg' }, 'materia'), 'g');
+  assert.strictEqual(C.unidadRecetaInsumo({ unidad: 'ml' }, 'materia'), 'ml');
+  assert.strictEqual(C.unidadRecetaInsumo({}, 'empaques'), 'unidad');
+  assert.strictEqual(C.unidadRecetaInsumo(null, 'materia'), 'g');
+});
+
 console.log('\n== escapeHtml ==');
 
 test('escapeHtml neutraliza tags', () => {
@@ -182,6 +211,14 @@ test('calcInventoryNeeds incluye los tres tipos de insumo, no solo materia', () 
   assert.deepStrictEqual(tipos, ['empaques', 'materia', 'toppings']);
   const toppingNeed = needs.find(n => n.tipo === 'toppings' && n.id === 't1');
   assert.strictEqual(toppingNeed.consumo, 4); // antes: 0, porque no se medía (P1-1)
+});
+
+test('calcInventoryNeeds etiqueta cada insumo con SU unidad (kg no sale como g)', () => {
+  const s = stateBase();
+  s.materia[0].unidad = 'kg';
+  const needs = C.calcInventoryNeeds(s, 7, new Date('2026-08-12T12:00:00'));
+  assert.strictEqual(needs.find(n => n.tipo === 'materia' && n.id === s.materia[0].id).unidadLabel, 'kg');
+  assert.strictEqual(needs.find(n => n.tipo === 'toppings').unidadLabel, s.toppings[0].unidad || 'unidad');
 });
 
 test('ventana móvil de 7 días no depende de la semana calendario (P1-2)', () => {

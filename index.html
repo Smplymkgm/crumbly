@@ -552,7 +552,7 @@ textarea.field{height:auto}
               </div>
               <div style="display:flex;gap:18px;margin-top:10px;flex-wrap:wrap">
                 <div><span class="item-sub" style="color:rgba(255,255,255,.6)">Llevas vendido hoy: </span><strong id="costeo-bep-llevado">$0</strong></div>
-                <div><span class="item-sub" style="color:rgba(255,255,255,.6)">De caja (sin depreciación, con capex): </span><strong id="costeo-bep-caja">$0</strong></div>
+                <div><span class="item-sub" style="color:rgba(255,255,255,.6)">De caja (sin depreciación, con compras de equipos): </span><strong id="costeo-bep-caja">$0</strong></div>
               </div>
             </div>
             <p class="item-sub" id="costeo-bep-motivo" style="color:rgba(255,255,255,.75);display:none"></p>
@@ -560,7 +560,7 @@ textarea.field{height:auto}
 
           <div class="card">
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
-              <div class="card-title">Prime cost</div>
+              <div class="card-title">Costo principal <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Lo que cuesta lo vendido (ingredientes y empaques) más la nómina con prestaciones, como porcentaje de las ventas. Si pasa de 65%, queda poco para arriendo, servicios y ganancia.</p></details></div>
               <div style="display:flex;align-items:center;gap:8px">
                 <span class="item-sub">Factor prestacional</span>
                 <input type="number" id="costeo-factor-prestacional" class="field field-sm" style="width:70px" min="1" step="0.01" oninput="saveConfigFactorPrestacional(this)">
@@ -573,7 +573,7 @@ textarea.field{height:auto}
                 <span class="item-sub">techo sano: 65%</span>
               </div>
               <div style="display:flex;gap:18px;flex-wrap:wrap">
-                <div><span class="item-sub">COGS: </span><strong id="costeo-primecost-cogs">$0</strong></div>
+                <div><span class="item-sub">Costo de lo vendido: </span><strong id="costeo-primecost-cogs">$0</strong></div>
                 <div><span class="item-sub">Laboral cargado: </span><strong id="costeo-primecost-laboral">$0</strong></div>
                 <div><span class="item-sub">Nómina registrada: </span><strong id="costeo-primecost-nomina">$0</strong></div>
               </div>
@@ -584,14 +584,14 @@ textarea.field{height:auto}
           <div class="card">
             <div class="card-title" style="margin-bottom:10px">Costo de ventas — tres líneas, nunca sumadas en una</div>
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">
-              <div><div style="font-size:var(--fs-h2);font-weight:var(--fw-bold)" id="costeo-foodcost-pct">0%</div><div class="item-sub">Food cost %</div></div>
-              <div><div style="font-size:var(--fs-h2);font-weight:var(--fw-bold)" id="costeo-papercost-pct">0%</div><div class="item-sub">Paper cost %</div></div>
-              <div><div style="font-size:var(--fs-h2);font-weight:var(--fw-bold)" id="costeo-cogstotal-pct">0%</div><div class="item-sub">COGS total %</div></div>
+              <div><div style="font-size:var(--fs-h2);font-weight:var(--fw-bold)" id="costeo-foodcost-pct">0%</div><div class="item-sub">Costo de alimentos %</div></div>
+              <div><div style="font-size:var(--fs-h2);font-weight:var(--fw-bold)" id="costeo-papercost-pct">0%</div><div class="item-sub">Costo de empaques %</div></div>
+              <div><div style="font-size:var(--fs-h2);font-weight:var(--fw-bold)" id="costeo-cogstotal-pct">0%</div><div class="item-sub">Costo de lo vendido %</div></div>
             </div>
           </div>
 
           <div class="card">
-            <div class="card-title" style="margin-bottom:10px">Menu engineering</div>
+            <div class="card-title" style="margin-bottom:10px">Rentabilidad del menú <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Cada producto se clasifica según cuánto se vende y cuánto deja por unidad (precio menos costo), comparado con los demás de su categoría.</p></details></div>
             <div id="costeo-menu-engineering"></div>
           </div>
 
@@ -602,7 +602,7 @@ textarea.field{height:auto}
           </div>
 
           <div class="card">
-            <div class="card-title" style="margin-bottom:10px">Actual vs Theoretical</div>
+            <div class="card-title" style="margin-bottom:10px">Costo de alimentos: real vs. receta <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p><b>Real:</b> lo que de verdad se gastó según los conteos físicos. <b>Receta:</b> lo que debió gastarse según las recetas de lo vendido. Si el real es mayor, hay pérdidas (porciones grandes, desperdicio, faltantes).</p></details></div>
             <div id="costeo-avt"></div>
           </div>
 
@@ -1426,9 +1426,9 @@ textarea.field{height:auto}
           <label class="field-label">Factor prestacional (nómina)</label>
           <input type="number" id="cfg-factor-prestacional" class="field" min="1" step="0.01" oninput="saveConfigFactorPrestacional(this)">
         </div>
-        <p class="item-sub" style="margin-bottom:14px">Multiplica la nómina registrada para el Prime Cost — cubre prestaciones sociales, seguridad social y parafiscales. No asumas 1,52 sin más: con salarios bajo 10 SMMLV puede aplicar la exoneración del art. 114-1 del ET (sin SENA, ICBF ni salud del empleador) y el factor real es menor. Confírmalo con tu contador.</p>
+        <p class="item-sub" style="margin-bottom:14px">Multiplica la nómina registrada para el costo principal — cubre prestaciones sociales, seguridad social y parafiscales. No asumas 1,52 sin más: con salarios bajo 10 SMMLV puede aplicar la exoneración del art. 114-1 del ET (sin SENA, ICBF ni salud del empleador) y el factor real es menor. Confírmalo con tu contador.</p>
         <label class="field-label">Clasificación de gastos operativos (fijo / variable)</label>
-        <p class="item-sub" style="margin-bottom:10px">Afecta el punto de equilibrio y el prime cost (C4). Sin clasificar, una categoría cuenta como fija — el criterio conservador.</p>
+        <p class="item-sub" style="margin-bottom:10px">Afecta el punto de equilibrio y el costo principal. Sin clasificar, una categoría cuenta como fija — el criterio conservador.</p>
         <div id="cfg-categorias-comportamiento" style="display:flex;flex-direction:column;gap:8px"></div>
       </div>
       <div>
@@ -1550,18 +1550,20 @@ let soloTopRowCount = 0;
 // (HANDOFF.md §20) — nunca se duplican aquí.
 const fmt = CrumblyCore.formatCOP;
 const esc = CrumblyCore.escapeHtml;
-// Costo por gramo necesita hasta 4 decimales para no perder precisión en
-// productos que usan cientos de gramos (ver HANDOFF, bug de Fase D1), pero
-// mostrar siempre los 4 aunque sean $0.0000 o $12.5000 se ve saturado —
-// se recortan los ceros de sobra sin tocar el cálculo.
-function fmtGramoCosto(n) {
-  if (!n) return '$0';
-  return '$' + n.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
-}
-// Costo por unidad de medida (g, kg, ml o unidad): decimales cuando es
-// chico ($4.72/g), separador de miles cuando es grande ($4.720/kg).
-function fmtCostoUnitario_(n) {
-  return Math.abs(Number(n) || 0) >= 1000 ? fmt(n) : fmtGramoCosto(Number(n) || 0);
+// Tanda 3 #23: un solo formato de cantidad ("1.000 g", "0,4 kg", "5 und")
+// y uno de costo por unidad de medida ("$4,72/g", "$8.333/und") — ambos en
+// core.js. Hasta 4 decimales solo por debajo de $1 (costo por gramo, ver
+// HANDOFF, bug de Fase D1); nunca "$8333.3333".
+const fmtCant = CrumblyCore.formatCantidad;
+const fmtGramoCosto = CrumblyCore.formatCostoUnitario;
+const fmtCostoUnitario_ = CrumblyCore.formatCostoUnitario;
+// Unidad corta para "/unidad de medida" junto a un precio ($/kg, $/und).
+const unidadCorta_ = u => u === 'unidad' ? 'und' : (u || '');
+// Unidad de un faltante de checkStockShortage (viene en la unidad del insumo).
+function unidadFaltante_(f) {
+  if (f.tipo === 'preparaciones') return 'g';
+  const item = (state[f.tipo] || []).find(x => x.id === f.id);
+  return (item && item.unidad) || (f.tipo === 'materia' ? 'g' : 'unidad');
 }
 
 // T0.1 (auditoría, Ronda 3): `conteoEnProgreso` es a propósito
@@ -2505,7 +2507,7 @@ function pullOnLoad() {
 const COLECCION_LABEL = {
   productos: 'Productos', materia: 'Materia prima', empaques: 'Empaques', toppings: 'Toppings',
   preparaciones: 'Preparaciones', clientes: 'Clientes', ventas: 'Ventas', gastos: 'Gastos',
-  mermas: 'Mermas', snapshots: 'Snapshots de conteo', ajustes: 'Ajustes de inventario',
+  mermas: 'Mermas', snapshots: 'Conteos guardados', ajustes: 'Ajustes de inventario',
   lotes: 'Lotes de producción', conteoEnProgreso: 'Conteo en curso', config: 'Configuración',
   schemaVersion: 'Versión de esquema'
 };
@@ -2559,10 +2561,10 @@ function renderReporteIntegridad() {
     { titulo: 'Insumos sin unidad definida', lista: r.sinUnidad, aItem: i => i.nombre },
     { titulo: 'Insumos con costo fuera de rango', lista: r.costoFueraDeRango, aItem: i => i.nombre + ' — ' + fmt(i.costo) + '/' + i.unidad },
     { titulo: 'Insumos con stock pero sin costo cargado', lista: r.stockConCostoCero, aItem: i => i.nombre },
-    { titulo: 'Insumos con stock negativo o faltante pendiente', lista: r.stockNegativoOFaltante, aItem: i => i.nombre + ' (cant. ' + i.cantidad + (i.faltante ? ', faltante ' + i.faltante : '') + ')' },
+    { titulo: 'Insumos con stock negativo o faltante pendiente', lista: r.stockNegativoOFaltante, aItem: i => i.nombre + ' (cant. ' + fmtCant(i.cantidad, i.unidad) + (i.faltante ? ', faltante ' + fmtCant(i.faltante, i.unidad) : '') + ')' },
     { titulo: 'Ventas cuyo costo superó lo vendido', lista: r.ventasCostoMayorATotal, aItem: v => (v.fecha ? new Date(v.fecha).toLocaleDateString('es-CO') : v.id) + ' — total ' + fmt(v.total) },
     { titulo: 'Productos cuyo costo actual supera su precio', lista: r.productosCostoMayorAPrecio, aItem: p => p.nombre + ' — costo ' + fmt(p.costo) + ' > precio ' + fmt(p.precio) },
-    { titulo: 'Componentes que aportan más del 50% del precio de venta (Y1)', lista: aportesAnomalos, aItem: a => a.productoNombre + ': ' + a.componenteNombre + ' aporta ' + fmt(a.aporteAbsoluto) + ' (' + Math.round(a.pctDelPrecio * 100).toLocaleString('es-CO') + '% del precio)' },
+    { titulo: 'Componentes que aportan más del 50% del precio de venta', lista: aportesAnomalos, aItem: a => a.productoNombre + ': ' + a.componenteNombre + ' aporta ' + fmt(a.aporteAbsoluto) + ' (' + Math.round(a.pctDelPrecio * 100).toLocaleString('es-CO') + '% del precio)' },
     // B1 (Ronda 9): un componente cuyo refId no resuelve donde su `tipo`
     // dice que debería — el costo de ESE producto/preparación no
     // significa nada (sigue devolviendo el mismo número de siempre, un
@@ -2617,7 +2619,7 @@ function renderSeccionDuplicados_(duplicados) {
 function renderSeccionDuplicadosEntreBuckets_(pares) {
   return `<div>
     <div style="display:flex;justify-content:space-between;align-items:center">
-      <span class="item-sub" style="color:${pares.length ? 'var(--danger)' : 'var(--muted)'}">Mismo insumo en dos buckets distintos (empaques/materia/toppings)</span>
+      <span class="item-sub" style="color:${pares.length ? 'var(--danger)' : 'var(--muted)'}">Mismo insumo en dos tipos distintos (empaques/materia prima/toppings)</span>
       <span class="badge" style="background:${pares.length ? 'var(--danger)' : 'var(--soft)'}">${pares.length}</span>
     </div>
     ${pares.length ? '<div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">' + pares.map(d => `
@@ -2757,15 +2759,15 @@ function abrirResolverDuplicado_(idA, idB) {
   const tarjeta = (f, uso, idConservar, idDescartar) => `
     <div style="padding:10px 12px;border-radius:8px;background:var(--bg);flex:1">
       <div style="font-size:var(--fs-sm);color:var(--ink);margin-bottom:4px">${esc(f.item.nombre)}</div>
-      <div style="font-size:var(--fs-xs);color:var(--muted)">Bucket: ${TIPO_INSUMO_LABEL[f.tipo] || f.tipo}</div>
-      <div style="font-size:var(--fs-xs);color:var(--muted)">Costo: ${fmt(f.item.costo)}/${esc(f.item.unidad || '')}</div>
-      <div style="font-size:var(--fs-xs);color:var(--muted)">Stock: ${f.item.cantidad}</div>
+      <div style="font-size:var(--fs-xs);color:var(--muted)">Tipo: ${TIPO_INSUMO_LABEL[f.tipo] || f.tipo}</div>
+      <div style="font-size:var(--fs-xs);color:var(--muted)">Costo: ${fmtCostoUnitario_(f.item.costo)}/${esc(unidadCorta_(f.item.unidad))}</div>
+      <div style="font-size:var(--fs-xs);color:var(--muted)">Stock: ${fmtCant(f.item.cantidad, f.item.unidad)}</div>
       <div style="font-size:var(--fs-xs);color:var(--muted);margin-bottom:8px">Usos: ${uso.productos.length} producto(s), ${uso.preparaciones.length} preparación(es)</div>
       <button class="btn-primary" style="width:100%" onclick="previewRepunte_('${idDescartar}','${idConservar}')">Conservar este</button>
     </div>`;
   document.getElementById('resolver-duplicado-contenido').innerHTML =
     '<div style="display:flex;gap:10px">' + tarjeta(fa, usoA, idA, idB) + tarjeta(fb, usoB, idB, idA) + '</div>' +
-    (fa.tipo !== fb.tipo ? '<div style="font-size:var(--fs-xs);color:var(--danger)">Están en buckets distintos (' + (TIPO_INSUMO_LABEL[fa.tipo] || fa.tipo) + ' / ' + (TIPO_INSUMO_LABEL[fb.tipo] || fb.tipo) + ') — conservar uno no cambia su clasificación, solo repunta las referencias del otro hacia este.</div>' : '') +
+    (fa.tipo !== fb.tipo ? '<div style="font-size:var(--fs-xs);color:var(--danger)">Están en tipos distintos (' + (TIPO_INSUMO_LABEL[fa.tipo] || fa.tipo) + ' / ' + (TIPO_INSUMO_LABEL[fb.tipo] || fb.tipo) + ') — conservar uno no cambia su clasificación, solo repunta las referencias del otro hacia este.</div>' : '') +
     '<div style="font-size:var(--fs-xs);color:var(--muted)">El que elijas se conserva; el otro pierde sus referencias (se repuntan al que elegiste) y queda disponible para borrar aparte.</div>';
   openModal('modal-resolver-duplicado');
 }
@@ -2859,7 +2861,7 @@ function getAlertasCentro_() {
   });
   // 2 — plata que YA se perdió (venta con costo congelado inválido, V3.4).
   r.ventasCostoMayorATotal.forEach(v => alertas.push({
-    sev: 2, texto: 'Una venta' + (v.fecha ? ' del ' + new Date(v.fecha).toLocaleDateString('es-CO') : '') + ' tiene costo congelado mayor a lo cobrado (total ' + fmt(v.total) + ')',
+    sev: 2, texto: 'Una venta' + (v.fecha ? ' del ' + new Date(v.fecha).toLocaleDateString('es-CO') : '') + ' tiene un costo (guardado al vender) mayor a lo cobrado (total ' + fmt(v.total) + ')',
     accion: () => { closeModal('modal-alertas'); navTo('dashboard'); ventasCostoInvalidoDelPeriodo_ = r.ventasCostoMayorATotal; renderVentasCostoInvalido_(); }
   }));
   // 2 — conflicto de catálogo sin resolver: alguien puede perder una edición.
@@ -2892,7 +2894,7 @@ function getAlertasCentro_() {
   // problema, nunca solo información).
   r.insumosDuplicadosEntreBuckets.forEach(d => {
     alertas.push({
-      sev: 3, texto: '"' + d.a.nombre + '" está en dos buckets a la vez: ' + (TIPO_INSUMO_LABEL[d.a.tipo] || d.a.tipo) + ' (' + fmt(d.a.costo) + ') y ' + (TIPO_INSUMO_LABEL[d.b.tipo] || d.b.tipo) + ' (' + fmt(d.b.costo) + ') — cada copia cuenta su costo distinto',
+      sev: 3, texto: '"' + d.a.nombre + '" está en dos tipos a la vez: ' + (TIPO_INSUMO_LABEL[d.a.tipo] || d.a.tipo) + ' (' + fmt(d.a.costo) + ') y ' + (TIPO_INSUMO_LABEL[d.b.tipo] || d.b.tipo) + ' (' + fmt(d.b.costo) + ') — cada copia cuenta su costo distinto',
       accion: () => { closeModal('modal-alertas'); navTo('inventario'); openInsumoModal(d.a.id); }
     });
   });
@@ -3337,7 +3339,7 @@ function openInsumoModal(id) {
     document.getElementById('ins-cantidad').disabled = true;
     document.getElementById('ins-cantidad-wrap').style.display = 'none';
     document.getElementById('ins-cantidad-actual').style.display = 'flex';
-    document.getElementById('ins-cantidad-texto').innerHTML = 'Disponible: <b>' + (Number(item.cantidad) || 0).toLocaleString('es-CO', { maximumFractionDigits: 2 }) + ' ' + esc(item.unidad || '') + '</b>';
+    document.getElementById('ins-cantidad-texto').innerHTML = 'Disponible: <b>' + esc(fmtCant(item.cantidad, item.unidad)) + '</b>';
     document.getElementById('ins-costo').value = item.costo;
     document.getElementById('ins-minimo').value = item.minimo || 0;
     document.getElementById('ins-precio-variable').checked = !!item.margenVariable;
@@ -3509,8 +3511,8 @@ function saveInsumo() {
   const sospecha = CrumblyCore.checkCostoSospechoso(state, unidadElegida, datos.costo, editId || undefined);
   if (sospecha) {
     const seguir = confirm(
-      fmt(sospecha.costoUnitario) + ' por ' + unidadElegida + ' — muy por encima de lo normal ' +
-      '(mediana de insumos en ' + unidadElegida + ': ' + fmt(sospecha.mediana) + ' por ' + unidadElegida + ').\n\n' +
+      fmtCostoUnitario_(sospecha.costoUnitario) + ' por ' + unidadElegida + ' — muy por encima de lo normal ' +
+      '(mediana de insumos en ' + unidadElegida + ': ' + fmtCostoUnitario_(sospecha.mediana) + ' por ' + unidadElegida + ').\n\n' +
       '¿Estás ingresando el precio del paquete completo en vez del costo por ' + unidadElegida + '?\n\n' +
       '¿Guardar de todas formas?'
     );
@@ -3687,7 +3689,9 @@ function toggleNecesidadesCompra() {
   renderNecesidadesCompra();
 }
 function renderNecesidadesCompra() {
-  const data = calcInventoryNeeds().filter(d => d.necesitaComprar);
+  // #24: solo lo que de verdad hay que comprar — sin filas "Comprar 0"
+  // (stock y mínimo en cero, sin consumo reciente).
+  const data = calcInventoryNeeds().filter(d => d.necesitaComprar && d.sugerido > 0);
   document.getElementById('inv-necesidades-count').textContent = data.length;
   document.getElementById('inv-necesidades-caret').className = 'ph ' + (invNecesidadesOpen ? 'ph-caret-up' : 'ph-caret-down');
   const el = document.getElementById('inv-necesidades-list');
@@ -3696,9 +3700,9 @@ function renderNecesidadesCompra() {
     ? data.map(d => `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 9px;background:var(--bg);border-radius:7px">
         <div>
           <div style="font-size:var(--fs-sm);color:var(--text);font-weight:var(--fw-medium)">${esc(d.nombre + TIPO_LABEL[d.tipo])}</div>
-          <div style="font-size:var(--fs-xs);color:var(--muted)">${d.semanasRestantes === Infinity ? 'sin consumo reciente' : d.semanasRestantes.toFixed(1) + ' semanas restantes'}</div>
+          <div style="font-size:var(--fs-xs);color:var(--muted)">${d.semanasRestantes === Infinity ? 'sin consumo reciente' : fmtCant(d.semanasRestantes) + ' semanas restantes'}</div>
         </div>
-        <span style="font-size:var(--fs-sm);color:var(--muted);font-weight:var(--fw-bold)">Comprar ${d.sugerido.toFixed(0)}${esc(d.unidadLabel)}</span>
+        <span style="font-size:var(--fs-sm);color:var(--muted);font-weight:var(--fw-bold)">Comprar ${esc(fmtCant(d.sugerido, d.unidadLabel))}</span>
       </div>`).join('')
     : '<p class="empty">Todo el inventario está en buen nivel</p>';
 }
@@ -3744,8 +3748,8 @@ function renderInventario() {
       return `<div class="list-row" style="padding:12px 16px;cursor:pointer" onclick="openModalPreparacion('${prep.id}')">
         <div style="flex:1;min-width:0">
           <div class="item-name">${esc(prep.nombre)}</div>
-          <div class="item-sub" style="${error ? 'color:var(--danger)' : ''}">${modoLabel} · ${costo.gramosTotal.toFixed(0)}g totales · ${error ? error : fmtGramoCosto(costo.costoPorGramo) + '/g'}</div>
-          <div class="item-sub">Stock: ${Math.round(Number(prep.cantidad) || 0).toLocaleString('es-CO')}g${prep.faltante ? ' · faltante ' + Math.round(prep.faltante).toLocaleString('es-CO') + 'g' : ''}</div>
+          <div class="item-sub" style="${error ? 'color:var(--danger)' : ''}">${modoLabel} · ${fmtCant(costo.gramosTotal, 'g')} totales · ${error ? error : fmtGramoCosto(costo.costoPorGramo) + '/g'}</div>
+          <div class="item-sub">Stock: ${fmtCant(prep.cantidad, 'g')}${prep.faltante ? ' · faltante ' + fmtCant(prep.faltante, 'g') : ''}</div>
         </div>
         <div style="display:flex;gap:4px;align-items:center;flex-shrink:0" onclick="event.stopPropagation()">
           <button class="btn-icon" onclick="openModalLote('${prep.id}')" title="Producir lote"><i class="ph ph-cooking-pot"></i></button>
@@ -3780,8 +3784,8 @@ function renderInventario() {
     // T2: insumo con unidad undefined/inválida (nunca se adivina — ver
     // getInsumosUnificados) — se marca en vez de mostrarse como si nada.
     const sub = it.unidadPendiente
-      ? esc(it.categoria || '—') + ' · ' + Math.round(it.cantidad).toLocaleString('es-CO') + ' (unidad sin definir) · ' + fmt(it.costo)
-      : esc(it.categoria || '—') + ' · ' + Math.round(it.cantidad).toLocaleString('es-CO') + ' ' + esc(it.unidad) + ' · ' + fmt(it.costo) + '/' + esc(it.unidad) + (sospechoso ? ' · revisá este costo' : '');
+      ? esc(it.categoria || '—') + ' · ' + fmtCant(it.cantidad) + ' (unidad sin definir) · ' + fmtCostoUnitario_(it.costo)
+      : esc(it.categoria || '—') + ' · ' + esc(fmtCant(it.cantidad, it.unidad)) + ' · ' + fmtCostoUnitario_(it.costo) + '/' + esc(unidadCorta_(it.unidad)) + (sospechoso ? ' · revisá este costo' : '');
     return `<div class="list-row" style="padding:12px 16px;cursor:pointer" onclick="openInsumoModal('${it.id}')">
       <div style="flex:1;min-width:0">
         <div class="item-name">${esc(it.nombre)}</div>
@@ -3947,7 +3951,7 @@ function calcPrepCosto() {
   });
   try {
     const costo = CrumblyCore.getPreparacionCosto(preview, id);
-    document.getElementById('prep-gramos-calc').textContent = costo.gramosTotal.toFixed(2) + ' g';
+    document.getElementById('prep-gramos-calc').textContent = fmtCant(costo.gramosTotal, 'g');
     document.getElementById('prep-costo-calc').textContent = fmtGramoCosto(costo.costoPorGramo) + '/g';
     document.getElementById('prep-costo-calc').style.color = 'var(--success)';
   } catch (e) {
@@ -4019,7 +4023,7 @@ function renderLoteConsumoTeorico() {
   const preview = CrumblyCore.getConsumoTeoricoLote(state, prepId, multiplicador);
   const el = document.getElementById('lote-consumo-teorico');
   if (!preview) { el.innerHTML = ''; return; }
-  document.getElementById('lote-gramos-teoricos').textContent = preview.gramosTeoricos.toFixed(2) + ' g';
+  document.getElementById('lote-gramos-teoricos').textContent = fmtCant(preview.gramosTeoricos, 'g');
   const filas = [];
   // 'preparaciones': sub-preparación que sale de su stock ya producido.
   ['materia', 'empaques', 'toppings', 'preparaciones'].forEach(bucket => {
@@ -4031,7 +4035,7 @@ function renderLoteConsumoTeorico() {
   el.innerHTML = filas.length
     ? filas.map(f => `<div style="display:flex;justify-content:space-between;font-size:var(--fs-sm)">
         <span style="color:var(--text)">${esc(f.nombre)}</span>
-        <span style="color:var(--muted)">${f.cantidad.toFixed(2)} ${esc(f.unidad || '')}</span>
+        <span style="color:var(--muted)">${esc(fmtCant(f.cantidad, f.unidad))}</span>
       </div>`).join('')
     : '<p class="item-sub">Esta preparación no tiene componentes</p>';
 }
@@ -4083,7 +4087,7 @@ function renderLoteHistorial() {
   el.innerHTML = lotes.map(l => `<div class="list-row" style="padding:8px 0">
     <div style="flex:1;min-width:0">
       <div class="item-sub">${new Date(l.fecha).toLocaleDateString('es-CO')} · ${l.multiplicador}x · ${fmt(l.costoTotal)}</div>
-      <div class="item-sub">Teórico ${l.gramosTeoricos.toFixed(0)}g → obtenido ${l.gramosObtenidos.toFixed(0)}g${l.rendimientoObservado !== null ? ' (' + l.rendimientoObservado.toFixed(1) + '%)' : ''}</div>
+      <div class="item-sub">Teórico ${fmtCant(l.gramosTeoricos, 'g')} → obtenido ${fmtCant(l.gramosObtenidos, 'g')}${l.rendimientoObservado !== null ? ' (' + l.rendimientoObservado.toFixed(1) + '%)' : ''}</div>
     </div>
     <button class="btn-icon danger" onclick="eliminarLoteUI('${l.id}')" title="Eliminar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
   </div>`).join('');
@@ -4100,7 +4104,7 @@ function producirLoteUI() {
   if (preview) {
     const faltantes = CrumblyCore.checkStockShortage(preview.consumo, state);
     if (faltantes.length) {
-      const detalle = faltantes.map(f => '- ' + f.nombre + ': disponible ' + f.disponible.toFixed(0) + ', necesario ' + f.necesario.toFixed(0) + ', faltan ' + f.faltante.toFixed(0)).join('\n');
+      const detalle = faltantes.map(f => { const u = unidadFaltante_(f); return '- ' + f.nombre + ': disponible ' + fmtCant(f.disponible, u) + ', necesario ' + fmtCant(f.necesario, u) + ', faltan ' + fmtCant(f.faltante, u); }).join('\n');
       if (!confirm('No hay stock suficiente para producir este lote:\n\n' + detalle + '\n\n¿Producirlo de todas formas? Lo que falta quedará como faltante.')) return;
     }
   }
@@ -4456,7 +4460,7 @@ function abrirDesgloseCosto(productoId) {
     <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:8px 10px;border-radius:8px;background:${l.sospechoso || anomalo ? 'rgba(200,60,60,0.1)' : 'var(--bg)'}">
       <div>
         <div style="font-size:var(--fs-sm);color:var(--ink)">${esc(l.nombre)}${l.sospechoso ? ' <strong style="color:var(--danger)">⚠ costo sospechoso</strong>' : ''}</div>
-        <div style="font-size:var(--fs-xs);color:var(--muted)">${grupoLabel[l.grupo] || l.grupo} · ${l.tipo === 'manual' ? 'monto fijo' : (l.cantidad + 'g × ' + fmt(l.cantidad ? l.subtotal / l.cantidad : 0) + '/g')}</div>
+        <div style="font-size:var(--fs-xs);color:var(--muted)">${grupoLabel[l.grupo] || l.grupo} · ${l.tipo === 'manual' ? 'monto fijo' : (fmtCant(l.cantidad, l.unidad) + ' × ' + fmtCostoUnitario_(l.cantidad ? l.subtotal / l.cantidad : 0) + '/' + unidadCorta_(l.unidad))}</div>
       </div>
       <div style="text-align:right;white-space:nowrap">
         <div style="font-size:var(--fs-sm);color:var(--ink)">${fmt(l.subtotal)}</div>
@@ -5040,7 +5044,12 @@ function setReportPeriod(p, el) {
   el.parentElement.querySelectorAll('.pill-btn').forEach(b => b.classList.remove('active'));
   el.classList.add('active');
   document.getElementById('reportes-rango-custom').style.display = p === 'custom' ? 'flex' : 'none';
-  if (p === 'custom') { onReportRangeChange(); return; } // rellena las fechas y renderiza
+  if (p === 'custom') {
+    // #31: la primera vez arranca en el mes actual (día 1 → hoy, hora de
+    // Colombia), aunque el navegador haya restaurado fechas viejas.
+    if (!reportRangeStart) { document.getElementById('r-rango-inicio').value = ''; document.getElementById('r-rango-fin').value = ''; }
+    onReportRangeChange(); return; // rellena las fechas y renderiza
+  }
   renderReportes();
 }
 // "Personalizado" sin fechas mostraba todo en $0 y el PDF decía "custom":
@@ -5167,7 +5176,7 @@ function renderDashboardAlerts() {
   el.innerHTML = bajos.length
     ? bajos.map(m => `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 9px;height:38px;background:var(--bg);border-radius:7px">
         <span style="font-size:var(--fs-sm);color:var(--text);font-weight:var(--fw-medium)">${esc(m.nombre)}</span>
-        <span style="font-size:var(--fs-sm);color:var(--muted);font-weight:var(--fw-bold)">${Math.round(m.cantidad).toLocaleString('es-CO')} / min ${m.minimo}</span>
+        <span style="font-size:var(--fs-sm);color:var(--muted);font-weight:var(--fw-bold)">${esc(fmtCant(m.cantidad, m.unidad))} / mín ${esc(fmtCant(m.minimo, m.unidad))}</span>
       </div>`).join('')
     : '<p class="empty" style="color:var(--success)">Todo en orden</p>';
 }
@@ -5217,7 +5226,7 @@ function renderVentasCostoInvalido_() {
     overlay = document.createElement('div');
     overlay.id = 'modal-ventas-costo-invalido';
     overlay.className = 'modal-overlay';
-    overlay.innerHTML = '<div class="modal"><div class="modal-title-row"><span class="modal-title">Ventas con costo inválido</span><button class="modal-close" onclick="closeModal(\'modal-ventas-costo-invalido\')"><i class="ph ph-x"></i></button></div><p class="item-sub" style="margin-bottom:10px">El costo congelado de estas ventas supera lo que cobraron — revisalas o borralas una por una. No se excluyen solas del cálculo.</p><div id="ventas-costo-invalido-lista" style="display:flex;flex-direction:column;gap:8px"></div></div>';
+    overlay.innerHTML = '<div class="modal"><div class="modal-title-row"><span class="modal-title">Ventas con costo inválido</span><button class="modal-close" onclick="closeModal(\'modal-ventas-costo-invalido\')"><i class="ph ph-x"></i></button></div><p class="item-sub" style="margin-bottom:10px">El costo guardado al momento de vender supera lo que se cobró — revisalas o borralas una por una. No se excluyen solas del cálculo.</p><div id="ventas-costo-invalido-lista" style="display:flex;flex-direction:column;gap:8px"></div></div>';
     document.body.appendChild(overlay);
   }
   document.getElementById('ventas-costo-invalido-lista').innerHTML = ventasCostoInvalidoDelPeriodo_.map(v => `
@@ -5271,7 +5280,7 @@ function renderReportesCosteo() {
   // hubiera pagado nómina — un 0% ahí se lee como "todo bien".
   const pc = CrumblyCore.getPrimeCost(state, inicio, fin);
   const sinVentas = !(pc.ingresos > 0);
-  const pctTxt = x => sinVentas ? '—' : (x * 100).toFixed(1) + '%';
+  const pctTxt = x => sinVentas || !isFinite(x) ? '—' : (x * 100).toFixed(1) + '%';
   document.getElementById('costeo-primecost-pct').textContent = pctTxt(pc.primeCostPct);
   const semaforo = document.getElementById('costeo-primecost-semaforo');
   const sobreTecho = pc.primeCostPct > PRIME_COST_TECHO;
@@ -5320,9 +5329,9 @@ function renderReportesCosteo() {
     avtEl.innerHTML = `<p class="item-sub" style="color:var(--danger)">Sin datos suficientes: ${esc(avt.motivo)}</p>`;
   } else {
     avtEl.innerHTML = `<div style="display:flex;gap:24px;flex-wrap:wrap">
-      <div><div style="font-size:var(--fs-h2);font-weight:var(--fw-bold)">${(avt.foodCostRealPct * 100).toFixed(1)}%</div><div class="item-sub">Food cost REAL</div></div>
-      <div><div style="font-size:var(--fs-h2);font-weight:var(--fw-bold)">${(avt.foodCostTeoricoPct * 100).toFixed(1)}%</div><div class="item-sub">Food cost TEÓRICO</div></div>
-      <div><div style="font-size:var(--fs-h2);font-weight:var(--fw-bold);color:${avt.diferenciaPuntos > 0 ? 'var(--danger)' : 'var(--ink)'}">${avt.diferenciaPuntos > 0 ? '+' : ''}${avt.diferenciaPuntos.toFixed(1)} pts</div><div class="item-sub">Diferencia</div></div>
+      <div><div style="font-size:var(--fs-h2);font-weight:var(--fw-bold)">${pctTxt(avt.foodCostRealPct)}</div><div class="item-sub">Real</div></div>
+      <div><div style="font-size:var(--fs-h2);font-weight:var(--fw-bold)">${pctTxt(avt.foodCostTeoricoPct)}</div><div class="item-sub">Según receta</div></div>
+      <div><div style="font-size:var(--fs-h2);font-weight:var(--fw-bold);color:${avt.diferenciaPuntos > 0 ? 'var(--danger)' : 'var(--ink)'}">${sinVentas ? '—' : (avt.diferenciaPuntos > 0 ? '+' : '') + avt.diferenciaPuntos.toFixed(1) + ' pts'}</div><div class="item-sub">Diferencia</div></div>
     </div>`;
   }
 }
@@ -5657,7 +5666,7 @@ function generateInventoryReportPDF() {
 
   let y = pdfHeader(doc, 'Reporte de inventario', 'Semanal', 'Generado: ' + new Date().toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }));
 
-  const urgent = data.filter(d => d.necesitaComprar);
+  const urgent = data.filter(d => d.necesitaComprar && d.sugerido > 0); // #24: sin filas "comprar 0"
   if (urgent.length) {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(178, 59, 59);
     doc.text('Insumos a reabastecer pronto', PDF_MARGIN, y);
@@ -5668,10 +5677,10 @@ function generateInventoryReportPDF() {
       head: [['Insumo', 'Disponible', 'Consumo/semana', 'Semanas rest.', 'Sugerido comprar']],
       body: urgent.map(d => [
         d.nombre + TIPO_LABEL[d.tipo],
-        d.cantidad.toFixed(0) + d.unidadLabel,
-        d.consumo.toFixed(0) + d.unidadLabel,
-        d.semanasRestantes === Infinity ? '\u2014' : d.semanasRestantes.toFixed(1),
-        d.sugerido > 0 ? d.sugerido.toFixed(0) + d.unidadLabel : '\u2014'
+        fmtCant(d.cantidad, d.unidadLabel),
+        fmtCant(d.consumo, d.unidadLabel),
+        d.semanasRestantes === Infinity ? '\u2014' : fmtCant(d.semanasRestantes),
+        fmtCant(d.sugerido, d.unidadLabel)
       ]),
       columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } }
     }) + 14;
@@ -5691,10 +5700,10 @@ function generateInventoryReportPDF() {
     head: [['Insumo', 'Disponible', 'Minimo', 'Consumo/semana', 'Semanas rest.', 'Estado']],
     body: data.map(d => [
       d.nombre + TIPO_LABEL[d.tipo],
-      d.cantidad.toFixed(0) + d.unidadLabel,
-      d.minimo.toFixed(0) + d.unidadLabel,
-      d.consumo.toFixed(0) + d.unidadLabel,
-      d.semanasRestantes === Infinity ? '\u2014' : d.semanasRestantes.toFixed(1),
+      fmtCant(d.cantidad, d.unidadLabel),
+      fmtCant(d.minimo, d.unidadLabel),
+      fmtCant(d.consumo, d.unidadLabel),
+      d.semanasRestantes === Infinity ? '\u2014' : fmtCant(d.semanasRestantes),
       d.necesitaComprar ? 'Urgente' : 'OK'
     ]),
     columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } }
@@ -5755,7 +5764,7 @@ function generateMermasReportPDF() {
   y = pdfMinimalTable(doc, {
     startY: y,
     head: [['Producto / insumo', 'Cantidad', 'Valor perdido']],
-    body: origenesOrdenados.length ? origenesOrdenados.map(([n, d]) => [n, Math.round(d.cantidad).toLocaleString('es-CO'), fmt(d.valor)]) : [['—', '—', '—']],
+    body: origenesOrdenados.length ? origenesOrdenados.map(([n, d]) => [n, fmtCant(d.cantidad), fmt(d.valor)]) : [['—', '—', '—']],
     columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' } }
   }) + 14;
 
@@ -5764,7 +5773,7 @@ function generateMermasReportPDF() {
   const rows = mermas.slice().sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).map(m => {
     const d = new Date(m.fecha);
     const fecha = d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' });
-    return [fecha, CrumblyCore.getMermaOrigenNombre(state, m), m.motivo, Math.round(m.cantidad).toLocaleString('es-CO') + ' ' + mermaOrigenUnidad(m), fmt(m.valorTotal)];
+    return [fecha, CrumblyCore.getMermaOrigenNombre(state, m), m.motivo, fmtCant(m.cantidad, mermaOrigenUnidad(m)), fmt(m.valorTotal)];
   });
   pdfMinimalTable(doc, {
     startY: y,
@@ -5787,7 +5796,6 @@ function generateRecetarioPDF() {
   const porNombre = (a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es');
   const productos = state.productos.slice().sort((a, b) => (a.categoria || '').localeCompare(b.categoria || '', 'es') || porNombre(a, b));
   const preparaciones = state.preparaciones.slice().sort(porNombre);
-  const num = n => (Math.round(n * 100) / 100).toLocaleString('es-CO');
   const derecha = { 1: { halign: 'right' }, 2: { halign: 'right' } };
   // columnStyles no alcanza al encabezado ni al pie de autotable — se alinean celda por celda.
   const der = t => ({ content: t, styles: { halign: 'right' } });
@@ -5819,8 +5827,8 @@ function generateRecetarioPDF() {
     y = pdfMinimalTable(doc, {
       startY: y,
       head: [['Ingrediente', der('Cantidad'), der('Costo')]],
-      // Receta en gramos; empaques y toppings se cuentan por unidad.
-      body: lineas.map(l => [l.nombre, num(l.cantidad) + (l.grupo === 'empaque' || l.tipo === 'toppings' ? ' u' : ' g'), fmt(l.subtotal)]),
+      // Receta en gramos (o ml / unidad, según el insumo — ver unidadRecetaInsumo).
+      body: lineas.map(l => [l.nombre, l.tipo === 'manual' ? '' : fmtCant(l.cantidad, l.unidad), fmt(l.subtotal)]),
       foot: [['Costo total · margen ' + Math.round(margenPct * 100) + '%', '', der(fmt(costoTotal))]],
       styles: compacta, footStyles: pie,
       columnStyles: derecha
@@ -5838,16 +5846,17 @@ function generateRecetarioPDF() {
       try { costo = CrumblyCore.getPreparacionCosto(state, prep.id); }
       catch (e) { costo = null; } // ciclo entre preparaciones — se muestra la receta igual, sin costo
       const rendimiento = prep.rendimientoPct === undefined ? 100 : Number(prep.rendimientoPct);
-      y = ficha(y, (prep.componentes || []).length, prep.nombre, costo ? 'Rinde ' + num(costo.gramosObtenidos) + ' g · ' + fmtGramoCosto(costo.costoPorGramo) + '/g' : 'Costo no calculable');
+      y = ficha(y, (prep.componentes || []).length, prep.nombre, costo ? 'Rinde ' + fmtCant(costo.gramosObtenidos, 'g') + ' · ' + fmtGramoCosto(costo.costoPorGramo) + '/g' : 'Costo no calculable');
       const filas = (prep.componentes || []).map(c => {
         const ref = (c.tipo === 'preparacion' ? state.preparaciones : state.materia).find(x => x.id === c.refId);
-        return [ref ? ref.nombre : '(eliminado)', num(CrumblyCore.gramosDeComponentePreparacion(prep, c)) + ' g'];
+        const u = c.tipo === 'preparacion' ? 'g' : CrumblyCore.unidadRecetaInsumo(ref, 'materia');
+        return [ref ? ref.nombre : '(eliminado)', fmtCant(CrumblyCore.gramosDeComponentePreparacion(prep, c), u)];
       });
       y = pdfMinimalTable(doc, {
         startY: y,
         head: [['Ingrediente', der('Cantidad')]],
         body: filas.length ? filas : [['Sin ingredientes cargados', '—']],
-        foot: [['Rendimiento ' + num(rendimiento) + '%' + (costo ? ' · costo del lote ' + fmt(costo.costoTotal) : ''), '']],
+        foot: [['Rendimiento ' + fmtCant(rendimiento) + '%' + (costo ? ' · costo del lote ' + fmt(costo.costoTotal) : ''), '']],
         styles: compacta, footStyles: pie,
         columnStyles: { 1: { halign: 'right' } }
       }) + 10;
@@ -5945,9 +5954,14 @@ function exportVentasCSV() {
 }
 function exportInventarioCSV() {
   const rows = [['Tipo', 'Nombre', 'Cantidad disponible', 'Unidad', 'Costo unitario', 'Precio venta (si aplica)', 'Mínimo', 'Estado']];
-  state.materia.forEach(m => rows.push(['Materia prima', m.nombre, m.cantidad.toFixed(0), 'g', m.costo.toFixed(3), '', m.minimo, m.cantidad <= m.minimo ? 'Urgente' : 'OK']));
-  state.empaques.forEach(m => rows.push(['Empaque', m.nombre, m.cantidad.toFixed(0), m.unidad, m.costo.toFixed(2), '', m.minimo, m.cantidad <= m.minimo ? 'Urgente' : 'OK']));
-  state.toppings.forEach(m => rows.push(['Topping', m.nombre, m.cantidad.toFixed(0), 'unidad', m.costo.toFixed(2), m.precio.toFixed(2), m.minimo, m.cantidad <= m.minimo ? 'Urgente' : 'OK']));
+  // #23: cada insumo con SU unidad (antes la materia decía "g" aunque
+  // estuviera en kg) y decimales es-CO sin separador de miles, para que el
+  // Sheet lo lea como número ("0,4", no "0").
+  const num = (n, dec) => (Math.round((Number(n) || 0) * 1e4) / 1e4).toLocaleString('es-CO', { maximumFractionDigits: dec || 2, useGrouping: false });
+  const fila = (tipo, m, unidadDefecto, precio) => [tipo, m.nombre, num(m.cantidad), m.unidad || unidadDefecto, num(m.costo, 4), precio, num(m.minimo), m.cantidad <= m.minimo ? 'Urgente' : 'OK'];
+  state.materia.forEach(m => rows.push(fila('Materia prima', m, 'g', '')));
+  state.empaques.forEach(m => rows.push(fila('Empaque', m, 'unidad', '')));
+  state.toppings.forEach(m => rows.push(fila('Topping', m, 'unidad', num(m.precio, 4))));
   downloadCSV('crumbly-inventario-' + todayLocalISO() + '.csv', rows);
   showToast('CSV de inventario exportado — súbelo a tu Google Sheet');
 }
@@ -6187,7 +6201,7 @@ function saveMerma() {
     const consumo = CrumblyCore.computeSaleConsumption([{ productoId: origenId, qty: cantidad, adiciones: [] }], [], state);
     const faltantes = CrumblyCore.checkStockShortage(consumo, state);
     if (faltantes.length) {
-      const detalle = faltantes.map(f => '- ' + f.nombre + ': disponible ' + f.disponible.toFixed(0) + ', necesario ' + f.necesario.toFixed(0)).join('\n');
+      const detalle = faltantes.map(f => { const u = unidadFaltante_(f); return '- ' + f.nombre + ': disponible ' + fmtCant(f.disponible, u) + ', necesario ' + fmtCant(f.necesario, u); }).join('\n');
       if (!confirm('No hay stock suficiente para esta merma:\n\n' + detalle + '\n\n¿Registrarla de todas formas?')) return;
       stockInsuficiente = true;
     }
@@ -6195,7 +6209,7 @@ function saveMerma() {
     const list = CrumblyCore.getMermaOrigenList(state, origenTipo) || [];
     const origen = list.find(x => x.id === origenId);
     if (origen && cantidad > origen.cantidad) {
-      if (!confirm('Solo hay ' + Math.round(origen.cantidad).toLocaleString('es-CO') + ' disponible — la merma dejará el stock en 0.\n\n¿Registrarla de todas formas?')) return;
+      if (!confirm('Solo hay ' + fmtCant(origen.cantidad, origen.unidad) + ' disponible — la merma dejará el stock en 0.\n\n¿Registrarla de todas formas?')) return;
       stockInsuficiente = true;
     }
   }
@@ -6249,7 +6263,7 @@ function renderConteoChipsTipo() {
   // P0.2: preparaciones (masas, salsas — WIP) es un bucket más. Sin esto,
   // lo que hay en la nevera el día del conteo se queda fuera del
   // snapshot para siempre.
-  const tipos = [['materia', 'Materia prima'], ['empaques', 'Empaques'], ['toppings', 'Toppings'], ['preparaciones', 'Preparaciones (WIP)']];
+  const tipos = [['materia', 'Materia prima'], ['empaques', 'Empaques'], ['toppings', 'Toppings'], ['preparaciones', 'Preparaciones']];
   document.getElementById('conteo-chips-tipo').innerHTML = tipos.map(([t, label]) =>
     `<button class="chip ${t === conteoTipoActivo ? 'active' : ''}" onclick="setConteoTipo('${t}')">${esc(label)}</button>`
   ).join('');
@@ -6275,7 +6289,7 @@ function renderConteoList() {
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
         <div>
           <div style="font-weight:var(--fw-bold);font-size:var(--fs-sm);color:var(--ink)">${esc(item.nombre)}</div>
-          <div class="item-sub">Teórica: ${(Number(item.cantidad) || 0).toFixed(2)} ${esc(conteoUnidadDe(item))}</div>
+          <div class="item-sub">Teórica: ${esc(fmtCant(item.cantidad, conteoUnidadDe(item)))}</div>
         </div>
         <input type="number" class="field field-sm" style="width:110px" placeholder="Contada" value="${entry ? entry.cantidad : ''}" min="0" step="0.01" oninput="onConteoCantidadInput('${item.id}', this.value)">
       </div>
@@ -6327,7 +6341,7 @@ function actualizarFilaConteo(id) {
   if (!p || !p.requiereMotivo) { difEl.hidden = true; motivoEl.hidden = true; return; }
   difEl.hidden = false;
   difEl.style.color = p.diferencia < 0 ? 'var(--danger)' : 'var(--ink)';
-  difEl.textContent = 'Diferencia: ' + (p.diferencia > 0 ? '+' : '') + p.diferencia.toFixed(2) + ' ' + conteoUnidadDe(item) + ' (' + fmt(p.valor) + ')';
+  difEl.textContent = 'Diferencia: ' + (p.diferencia > 0 ? '+' : '') + fmtCant(p.diferencia, conteoUnidadDe(item)) + ' (' + fmt(p.valor) + ')';
   motivoEl.hidden = false;
   motivoEl.value = entry.motivo || '';
 }
@@ -6459,7 +6473,7 @@ function renderMermas() {
         return `<div class="list-row" style="padding:12px 16px">
           <div style="flex:1;min-width:0">
             <div class="item-name">${esc(nombre)}</div>
-            <div class="item-sub">${esc(m.motivo)} · ${Math.round(m.cantidad).toLocaleString('es-CO')} ${esc(unidad)} · ${fecha}${m.stockInsuficiente ? ' · <span style="color:var(--danger)">stock insuficiente</span>' : ''}</div>
+            <div class="item-sub">${esc(m.motivo)} · ${esc(fmtCant(m.cantidad, unidad))} · ${fecha}${m.stockInsuficiente ? ' · <span style="color:var(--danger)">stock insuficiente</span>' : ''}</div>
           </div>
           <span style="font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--danger)">-${fmt(m.valorTotal)}</span>
           <button class="btn-icon danger" style="margin-left:8px" onclick="eliminarMerma('${m.id}')"><i class="ph ph-trash"></i></button>
@@ -6484,7 +6498,7 @@ function setCajaFiltroCategoria(c) { cajaFiltroCategoria = c; renderCaja(); }
 function renderCaja() {
   document.getElementById('caja-filtro-tipo').innerHTML = [['todos', 'Todos'], ['venta', 'Ventas'], ['gasto', 'Gastos']]
     .map(([id, label]) => `<button class="chip ${cajaFiltroTipo === id ? 'active' : ''}" onclick="setCajaFiltroTipo('${id}')">${label}</button>`).join('');
-  document.getElementById('caja-filtro-categoria').innerHTML = [['todas', 'Todas'], ['inventario', 'Insumos'], ['operativo', 'Operativo'], ['capex', 'Imprevisto']]
+  document.getElementById('caja-filtro-categoria').innerHTML = [['todas', 'Todas'], ['inventario', 'Insumos'], ['operativo', 'Operativo'], ['capex', 'Implementos']]
     .map(([id, label]) => `<button class="chip ${cajaFiltroCategoria === id ? 'active' : ''}" onclick="setCajaFiltroCategoria('${id}')">${label}</button>`).join('');
   const fechaFiltro = document.getElementById('caja-filtro-fecha').value;
   let movs = CrumblyCore.getMovimientos(state.ventas, state.gastos);
