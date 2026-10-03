@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261003154551">
+<meta name="app-version" content="20261003154951">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 <style>
@@ -274,6 +274,7 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 .inv-bajo-card{display:flex;flex-direction:column;min-width:0}
 .inv-bajo-lista{display:flex;flex-direction:column;gap:8px;margin-top:12px;overflow-y:auto;flex:1;min-height:0}
 .inv-bajo-lista>*{flex-shrink:0}
+.inv-bajo-fila:hover{background:var(--line) !important}
 /* Inventario bajo mide lo mismo que el Cierre de caja y la lista se
    scrollea adentro: contain:size hace que su contenido no estire la fila,
    así la altura la pone el cierre. En una columna (celular) no hay al
@@ -1592,12 +1593,12 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261003154551"></script>
-<script src="js/rowsync.js?v=20261003154551"></script>
-<script src="js/sync.js?v=20261003154551"></script>
+<script src="js/core.js?v=20261003154951"></script>
+<script src="js/rowsync.js?v=20261003154951"></script>
+<script src="js/sync.js?v=20261003154951"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/supabaseSync.js?v=20261003154551"></script>
-<script src="js/auth.js?v=20261003154551"></script>
+<script src="js/supabaseSync.js?v=20261003154951"></script>
+<script src="js/auth.js?v=20261003154951"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -5302,7 +5303,7 @@ function renderDashboardAlerts() {
   const el = document.getElementById('dash-alertas-list');
   el.style.display = dashAlertasOpen ? 'flex' : 'none';
   el.innerHTML = bajos.length
-    ? bajos.map(m => `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 9px;min-height:38px;background:var(--bg);border-radius:7px">
+    ? bajos.map(m => `<div role="button" tabindex="0" class="inv-bajo-fila" title="Registrar compra de ${esc(m.nombre)}" onclick="openModalGasto('${m.tipo}:${m.id}')" onkeydown="if(event.key==='Enter')this.click()" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 9px;min-height:38px;background:var(--bg);border-radius:7px;cursor:pointer">
         <span style="font-size:var(--fs-sm);color:var(--text);font-weight:var(--fw-medium);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(m.nombre)}">${esc(m.nombre)}</span>
         <span style="font-size:var(--fs-sm);color:var(--muted);font-weight:var(--fw-bold);white-space:nowrap">${esc(fmtCant(m.cantidad, m.unidad))} / mín ${esc(fmtCant(m.minimo, m.unidad))}</span>
       </div>`).join('')
@@ -6161,7 +6162,9 @@ let gastoLineaSeq_ = 0;
 function nuevaLineaGasto_() {
   return { id: 'gl' + (++gastoLineaSeq_), insumo: '', cantidad: '', monto: '', categoria: CrumblyCore.GASTO_CATEGORIAS[gastoTipo][0], descripcion: '', vidaUtil: '' };
 }
-function openModalGasto() {
+// insumoKey opcional ('materia:<id>'): abre la compra con ese insumo ya
+// elegido (desde la lista de Inventario bajo del Dashboard).
+function openModalGasto(insumoKey) {
   document.getElementById('g-fecha').value = todayLocalISO();
   document.getElementById('g-fecha').max = todayLocalISO(); // I3: no se puede elegir una fecha futura
   document.getElementById('g-proveedor').value = '';
@@ -6172,11 +6175,13 @@ function openModalGasto() {
   gastoTipo = 'inventario';
   gastoMetodoPago = 'efectivo';
   gastoLineas = [nuevaLineaGasto_()]; // una sola compra por defecto: el caso de siempre sigue siendo rápido
+  if (typeof insumoKey === 'string') gastoLineas[0].insumo = insumoKey;
   reiniciarComprobantesGasto_();
   renderGastoTipo();
   renderGastoMetodoPago();
   renderGastoMasResumen();
   openModal('modal-gasto');
+  if (typeof insumoKey === 'string') { const c = document.getElementById(gastoLineas[0].id + '-cantidad'); if (c) c.focus(); }
 }
 function renderGastoTipo() {
   document.getElementById('g-tipo').innerHTML = GASTO_TIPOS_
