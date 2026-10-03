@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261003152154">
+<meta name="app-version" content="20261003152430">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 <style>
@@ -23,7 +23,9 @@
      11px (--fs-xs) en ninguna pantalla. */
   --fs-display:28px; --fs-h1:22px; --fs-h2:18px; --fs-h3:16px;
   --fs-body:15px; --fs-sm:13px; --fs-xs:11px;
-  --fw-regular:400; --fw-medium:500; --fw-bold:600;
+  /* Todo en peso regular (pedido del dueño): la jerarquía la da el tamaño.
+     Los tokens se dejan para no tocar ~120 usos; volver a 500/600 si cambia. */
+  --fw-regular:400; --fw-medium:400; --fw-bold:400;
   --lh-tight:1.2; --lh-body:1.5;
 }
 @media (min-width:861px){
@@ -35,6 +37,7 @@
   }
 }
 html, body { height: 100%; }
+b,strong,th,h1,h2,h3,h4,h5,h6,optgroup{font-weight:var(--fw-bold)}
 body{font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);font-size:var(--fs-body);line-height:var(--lh-body)}
 a{color:var(--ink);text-decoration:none}
 button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; }
@@ -252,11 +255,11 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
      pantalla entera antes de llegar al gráfico. */
   .kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
   #page-dashboard .kpi-card{padding:12px}
-  .kpi-value{margin-top:8px;font-size:var(--fs-h3)}
+  .kpi-value{margin-top:8px;font-size:var(--fs-h2)}
 }
 .kpi-card{position:relative;background:var(--white);border:1px solid var(--line);border-radius:16px;padding:16px} /* ancla de la burbuja (i) */
 .kpi-icon{width:30px;height:30px;border-radius:10px;background:var(--bg);border:1px solid var(--line);display:flex;align-items:center;justify-content:center}
-.kpi-value{font-size:var(--fs-h2);line-height:var(--lh-tight);font-weight:var(--fw-bold);color:var(--ink);letter-spacing:.02em;margin-top:11px}
+.kpi-value{font-size:var(--fs-h1);line-height:var(--lh-tight);font-weight:var(--fw-bold);color:var(--ink);letter-spacing:.02em;margin-top:11px}
 .kpi-label{font-size:var(--fs-xs);color:var(--muted);margin-top:3px}
 /* Resumen: todas las filas sobre la misma grilla de 4 columnas que los
    KPI (la tarjeta grande ocupa 3), así los bordes quedan alineados y el
@@ -497,12 +500,12 @@ textarea.field{height:auto}
           <div class="card">
             <div class="dash-titulo"><i class="ph ph-cash-register"></i> Cierre de caja de hoy</div>
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-              <div><div style="font-size:var(--fs-body);font-weight:var(--fw-bold)" id="cc-num-ventas">0</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:2px">Ventas</div></div>
-              <div><div style="font-size:var(--fs-body);font-weight:var(--fw-bold)" id="cc-unidades">0</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:2px">Unidades</div></div>
-              <div><div style="font-size:var(--fs-body);font-weight:var(--fw-bold)" id="cc-ingresos">$0</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:2px">Ingresos</div></div>
-              <div><div style="font-size:var(--fs-body);font-weight:var(--fw-bold)" id="cc-gastos">$0</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:2px">Gastos</div></div>
-              <div><div style="font-size:var(--fs-body);font-weight:var(--fw-bold)" id="cc-utilidad-neta">$0</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:2px">Utilidad neta</div></div>
-              <div><div style="font-size:var(--fs-body);font-weight:var(--fw-bold)" id="cc-ticket-promedio">$0</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:2px">Ticket prom.</div></div>
+              <div><div style="font-size:var(--fs-h3);font-weight:var(--fw-bold)" id="cc-num-ventas">0</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:2px">Ventas</div></div>
+              <div><div style="font-size:var(--fs-h3);font-weight:var(--fw-bold)" id="cc-unidades">0</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:2px">Unidades</div></div>
+              <div><div style="font-size:var(--fs-h3);font-weight:var(--fw-bold)" id="cc-ingresos">$0</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:2px">Ingresos</div></div>
+              <div><div style="font-size:var(--fs-h3);font-weight:var(--fw-bold)" id="cc-gastos">$0</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:2px">Gastos</div></div>
+              <div><div style="font-size:var(--fs-h3);font-weight:var(--fw-bold)" id="cc-utilidad-neta">$0</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:2px">Utilidad neta</div></div>
+              <div><div style="font-size:var(--fs-h3);font-weight:var(--fw-bold)" id="cc-ticket-promedio">$0</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:2px">Ticket prom.</div></div>
             </div>
             <div class="cc-medios">
               <div class="cc-medio-fila"><span>Efectivo en caja <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Ventas de hoy cobradas en efectivo, menos los gastos de hoy pagados en efectivo (incluye la parte en efectivo de los pagos divididos). No incluye la base con la que abriste la caja: sumala para saber cuánto debería haber en el cajón.</p></details></span><b id="cc-efectivo-caja">$0</b></div>
@@ -1547,12 +1550,12 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261003152154"></script>
-<script src="js/rowsync.js?v=20261003152154"></script>
-<script src="js/sync.js?v=20261003152154"></script>
+<script src="js/core.js?v=20261003152430"></script>
+<script src="js/rowsync.js?v=20261003152430"></script>
+<script src="js/sync.js?v=20261003152430"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/supabaseSync.js?v=20261003152154"></script>
-<script src="js/auth.js?v=20261003152154"></script>
+<script src="js/supabaseSync.js?v=20261003152430"></script>
+<script src="js/auth.js?v=20261003152430"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
