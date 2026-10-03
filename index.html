@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261003155804">
+<meta name="app-version" content="20261003155843">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 <style>
@@ -266,11 +266,10 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
      pantalla entera antes de llegar al gráfico. */
   .kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
   #page-dashboard .kpi-card{padding:12px}
-  .kpi-value{margin-top:8px;font-size:var(--fs-h2)}
+  #page-dashboard .kpi-value{font-size:var(--fs-h2)} /* más específico: la regla base va después */
 }
 .kpi-card{position:relative;background:var(--white);border:1px solid var(--line);border-radius:16px;padding:16px} /* ancla de la burbuja (i) */
-.kpi-icon{width:30px;height:30px;border-radius:10px;background:var(--bg);border:1px solid var(--line);display:flex;align-items:center;justify-content:center}
-.kpi-value{font-size:var(--fs-h1);line-height:var(--lh-tight);font-weight:var(--fw-bold);color:var(--ink);letter-spacing:.02em;margin-top:11px}
+.kpi-value{font-size:var(--fs-h1);line-height:var(--lh-tight);font-weight:var(--fw-bold);color:var(--ink);letter-spacing:.02em}
 .kpi-label{font-size:var(--fs-xs);color:var(--muted);margin-top:3px}
 /* Resumen: todas las filas sobre la misma grilla de 4 columnas que los
    KPI (la tarjeta grande ocupa 3), así los bordes quedan alineados y el
@@ -330,7 +329,6 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
   #page-dashboard.active{gap:14px}
   #page-dashboard .card{padding:16px}
   #page-dashboard .kpi-card{padding:16px}
-  #page-dashboard .kpi-value{margin-top:6px}
   .app-content:has(#page-dashboard.active){padding:14px 26px 10px}
 }
 .field-label{font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--muted);display:block;margin-bottom:6px}
@@ -484,30 +482,18 @@ textarea.field{height:auto}
         <div id="dash-tab-resumen">
         <div class="kpi-grid">
           <div class="kpi-card">
-            <div style="display:flex;align-items:center;justify-content:space-between">
-              <div class="kpi-icon"><i class="ph ph-shopping-cart-simple"></i></div>
-            </div>
             <div class="kpi-value" id="r-num-ventas">0</div>
             <div class="kpi-label">Número de ventas</div>
           </div>
           <div class="kpi-card">
-            <div style="display:flex;align-items:center;justify-content:space-between">
-              <div class="kpi-icon"><i class="ph ph-currency-circle-dollar"></i></div>
-            </div>
             <div class="kpi-value" id="r-ingresos">$0</div>
             <div class="kpi-label">Total vendido</div>
           </div>
           <div class="kpi-card">
-            <div style="display:flex;align-items:center;justify-content:space-between">
-              <div class="kpi-icon"><i class="ph ph-receipt"></i></div>
-            </div>
             <div class="kpi-value" id="r-ticket-promedio">$0</div>
             <div class="kpi-label">Promedio de venta</div>
           </div>
           <div class="kpi-card">
-            <div style="display:flex;align-items:center;justify-content:space-between">
-              <div class="kpi-icon"><i class="ph ph-trend-up"></i></div>
-            </div>
             <div class="kpi-value" id="r-ganancias">$0</div>
             <div class="kpi-label">Ganancia neta <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Lo que de verdad te quedó en el período: lo vendido menos lo que costó hacerlo (ingredientes, empaques y mermas), menos los gastos del período (arriendo, nómina, servicios…) y el desgaste de los equipos. Es la misma "Utilidad neta" del cierre de caja.</p></details></div>
           </div>
@@ -1599,12 +1585,12 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261003155804"></script>
-<script src="js/rowsync.js?v=20261003155804"></script>
-<script src="js/sync.js?v=20261003155804"></script>
+<script src="js/core.js?v=20261003155843"></script>
+<script src="js/rowsync.js?v=20261003155843"></script>
+<script src="js/sync.js?v=20261003155843"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/supabaseSync.js?v=20261003155804"></script>
-<script src="js/auth.js?v=20261003155804"></script>
+<script src="js/supabaseSync.js?v=20261003155843"></script>
+<script src="js/auth.js?v=20261003155843"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
