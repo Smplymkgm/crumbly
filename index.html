@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261003160013">
+<meta name="app-version" content="20261003160206">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 <style>
@@ -251,6 +251,13 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 @media (max-width:700px){#prod-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .prod-info{padding:16px;display:flex;flex-direction:column;gap:6px}
 #prod-grid:not(.vista-lista) .prod-info{min-height:92px;justify-content:space-between}
+#prod-grid.vista-columnas{display:block}
+.prod-columnas{display:flex;gap:12px;align-items:flex-start;overflow-x:auto;padding-bottom:8px}
+.prod-col{flex:0 0 260px;display:flex;flex-direction:column;gap:8px;background:var(--white);border:1px solid var(--line);border-radius:14px;padding:10px}
+.prod-col-titulo{font-size:var(--fs-body);color:var(--ink);padding:4px 6px}
+.prod-col-titulo span{font-size:var(--fs-xs);color:var(--muted);margin-left:4px}
+.prod-col .prod-card{border-radius:10px}
+.prod-col .prod-info{min-height:0 !important;padding:12px}
 #prod-grid.vista-lista{grid-template-columns:1fr;gap:0;background:var(--white);border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .vista-lista .prod-card{flex-direction:row !important;align-items:center;border:none !important;border-bottom:1px solid var(--line) !important;border-radius:0 !important}
 .vista-lista .prod-card:last-child{border-bottom:none !important}
@@ -804,6 +811,7 @@ textarea.field{height:auto}
           <div class="vista-toggle" role="group" aria-label="Cómo ver los productos">
             <button type="button" data-vista="cuadricula" onclick="setVistaProductos('cuadricula')" aria-label="Tarjetas" title="Tarjetas"><i class="ph ph-squares-four"></i></button>
             <button type="button" data-vista="lista" onclick="setVistaProductos('lista')" aria-label="Lista" title="Lista"><i class="ph ph-list"></i></button>
+            <button type="button" data-vista="columnas" onclick="setVistaProductos('columnas')" aria-label="Una columna por categoría" title="Por categoría"><i class="ph ph-columns"></i></button>
           </div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap" id="prod-chips"></div>
@@ -1587,12 +1595,12 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261003160013"></script>
-<script src="js/rowsync.js?v=20261003160013"></script>
-<script src="js/sync.js?v=20261003160013"></script>
+<script src="js/core.js?v=20261003160206"></script>
+<script src="js/rowsync.js?v=20261003160206"></script>
+<script src="js/sync.js?v=20261003160206"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/supabaseSync.js?v=20261003160013"></script>
-<script src="js/auth.js?v=20261003160013"></script>
+<script src="js/supabaseSync.js?v=20261003160206"></script>
+<script src="js/auth.js?v=20261003160206"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -4460,15 +4468,16 @@ function setProductosBusqueda(v) { productosBusqueda = v; renderProductos(); }
 // Vista de Productos: tarjetas o lista (sin fotos: ocupaban espacio en
 // Drive y en la pantalla). Se recuerda en este dispositivo.
 let vistaProductos = 'cuadricula';
-try { vistaProductos = localStorage.getItem('crumbly-vista-productos') === 'lista' ? 'lista' : 'cuadricula'; } catch (e) {}
+try { const v = localStorage.getItem('crumbly-vista-productos'); vistaProductos = v === 'lista' || v === 'columnas' ? v : 'cuadricula'; } catch (e) {}
 function setVistaProductos(v) {
   vistaProductos = v;
   try { localStorage.setItem('crumbly-vista-productos', v); } catch (e) {}
-  aplicarVistaProductos_();
+  renderProductos();
 }
 function aplicarVistaProductos_() {
   const el = document.getElementById('prod-grid');
   el.classList.toggle('vista-lista', vistaProductos === 'lista');
+  el.classList.toggle('vista-columnas', vistaProductos === 'columnas');
   document.querySelectorAll('.vista-toggle button').forEach(b => b.classList.toggle('active', b.dataset.vista === vistaProductos));
 }
 
@@ -4479,10 +4488,14 @@ function renderProductos() {
     `<button class="chip ${c === productosCategoriaActiva ? 'active' : ''}" onclick="setProductosCategoria('${esc(c)}',this)">${c === 'todos' ? 'Todos' : esc(c)}</button>`
   ).join('');
   const el = document.getElementById('prod-grid');
+  // Vista columnas: una columna por categoría con todos sus productos, así
+  // que el filtro de categoría no aplica (se esconden los chips).
+  const enColumnas = vistaProductos === 'columnas';
+  document.getElementById('prod-chips').style.display = enColumnas ? 'none' : 'flex';
   // #27: orden alfabético + buscador sin tildes, igual que el inventario.
-  const productos = CrumblyCore.filtrarOrdenarPorNombre(state.productos.filter(p => productosCategoriaActiva === 'todos' || p.categoria === productosCategoriaActiva), productosBusqueda);
+  const productos = CrumblyCore.filtrarOrdenarPorNombre(state.productos.filter(p => enColumnas || productosCategoriaActiva === 'todos' || p.categoria === productosCategoriaActiva), productosBusqueda);
   if (!productos.length) { el.innerHTML = '<p class="empty">' + (productosBusqueda.trim() ? 'Ningún producto coincide con "' + esc(productosBusqueda) + '"' : 'No hay productos en esta categoría') + '</p>'; return; }
-  el.innerHTML = productos.map(p => {
+  const tarjeta = p => {
     // P0-2: costo calculado en vivo, nunca leído de un campo guardado.
     const r = CrumblyCore.getMargenProducto(p, state);
     const margenPct = Math.round(r.margenPct * 100);
@@ -4510,7 +4523,15 @@ function renderProductos() {
         </div>
       </div>
     </div>`;
-  }).join('');
+  };
+  if (!enColumnas) { el.innerHTML = productos.map(tarjeta).join(''); return; }
+  const porCategoria = {};
+  productos.forEach(p => { const c = p.categoria || 'Sin categoría'; (porCategoria[c] = porCategoria[c] || []).push(p); });
+  el.innerHTML = '<div class="prod-columnas">' + Object.keys(porCategoria).sort((a, b) => a.localeCompare(b, 'es')).map(c => `
+    <div class="prod-col">
+      <div class="prod-col-titulo">${esc(c)} <span>${porCategoria[c].length}</span></div>
+      ${porCategoria[c].map(tarjeta).join('')}
+    </div>`).join('') + '</div>';
 }
 // ─── V3.1 (auditoría Ronda 5): desglose del costo de un producto ───────
 // Solo lectura — no cambia ninguna fórmula. Modal armado por JS (mismo
