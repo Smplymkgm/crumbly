@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261003160206">
+<meta name="app-version" content="20261003160354">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 <style>
@@ -1595,12 +1595,12 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261003160206"></script>
-<script src="js/rowsync.js?v=20261003160206"></script>
-<script src="js/sync.js?v=20261003160206"></script>
+<script src="js/core.js?v=20261003160354"></script>
+<script src="js/rowsync.js?v=20261003160354"></script>
+<script src="js/sync.js?v=20261003160354"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/supabaseSync.js?v=20261003160206"></script>
-<script src="js/auth.js?v=20261003160206"></script>
+<script src="js/supabaseSync.js?v=20261003160354"></script>
+<script src="js/auth.js?v=20261003160354"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -2051,7 +2051,7 @@ async function revisarVersionNueva_() {
     const html = await (await fetch(location.pathname + '?check=' + Date.now(), { cache: 'no-store' })).text();
     const m = html.match(/name=.app-version. content="([^"]+)"/); // sin comillas literales: así el hook de versión no reescribe esta línea
     if (!m || m[1] === APP_VERSION) return;
-    const recargar = () => location.replace(location.pathname + '?v=' + m[1]);
+    const recargar = () => location.replace(location.pathname + '?v=' + m[1] + location.hash);
     if (!document.querySelector('.modal-overlay.open')) return recargar();
     showToast('Hay una versión nueva de la app', { label: 'Actualizar', fn: recargar });
   } catch (e) { /* sin red: se revisa la próxima vez */ }
@@ -3271,7 +3271,11 @@ function resolverConflictoCatalogo(i, cual) {
   }
 }
 
+// La página actual va en el #hash de la URL (ej. #productos): al refrescar
+// el navegador se vuelve a la misma página en vez de al Dashboard.
 function navTo(page, el) {
+  if (!document.getElementById('page-' + page)) page = 'dashboard';
+  try { history.replaceState(null, '', page === 'dashboard' ? location.pathname + location.search : '#' + page); } catch (e) {}
   document.querySelectorAll('.page-view').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-' + page).classList.add('active');
@@ -7137,6 +7141,7 @@ function refreshAll() {
 }
 
 loadState();
+if (location.hash.length > 1) navTo(location.hash.slice(1));
 auth.restoreSession();
 if (auth.isAuthenticated()) {
   // Ya hay sesión guardada en este dispositivo — arranca directo.
