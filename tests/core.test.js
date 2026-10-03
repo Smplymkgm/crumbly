@@ -1737,6 +1737,22 @@ test('applyVenta descuenta stock de un componente tipo empaques/toppings en la r
   assert.strictEqual(s.empaques[0].cantidad, 100);
 });
 
+test('getIngresosPorSemanaDelMes: semanas Dom–Sáb del mes, con su rango y total', () => {
+  // octubre 2026 empieza jueves: semana 1 = 1–3, semana 2 = 4–10 … semana 5 = 25–31
+  const ventas = [
+    { fecha: '2026-10-02T15:00:00', total: 17000 },
+    { fecha: '2026-10-03T15:00:00', total: 48000 },
+    { fecha: '2026-10-04T15:00:00', total: 10000 },
+    { fecha: '2026-10-31T15:00:00', total: 5000 },
+    { fecha: '2026-09-30T15:00:00', total: 99999 }
+  ];
+  const s = C.getIngresosPorSemanaDelMes(ventas, '2026-10-15T12:00:00');
+  assert.strictEqual(s.length, 5);
+  assert.deepStrictEqual([s[0].desde, s[0].hasta, s[0].total], [1, 3, 65000]);
+  assert.deepStrictEqual([s[1].desde, s[1].hasta, s[1].total], [4, 10, 10000]);
+  assert.deepStrictEqual([s[4].desde, s[4].hasta, s[4].total], [25, 31, 5000]);
+});
+
 test('getIngresosPorDia devuelve 7 días cronológicos con el total correcto por día', () => {
   const ventas = [
     { fecha: '2026-08-17T10:00:00', total: 100 },

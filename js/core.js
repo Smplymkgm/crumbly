@@ -150,6 +150,29 @@
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   }
 
+  // Ingresos del mes de `ref` agrupados por semana. Las semanas van de
+  // domingo a sábado, igual que las filas del calendario de ventas: la
+  // primera y la última pueden quedar cortas (ej. 1–3 y 25–31).
+  function getIngresosPorSemanaDelMes(ventas, ref) {
+    var r = ref ? new Date(ref) : new Date();
+    var anio = r.getFullYear(), mes = r.getMonth();
+    var diasMes = new Date(anio, mes + 1, 0).getDate();
+    var desfase = new Date(anio, mes, 1).getDay();
+    var semanaDe = function (dia) { return Math.floor((dia - 1 + desfase) / 7); };
+    var semanas = [];
+    for (var d = 1; d <= diasMes; d++) {
+      var i = semanaDe(d);
+      if (!semanas[i]) semanas[i] = { semana: i + 1, desde: d, hasta: d, total: 0 };
+      semanas[i].hasta = d;
+    }
+    var prefijo = anio + '-' + String(mes + 1).padStart(2, '0') + '-';
+    (ventas || []).forEach(function (v) {
+      var f = fechaLocalISO(v.fecha);
+      if (f.indexOf(prefijo) === 0) semanas[semanaDe(Number(f.slice(8)))].total += Number(v.total) || 0;
+    });
+    return semanas;
+  }
+
   function getIngresosPorDia(ventas, days, ref) {
     var end = ref ? new Date(ref) : new Date();
     var out = [];
@@ -3987,6 +4010,7 @@
     findPreparacionesUsandoMateria: findPreparacionesUsandoMateria,
     getMargenProducto: getMargenProducto,
     getIngresosPorDia: getIngresosPorDia,
+    getIngresosPorSemanaDelMes: getIngresosPorSemanaDelMes,
     fechaLocalISO: fechaLocalISO,
     getInsumosUnificados: getInsumosUnificados,
     estaBajoStock: estaBajoStock,

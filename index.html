@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261003153041">
+<meta name="app-version" content="20261003153731">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 <style>
@@ -507,8 +507,8 @@ textarea.field{height:auto}
         <div class="charts-grid">
           <div class="card ing-card">
             <div class="ing-titulo">
-              <span><i class="ph ph-chart-bar"></i> Ingresos por día</span>
-              <span class="ing-rango" id="dash-chart-range"><i class="ph ph-calendar-blank"></i> Últimos 7 días</span>
+              <span><i class="ph ph-chart-bar"></i> Ingresos por semana</span>
+              <span class="ing-rango" id="dash-chart-range"><i class="ph ph-calendar-blank"></i></span>
             </div>
             <div id="dash-chart-bars"></div>
           </div>
@@ -1584,12 +1584,12 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261003153041"></script>
-<script src="js/rowsync.js?v=20261003153041"></script>
-<script src="js/sync.js?v=20261003153041"></script>
+<script src="js/core.js?v=20261003153731"></script>
+<script src="js/rowsync.js?v=20261003153731"></script>
+<script src="js/sync.js?v=20261003153731"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/supabaseSync.js?v=20261003153041"></script>
-<script src="js/auth.js?v=20261003153041"></script>
+<script src="js/supabaseSync.js?v=20261003153731"></script>
+<script src="js/auth.js?v=20261003153731"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -5182,8 +5182,8 @@ function onReportRangeChange() {
    variación contra los 7 días anteriores, columnas con el día elegido
    resaltado + etiqueta y guía punteada hasta el eje (a la derecha).
    Tocar una columna la elige; arranca en hoy. */
-let chartDiaSel = null; // fecha (YYYY-MM-DD local) elegida; null = hoy
-function selChartDia(fecha) { chartDiaSel = fecha; renderChartBars(); }
+let chartSemanaSel = null; // número de semana elegida; null = la de hoy
+function selChartSemana(n) { chartSemanaSel = n; renderChartBars(); }
 // $84k / $1,2M — para el eje y la etiqueta (el total va completo con fmt).
 // "-$5.000" para un gasto/resta; sin signo cuando es 0 ("-$0" se ve raro).
 function fmtResta_(v) { return (Number(v) ? '-' : '') + fmt(v); }
@@ -5198,37 +5198,48 @@ function topeEje_(max) {
   const factor = [1, 1.5, 2, 2.5, 3, 5, 7.5, 10].find(f => f * paso * 4 >= max) || 10;
   return factor * paso * 4;
 }
+// Ingresos del mes por semana (Dom–Sáb, como el calendario). El total
+// del mes se compara con el mismo tramo del mes anterior (del 1 al mismo
+// día de hoy), para no comparar un mes a medias contra uno completo.
 function renderChartBars() {
-  const dias14 = CrumblyCore.getIngresosPorDia(state.ventas, 14);
-  const dias = dias14.slice(7), previos = dias14.slice(0, 7);
-  const suma = arr => arr.reduce((a, d) => a + d.total, 0);
-  const total = suma(dias), totalPrevio = suma(previos);
+  const hoy = new Date();
+  const semanas = CrumblyCore.getIngresosPorSemanaDelMes(state.ventas, hoy);
+  const total = semanas.reduce((a, w) => a + w.total, 0);
+  const pad = n => String(n).padStart(2, '0');
+  const ant = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+  const prefijoAnt = ant.getFullYear() + '-' + pad(ant.getMonth() + 1) + '-';
+  const totalPrevio = state.ventas.reduce((a, v) => {
+    const f = CrumblyCore.fechaLocalISO(v.fecha);
+    return f.startsWith(prefijoAnt) && Number(f.slice(8)) <= hoy.getDate() ? a + (Number(v.total) || 0) : a;
+  }, 0);
   const variacion = totalPrevio > 0 ? (total - totalPrevio) / totalPrevio : null;
-  const tope = topeEje_(Math.max(100000, ...dias.map(d => d.total))); // ponytail: piso de $100k, así una semana vacía no muestra "$0" cinco veces
-  const iSel = Math.max(0, dias.findIndex(d => d.fecha === chartDiaSel));
-  const sel = chartDiaSel && dias.some(d => d.fecha === chartDiaSel) ? dias[iSel] : dias[dias.length - 1];
-  const idx = dias.indexOf(sel);
+  const tope = topeEje_(Math.max(100000, ...semanas.map(w => w.total))); // ponytail: piso de $100k, así un mes vacío no muestra "$0" cinco veces
+  const mesCorto = MESES_LARGO[hoy.getMonth()].slice(0, 3);
+  const semHoy = semanas.find(w => hoy.getDate() >= w.desde && hoy.getDate() <= w.hasta);
+  const sel = semanas.find(w => w.semana === chartSemanaSel) || semHoy;
+  const idx = semanas.indexOf(sel);
   const alto = v => Math.max(1.5, v / tope * 100);
   const deltaHtml = variacion === null
-    ? '<span class="ing-delta">sin datos de la semana anterior</span>'
-    : `<span class="ing-delta ${variacion >= 0 ? 'sube' : 'baja'}">${variacion >= 0 ? '+' : ''}${Math.round(variacion * 100)}%</span><span class="ing-delta">vs semana anterior</span>`;
-  const centro = (idx + 0.5) / dias.length * 100;
-  // La etiqueta va a la izquierda de la columna; en las dos primeras, a la derecha (no se sale).
-  const tipDerecha = idx < 2;
+    ? '<span class="ing-delta">sin datos del mes anterior</span>'
+    : `<span class="ing-delta ${variacion >= 0 ? 'sube' : 'baja'}">${variacion >= 0 ? '+' : ''}${Math.round(variacion * 100)}%</span><span class="ing-delta">vs mismo período del mes anterior</span>`;
+  const centro = (idx + 0.5) / semanas.length * 100;
+  const tipDerecha = idx < 2; // a la izquierda de la columna; en las dos primeras, a la derecha (no se sale)
+  const rango = w => w.desde === w.hasta ? w.desde + ' ' + mesCorto : w.desde + '–' + w.hasta + ' ' + mesCorto;
+  document.getElementById('dash-chart-range').innerHTML = '<i class="ph ph-calendar-blank"></i> ' + MESES_LARGO[hoy.getMonth()].charAt(0).toUpperCase() + MESES_LARGO[hoy.getMonth()].slice(1);
   document.getElementById('dash-chart-bars').innerHTML = `
     <div class="ing-hero"><span class="ing-total">${fmt(total)}</span>${deltaHtml}</div>
-    <div class="ing-plot" role="img" aria-label="Ingresos de los últimos 7 días: ${dias.map(d => d.dayLabel + ' ' + fmt(d.total)).join(', ')}">
+    <div class="ing-plot" role="img" aria-label="Ingresos por semana de ${MESES_LARGO[hoy.getMonth()]}: ${semanas.map(w => 'semana ' + w.semana + ' ' + fmt(w.total)).join(', ')}">
       <div class="ing-area">
         ${[0, 0.25, 0.5, 0.75, 1].map(f => `<div class="ing-gl" style="bottom:${f * 100}%"><span>${fmtCompacto_(f * tope)}</span></div>`).join('')}
-        <div class="ing-cols">${dias.map(d => `
-          <button type="button" class="ing-col${d === sel ? ' sel' : ''}" onclick="selChartDia('${d.fecha}')" aria-label="${esc(d.dayLabel)}: ${fmt(d.total)}">
-            <span class="ing-bar" style="height:${alto(d.total)}%"></span>
+        <div class="ing-cols">${semanas.map(w => `
+          <button type="button" class="ing-col${w === sel ? ' sel' : ''}" onclick="selChartSemana(${w.semana})" aria-label="Semana ${w.semana} (${rango(w)}): ${fmt(w.total)}">
+            <span class="ing-bar" style="height:${alto(w.total)}%"></span>
           </button>`).join('')}
         </div>
         <div class="ing-guia" style="bottom:${alto(sel.total)}%;left:${centro}%"></div>
-        <div class="ing-tip${tipDerecha ? ' derecha' : ''}" style="bottom:${alto(sel.total)}%;left:${centro}%">${esc(sel.dayLabel)} : ${fmtCompacto_(sel.total)}</div>
+        <div class="ing-tip${tipDerecha ? ' derecha' : ''}" style="bottom:${alto(sel.total)}%;left:${centro}%">${rango(sel)} : ${fmtCompacto_(sel.total)}</div>
       </div>
-      <div class="ing-dias">${dias.map(d => `<span class="${d === sel ? 'sel' : ''}">${esc(d.dayLabel)}</span>`).join('')}</div>
+      <div class="ing-dias">${semanas.map(w => `<span class="${w === sel ? 'sel' : ''}">Sem ${w.semana}</span>`).join('')}</div>
     </div>`;
 }
 /* ─── Donut "Más vendidos" (unidades del período activo) ─── */
