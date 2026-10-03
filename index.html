@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261003152430">
+<meta name="app-version" content="20261003153041">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 <style>
@@ -278,6 +278,28 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
   .charts-grid>:first-child,.cod-grid>:first-child{grid-column:auto}
 }
 @media (max-width:900px){.charts-grid,.cod-grid{grid-template-columns:1fr}}
+.cal-cabecera{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.cal-nav{display:flex;align-items:center;gap:10px;font-size:var(--fs-sm);color:var(--ink)}
+.cal-nav span{min-width:120px;text-align:center;text-transform:capitalize}
+.cal-grilla{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.cal-dow{font-size:var(--fs-xs);color:var(--muted);text-align:center;text-transform:uppercase;letter-spacing:.04em;padding:6px 0}
+.cal-dia{min-height:76px;border-radius:10px;background:var(--bg);padding:8px 4px;display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center}
+.cal-dia.vacio{background:transparent}
+.cal-num{font-size:var(--fs-sm);color:var(--muted)}
+.cal-dia.venta{background:var(--white);border:1px solid var(--ink)}
+.cal-dia.venta .cal-num{color:var(--ink)}
+.cal-dia.hoy .cal-num{text-decoration:underline;text-underline-offset:3px;color:var(--ink)}
+.cal-monto{font-size:var(--fs-body);color:var(--ink);white-space:nowrap}
+.cal-cant{font-size:var(--fs-xs);color:var(--muted)}
+.cal-monto .corto{display:none}
+@media (max-width:700px){
+  .cal-grilla{gap:4px}
+  .cal-dia{min-height:58px;padding:6px 2px}
+  .cal-monto{font-size:var(--fs-xs)}
+  .cal-monto .largo{display:none}
+  .cal-monto .corto{display:inline}
+  .cal-cant{display:none}
+}
 .dash-titulo{display:flex;align-items:center;gap:8px;font-weight:var(--fw-bold);font-size:var(--fs-h3);color:var(--ink);margin-bottom:14px}
 .dash-titulo i{color:var(--muted)}
 
@@ -494,6 +516,18 @@ textarea.field{height:auto}
             <div class="dash-titulo"><i class="ph ph-star"></i> Más vendidos</div>
             <div id="dash-donut"><p class="empty">Aún no hay ventas</p></div>
           </div>
+        </div>
+
+        <div class="card">
+          <div class="cal-cabecera">
+            <div class="dash-titulo" style="margin-bottom:0"><i class="ph ph-calendar-blank"></i> Calendario de ventas</div>
+            <div class="cal-nav">
+              <button class="btn-icon" onclick="moverCalendario(-1)" aria-label="Mes anterior"><i class="ph ph-arrow-left"></i></button>
+              <span id="cal-mes"></span>
+              <button class="btn-icon" onclick="moverCalendario(1)" aria-label="Mes siguiente"><i class="ph ph-arrow-right"></i></button>
+            </div>
+          </div>
+          <div class="cal-grilla" id="cal-grilla"></div>
         </div>
 
         <div class="cod-grid">
@@ -1550,12 +1584,12 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261003152430"></script>
-<script src="js/rowsync.js?v=20261003152430"></script>
-<script src="js/sync.js?v=20261003152430"></script>
+<script src="js/core.js?v=20261003153041"></script>
+<script src="js/rowsync.js?v=20261003153041"></script>
+<script src="js/sync.js?v=20261003153041"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/supabaseSync.js?v=20261003152430"></script>
-<script src="js/auth.js?v=20261003152430"></script>
+<script src="js/supabaseSync.js?v=20261003153041"></script>
+<script src="js/auth.js?v=20261003153041"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -5270,6 +5304,7 @@ function renderReportes() {
   renderVentasCostoInvalidoStripe_(ventas);
   renderChartBars();
   renderDonut(ventas);
+  renderCalendarioVentas();
   renderDashboardAlerts();
   renderCierreCaja();
   renderDetalleFinanciero();
@@ -5325,6 +5360,41 @@ const MENU_ACCION = {
 };
 const MENU_ORDEN = ['estrella', 'caballo de batalla', 'enigma', 'perro'];
 const MENU_LABEL = { estrella: 'Estrella', 'caballo de batalla': 'Caballo de batalla', enigma: 'Enigma', perro: 'Perro' };
+
+// Calendario de ventas del mes: cada día con lo vendido y cuántas ventas.
+// Un día sin ventas se ve igual que un día vacío (sin borde ni monto).
+let calMes = null; // primer día del mes que se muestra
+function moverCalendario(delta) {
+  calMes = new Date(calMes.getFullYear(), calMes.getMonth() + delta, 1);
+  renderCalendarioVentas();
+}
+function renderCalendarioVentas() {
+  if (!calMes) { const h = new Date(); calMes = new Date(h.getFullYear(), h.getMonth(), 1); }
+  const anio = calMes.getFullYear(), mes = calMes.getMonth();
+  const prefijo = anio + '-' + String(mes + 1).padStart(2, '0') + '-';
+  const porDia = {};
+  state.ventas.forEach(v => {
+    const f = CrumblyCore.fechaLocalISO(v.fecha);
+    if (!f.startsWith(prefijo)) return;
+    const d = porDia[f] || (porDia[f] = { total: 0, n: 0 });
+    d.total += Number(v.total) || 0; d.n++;
+  });
+  document.getElementById('cal-mes').textContent = MESES_LARGO[mes] + ' ' + anio;
+  const hoy = todayLocalISO();
+  const diasMes = new Date(anio, mes + 1, 0).getDate();
+  const celdas = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map(d => `<div class="cal-dow">${d}</div>`);
+  for (let i = 0; i < calMes.getDay(); i++) celdas.push('<div class="cal-dia vacio"></div>');
+  for (let dia = 1; dia <= diasMes; dia++) {
+    const f = prefijo + String(dia).padStart(2, '0');
+    const d = porDia[f];
+    const conVenta = d && d.total > 0;
+    celdas.push(`<div class="cal-dia${conVenta ? ' venta' : ''}${f === hoy ? ' hoy' : ''}">
+      <span class="cal-num">${dia}</span>
+      ${conVenta ? `<span class="cal-monto"><span class="largo">${fmt(d.total)}</span><span class="corto">${fmtCompacto_(d.total)}</span></span><span class="cal-cant">${d.n} ${d.n === 1 ? 'venta' : 'ventas'}</span>` : ''}
+    </div>`);
+  }
+  document.getElementById('cal-grilla').innerHTML = celdas.join('');
+}
 
 function renderReportesCosteo() {
   const factorInput = document.getElementById('costeo-factor-prestacional');
