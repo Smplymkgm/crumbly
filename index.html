@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261003154951">
+<meta name="app-version" content="20261003155306">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 <style>
@@ -1593,12 +1593,12 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261003154951"></script>
-<script src="js/rowsync.js?v=20261003154951"></script>
-<script src="js/sync.js?v=20261003154951"></script>
+<script src="js/core.js?v=20261003155306"></script>
+<script src="js/rowsync.js?v=20261003155306"></script>
+<script src="js/sync.js?v=20261003155306"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/supabaseSync.js?v=20261003154951"></script>
-<script src="js/auth.js?v=20261003154951"></script>
+<script src="js/supabaseSync.js?v=20261003155306"></script>
+<script src="js/auth.js?v=20261003155306"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -4534,9 +4534,10 @@ function renderProductos() {
     const insignia = perdida
       ? '<span class="badge" style="background:var(--danger);color:#fff;font-size:var(--fs-xs);white-space:nowrap">⚠ costo &gt; precio</span>'
       : margenBajo
-        ? '<span class="badge" style="background:var(--ink);color:#fff;font-size:var(--fs-xs);white-space:nowrap">costo &gt; 60% precio</span>'
+        ? '<span class="badge" style="background:transparent;color:var(--danger);border:1px solid var(--danger);font-size:var(--fs-xs);white-space:nowrap">costo &gt; 60% precio</span>'
         : '';
-    const marginColor = perdida ? 'var(--danger)' : (margenBajo ? 'var(--ink)' : (r.costo && margenPct < 50 ? 'var(--danger)' : 'var(--muted)'));
+    // Rojo para todo margen bajo (< 50%); la insignia distingue el grave (costo > 60%) del de pérdida (relleno).
+    const marginColor = perdida || margenBajo || (r.costo && margenPct < 50) ? 'var(--danger)' : 'var(--muted)';
     const foto = p.foto ? `<img src="${p.foto}" style="width:100%;height:100%;object-fit:cover">` : '';
     return `<div class="prod-card" onclick="openModalProducto('${p.id}')" style="background:var(--white);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;cursor:pointer">
       <div style="width:100%;height:150px;background:var(--bg)">${foto}</div>
