@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
+<meta name="app-version" content="20261003151822">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 <style>
@@ -261,6 +263,7 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
    espacio entre tarjetas es siempre el mismo (14px). */
 #dash-tab-resumen,#dash-tab-costeo{display:flex;flex-direction:column;gap:14px}
 .charts-grid,.cod-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.cod-grid{align-items:start} /* Inventario bajo plegado no se estira al alto del cierre */
 .charts-grid>:first-child,.cod-grid>:first-child{grid-column:span 3}
 @media (max-width:1100px){
   .charts-grid,.cod-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -1541,12 +1544,12 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js"></script>
-<script src="js/rowsync.js"></script>
-<script src="js/sync.js"></script>
+<script src="js/core.js?v=20261003151822"></script>
+<script src="js/rowsync.js?v=20261003151822"></script>
+<script src="js/sync.js?v=20261003151822"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/supabaseSync.js"></script>
-<script src="js/auth.js"></script>
+<script src="js/supabaseSync.js?v=20261003151822"></script>
+<script src="js/auth.js?v=20261003151822"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -1979,8 +1982,30 @@ function aplicarFilaRemota_(coleccion, fila) {
 // se pone al día con lo cambiado (pull incremental): el canal de realtime
 // pudo haberse cortado mientras tanto.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && usaSupabase) pullOnLoad();
+  if (document.visibilityState !== 'visible') return;
+  if (usaSupabase) pullOnLoad();
+  revisarVersionNueva_();
 });
+
+// Versión nueva publicada: GitHub Pages deja el HTML y el JS en la caché
+// del navegador ~10 min, así que a veces se seguía viendo la versión
+// vieja. Se pide el index.html publicado SIN caché y se compara su
+// app-version con la que está corriendo. Si cambió, se recarga con
+// ?v=<versión> (URL nueva = sin caché; los <script> también llevan ?v=).
+// Con un formulario abierto no se recarga sola: avisa y espera el toque.
+const APP_VERSION = document.querySelector('meta[name="app-version"]').content;
+async function revisarVersionNueva_() {
+  if (APP_VERSION === 'dev') return;
+  try {
+    const html = await (await fetch(location.pathname + '?check=' + Date.now(), { cache: 'no-store' })).text();
+    const m = html.match(/name=.app-version. content="([^"]+)"/); // sin comillas literales: así el hook de versión no reescribe esta línea
+    if (!m || m[1] === APP_VERSION) return;
+    const recargar = () => location.replace(location.pathname + '?v=' + m[1]);
+    if (!document.querySelector('.modal-overlay.open')) return recargar();
+    showToast('Hay una versión nueva de la app', { label: 'Actualizar', fn: recargar });
+  } catch (e) { /* sin red: se revisa la próxima vez */ }
+}
+revisarVersionNueva_();
 
 /* ─── Pedidos: caja registra, quien prepara marca Listo → Entregado ───
    Una venta nueva nace 'pendiente' (registrarVenta). Las ventas sin
