@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261003153731">
+<meta name="app-version" content="20261003153801">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 <style>
@@ -1584,12 +1584,12 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261003153731"></script>
-<script src="js/rowsync.js?v=20261003153731"></script>
-<script src="js/sync.js?v=20261003153731"></script>
+<script src="js/core.js?v=20261003153801"></script>
+<script src="js/rowsync.js?v=20261003153801"></script>
+<script src="js/sync.js?v=20261003153801"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/supabaseSync.js?v=20261003153731"></script>
-<script src="js/auth.js?v=20261003153731"></script>
+<script src="js/supabaseSync.js?v=20261003153801"></script>
+<script src="js/auth.js?v=20261003153801"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -5219,9 +5219,10 @@ function renderChartBars() {
   const sel = semanas.find(w => w.semana === chartSemanaSel) || semHoy;
   const idx = semanas.indexOf(sel);
   const alto = v => Math.max(1.5, v / tope * 100);
-  const deltaHtml = variacion === null
-    ? '<span class="ing-delta">sin datos del mes anterior</span>'
-    : `<span class="ing-delta ${variacion >= 0 ? 'sube' : 'baja'}">${variacion >= 0 ? '+' : ''}${Math.round(variacion * 100)}%</span><span class="ing-delta">vs mismo período del mes anterior</span>`;
+  // El número grande es lo vendido en el mes hasta hoy. La comparación
+  // solo aparece si el mes anterior tuvo ventas en el mismo tramo.
+  const deltaHtml = `<span class="ing-delta">vendido en ${MESES_LARGO[hoy.getMonth()]}</span>` + (variacion === null ? ''
+    : `<span class="ing-delta ${variacion >= 0 ? 'sube' : 'baja'}">${variacion >= 0 ? '+' : ''}${Math.round(variacion * 100)}%</span><span class="ing-delta">vs mismo período del mes anterior</span>`);
   const centro = (idx + 0.5) / semanas.length * 100;
   const tipDerecha = idx < 2; // a la izquierda de la columna; en las dos primeras, a la derecha (no se sale)
   const rango = w => w.desde === w.hasta ? w.desde + ' ' + mesCorto : w.desde + '–' + w.hasta + ' ' + mesCorto;
