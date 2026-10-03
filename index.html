@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261003151822">
+<meta name="app-version" content="20261003152154">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 <style>
@@ -261,7 +261,12 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 /* Resumen: todas las filas sobre la misma grilla de 4 columnas que los
    KPI (la tarjeta grande ocupa 3), así los bordes quedan alineados y el
    espacio entre tarjetas es siempre el mismo (14px). */
-#dash-tab-resumen,#dash-tab-costeo{display:flex;flex-direction:column;gap:14px}
+#dash-tab-resumen{display:flex;flex-direction:column;gap:14px}
+#dash-tab-costeo{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+#dash-tab-costeo>.card{grid-column:1/-1}
+#dash-tab-costeo>.card.costeo-medio{grid-column:auto}
+#dash-tab-costeo .card-title{font-size:var(--fs-h3)}
+@media (max-width:900px){#dash-tab-costeo{grid-template-columns:1fr}}
 .charts-grid,.cod-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
 .cod-grid{align-items:start} /* Inventario bajo plegado no se estira al alto del cierre */
 .charts-grid>:first-child,.cod-grid>:first-child{grid-column:span 3}
@@ -430,11 +435,6 @@ textarea.field{height:auto}
           <input type="date" id="r-rango-fin" onchange="onReportRangeChange()" class="field field-sm" style="width:auto">
         </div>
 
-        <!-- P3.2: pestañas Resumen/Costeo — comparten el mismo selector de período de arriba -->
-        <div class="pill-row" style="border-bottom:1px solid var(--line);padding-bottom:2px">
-          <button class="pill-btn active" id="dash-tab-btn-resumen" onclick="setDashTab('resumen')">Resumen</button>
-          <button class="pill-btn" id="dash-tab-btn-costeo" onclick="setDashTab('costeo')">Costeo</button>
-        </div>
 
         <div id="dash-tab-resumen">
         <div class="kpi-grid">
@@ -553,9 +553,12 @@ textarea.field{height:auto}
              físico). REGLA SIN EXCEPCIONES: ningún número se muestra
              cuando la guarda dice suficiente:false — se muestra el
              motivo, nunca un guion ni un cero (ver renderReportesCosteo). -->
-        <div id="dash-tab-costeo" style="display:none">
+        <!-- Costeo va debajo del Resumen (antes era otra pestaña). Las
+             tarjetas que necesitan datos que hoy no hay (nómina, conteos
+             físicos) se ocultan solas en renderReportesCosteo. -->
+        <div id="dash-tab-costeo">
 
-          <div class="card">
+          <div class="card costeo-medio">
             <!-- T4 (auditoría, Ronda 3): bepDiarioContable/bepDiarioCaja
                  (js/core.js) son bepContable/bepCaja del PERÍODO
                  seleccionado dividido entre sus días — un promedio, no un
@@ -577,7 +580,21 @@ textarea.field{height:auto}
             <p class="item-sub" id="costeo-bep-motivo" style="display:none"></p>
           </div>
 
-          <div class="card" style="position:relative">
+          <div class="card costeo-medio" style="position:relative">
+            <div class="card-title" style="margin-bottom:10px">Costo de ventas <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Tres porcentajes de lo vendido, cada uno por separado: ingredientes, empaques y el total de los dos.</p></details></div>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">
+              <div><div style="font-size:var(--fs-h2);font-weight:var(--fw-bold)" id="costeo-foodcost-pct">0%</div><div class="item-sub">Costo de alimentos %</div></div>
+              <div><div style="font-size:var(--fs-h2);font-weight:var(--fw-bold)" id="costeo-papercost-pct">0%</div><div class="item-sub">Costo de empaques %</div></div>
+              <div><div style="font-size:var(--fs-h2);font-weight:var(--fw-bold)" id="costeo-cogstotal-pct">0%</div><div class="item-sub">Costo de lo vendido %</div></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title" style="margin-bottom:10px">Rentabilidad del menú <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Cada producto se clasifica según cuánto se vende y cuánto deja por unidad (precio menos costo), comparado con los demás de su categoría.</p></details></div>
+            <div id="costeo-menu-engineering"></div>
+          </div>
+
+          <div class="card" id="costeo-card-primecost" style="position:relative">
             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
               <div class="card-title">Costo principal <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Lo que cuesta lo vendido (ingredientes y empaques) más la nómina con prestaciones, como porcentaje de las ventas. Si pasa de 65%, queda poco para arriendo, servicios y ganancia.</p></details></div>
               <div style="display:flex;align-items:center;gap:8px">
@@ -600,27 +617,13 @@ textarea.field{height:auto}
             <p class="item-sub" id="costeo-primecost-motivo" style="display:none"></p>
           </div>
 
-          <div class="card" style="position:relative">
-            <div class="card-title" style="margin-bottom:10px">Costo de ventas <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Tres porcentajes de lo vendido, cada uno por separado: ingredientes, empaques y el total de los dos.</p></details></div>
-            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">
-              <div><div style="font-size:var(--fs-h2);font-weight:var(--fw-bold)" id="costeo-foodcost-pct">0%</div><div class="item-sub">Costo de alimentos %</div></div>
-              <div><div style="font-size:var(--fs-h2);font-weight:var(--fw-bold)" id="costeo-papercost-pct">0%</div><div class="item-sub">Costo de empaques %</div></div>
-              <div><div style="font-size:var(--fs-h2);font-weight:var(--fw-bold)" id="costeo-cogstotal-pct">0%</div><div class="item-sub">Costo de lo vendido %</div></div>
-            </div>
-          </div>
-
-          <div class="card">
-            <div class="card-title" style="margin-bottom:10px">Rentabilidad del menú <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Cada producto se clasifica según cuánto se vende y cuánto deja por unidad (precio menos costo), comparado con los demás de su categoría.</p></details></div>
-            <div id="costeo-menu-engineering"></div>
-          </div>
-
-          <div class="card" style="position:relative">
+          <div class="card" id="costeo-card-varianza" style="position:relative">
             <div class="card-title" style="margin-bottom:10px">Varianza <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Diferencia entre lo que el sistema esperaba gastar y lo que el conteo físico encontró. Preparaciones: pérdidas en el mostrador (porciones de más). Materia prima: pérdidas en cocina o al recibir. Necesita un conteo físico al inicio y otro al final del período.</p></details></div>
             <div id="costeo-varianza-preparaciones"></div>
             <div id="costeo-varianza-materia" style="margin-top:14px"></div>
           </div>
 
-          <div class="card">
+          <div class="card" id="costeo-card-avt">
             <div class="card-title" style="margin-bottom:10px">Costo de alimentos: real vs. receta <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p><b>Real:</b> lo que de verdad se gastó según los conteos físicos. <b>Receta:</b> lo que debió gastarse según las recetas de lo vendido. Si el real es mayor, hay pérdidas (porciones grandes, desperdicio, faltantes).</p></details></div>
             <div id="costeo-avt"></div>
           </div>
@@ -1544,12 +1547,12 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261003151822"></script>
-<script src="js/rowsync.js?v=20261003151822"></script>
-<script src="js/sync.js?v=20261003151822"></script>
+<script src="js/core.js?v=20261003152154"></script>
+<script src="js/rowsync.js?v=20261003152154"></script>
+<script src="js/sync.js?v=20261003152154"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/supabaseSync.js?v=20261003151822"></script>
-<script src="js/auth.js?v=20261003151822"></script>
+<script src="js/supabaseSync.js?v=20261003152154"></script>
+<script src="js/auth.js?v=20261003152154"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -5310,16 +5313,6 @@ function renderVentasCostoInvalido_() {
    Regla de presentación SIN EXCEPCIONES: cuando la guarda de varianza
    dice suficiente:false, se muestra el MOTIVO, nunca un número — un
    cero ahí se leería como "no hay pérdidas", justo lo contrario. */
-let dashTabActivo = 'resumen';
-function setDashTab(tab) {
-  dashTabActivo = tab;
-  document.getElementById('dash-tab-resumen').style.display = tab === 'resumen' ? '' : 'none';
-  document.getElementById('dash-tab-costeo').style.display = tab === 'costeo' ? '' : 'none';
-  document.getElementById('dash-tab-btn-resumen').classList.toggle('active', tab === 'resumen');
-  document.getElementById('dash-tab-btn-costeo').classList.toggle('active', tab === 'costeo');
-  if (tab === 'costeo') renderReportesCosteo();
-}
-
 const PRIME_COST_TECHO = 0.65;
 const MENU_ACCION = {
   estrella: 'Mantener: es tu producto ideal, protege su calidad y precio.',
@@ -5360,6 +5353,8 @@ function renderReportesCosteo() {
   document.getElementById('costeo-primecost-cogs').textContent = fmt(pc.cogs);
   document.getElementById('costeo-primecost-laboral').textContent = fmt(pc.costoLaboral);
   document.getElementById('costeo-primecost-nomina').textContent = fmt(pc.nominaRegistrada);
+  // Sin nómina registrada el costo principal es solo el costo de lo vendido (ya está abajo).
+  document.getElementById('costeo-card-primecost').style.display = pc.nominaRegistrada > 0 ? '' : 'none';
 
   // 3. Food cost % / Paper cost % / COGS total % — tres líneas separadas, NUNCA sumadas.
   document.getElementById('costeo-foodcost-pct').textContent = pctTxt(CrumblyCore.getFoodCostPctRango(state, inicio, fin));
@@ -5392,9 +5387,13 @@ function renderReportesCosteo() {
   const varianza = CrumblyCore.getVarianza(state, inicio, fin);
   renderVarianzaNivel('costeo-varianza-preparaciones', 'Preparaciones (sobre-porcionado en el mostrador)', varianza.preparaciones);
   renderVarianzaNivel('costeo-varianza-materia', 'Materia prima / empaques / toppings (cocina y recepción)', varianza.materiaPrima);
+  // Varianza y real vs. receta necesitan conteos físicos al inicio y al
+  // final del período: sin ellos no hay nada que mostrar, se ocultan.
+  document.getElementById('costeo-card-varianza').style.display = varianza.preparaciones.suficiente || varianza.materiaPrima.suficiente ? '' : 'none';
 
   const avt = CrumblyCore.getActualVsTheoretical(state, inicio, fin);
   const avtEl = document.getElementById('costeo-avt');
+  document.getElementById('costeo-card-avt').style.display = avt.suficiente ? '' : 'none';
   if (!avt.suficiente) {
     avtEl.innerHTML = `<p class="item-sub" style="color:var(--danger)">Sin datos suficientes: ${esc(avt.motivo)}</p>`;
   } else {
