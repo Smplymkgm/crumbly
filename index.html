@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261003155436">
+<meta name="app-version" content="20261003155640">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 <style>
@@ -243,6 +243,22 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 .chip{border:1px solid var(--soft);background:var(--white);color:var(--text);font-size:var(--fs-sm);font-weight:var(--fw-medium);padding:6px 12px;border-radius:999px;cursor:pointer;transition:background .12s ease,border-color .12s ease}
 .chip.active{background:var(--ink);color:var(--white);border-color:var(--ink)}
 .chip:not(.active):hover{background:var(--bg);border-color:var(--mid)}
+.vista-toggle{display:inline-flex;gap:2px;padding:3px;background:var(--white);border:1px solid var(--line);border-radius:999px;flex-shrink:0}
+.vista-toggle button{border:none;background:transparent;width:36px;height:32px;border-radius:999px;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px}
+.vista-toggle button.active{background:var(--bg);color:var(--ink)}
+#prod-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
+.prod-foto{width:100%;height:150px;background:var(--bg)}
+.prod-info{padding:14px}
+#prod-grid.vista-iconos{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.vista-iconos .prod-foto{height:90px}
+.vista-iconos .prod-info{padding:10px}
+.vista-iconos .prod-info>div:first-child{flex-direction:column;align-items:flex-start !important;gap:2px !important}
+#prod-grid.vista-lista{grid-template-columns:1fr;gap:0;background:var(--white);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.vista-lista .prod-card{flex-direction:row !important;align-items:center;border:none !important;border-bottom:1px solid var(--line) !important;border-radius:0 !important}
+.vista-lista .prod-card:last-child{border-bottom:none !important}
+.vista-lista .prod-card:hover{transform:none;box-shadow:none;background:var(--bg) !important}
+.vista-lista .prod-foto{width:44px;height:44px;flex-shrink:0;margin:8px 0 8px 12px;border-radius:8px;overflow:hidden}
+.vista-lista .prod-info{flex:1;min-width:0;padding:10px 14px}
 .prod-card{transition:box-shadow .15s ease,transform .15s ease,border-color .15s ease}
 .prod-card:hover{box-shadow:0 8px 20px rgba(17,17,17,.10);transform:translateY(-2px);border-color:var(--soft)}
 .btn{display:flex;align-items:center;gap:7px;font-weight:var(--fw-bold);font-size:var(--fs-sm);padding:9px 14px;border-radius:999px;cursor:pointer;border:1px solid var(--ink);background:var(--ink);color:var(--white);font-family:inherit}
@@ -800,9 +816,16 @@ textarea.field{height:auto}
             <button class="btn" onclick="openModalProducto()"><i class="ph ph-plus"></i> Nuevo</button>
           </div>
         </div>
-        <input type="search" id="prod-buscador" class="field" placeholder="Buscar producto..." autocomplete="off" oninput="setProductosBusqueda(this.value)">
+        <div style="display:flex;gap:10px;align-items:center">
+          <input type="search" id="prod-buscador" class="field" style="flex:1;min-width:0" placeholder="Buscar producto..." autocomplete="off" oninput="setProductosBusqueda(this.value)">
+          <div class="vista-toggle" role="group" aria-label="Cómo ver los productos">
+            <button type="button" data-vista="cuadricula" onclick="setVistaProductos('cuadricula')" aria-label="Cuadrícula con foto" title="Cuadrícula"><i class="ph ph-squares-four"></i></button>
+            <button type="button" data-vista="iconos" onclick="setVistaProductos('iconos')" aria-label="Íconos chicos" title="Íconos"><i class="ph ph-dots-nine"></i></button>
+            <button type="button" data-vista="lista" onclick="setVistaProductos('lista')" aria-label="Lista" title="Lista"><i class="ph ph-list"></i></button>
+          </div>
+        </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap" id="prod-chips"></div>
-        <div id="prod-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px"></div>
+        <div id="prod-grid"></div>
       </div>
 
       <!-- PEDIDOS -->
@@ -1593,12 +1616,12 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261003155436"></script>
-<script src="js/rowsync.js?v=20261003155436"></script>
-<script src="js/sync.js?v=20261003155436"></script>
+<script src="js/core.js?v=20261003155640"></script>
+<script src="js/rowsync.js?v=20261003155640"></script>
+<script src="js/sync.js?v=20261003155640"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/supabaseSync.js?v=20261003155436"></script>
-<script src="js/auth.js?v=20261003155436"></script>
+<script src="js/supabaseSync.js?v=20261003155640"></script>
+<script src="js/auth.js?v=20261003155640"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -4511,7 +4534,24 @@ function setProductosCategoria(cat, el) {
 }
 let productosBusqueda = '';
 function setProductosBusqueda(v) { productosBusqueda = v; renderProductos(); }
+// Vista de Productos: cuadrícula con foto (la de siempre), íconos chicos o
+// lista. Se recuerda en este dispositivo.
+let vistaProductos = 'cuadricula';
+try { vistaProductos = localStorage.getItem('crumbly-vista-productos') || 'cuadricula'; } catch (e) {}
+function setVistaProductos(v) {
+  vistaProductos = v;
+  try { localStorage.setItem('crumbly-vista-productos', v); } catch (e) {}
+  aplicarVistaProductos_();
+}
+function aplicarVistaProductos_() {
+  const el = document.getElementById('prod-grid');
+  el.classList.toggle('vista-iconos', vistaProductos === 'iconos');
+  el.classList.toggle('vista-lista', vistaProductos === 'lista');
+  document.querySelectorAll('.vista-toggle button').forEach(b => b.classList.toggle('active', b.dataset.vista === vistaProductos));
+}
+
 function renderProductos() {
+  aplicarVistaProductos_();
   const cats = Array.from(new Set(state.productos.map(p => p.categoria).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es'));
   document.getElementById('prod-chips').innerHTML = ['todos', ...cats].map(c =>
     `<button class="chip ${c === productosCategoriaActiva ? 'active' : ''}" onclick="setProductosCategoria('${esc(c)}',this)">${c === 'todos' ? 'Todos' : esc(c)}</button>`
@@ -4538,8 +4578,8 @@ function renderProductos() {
     const marginColor = perdida || margenBajo || (r.costo && margenPct < 50) ? 'var(--danger)' : 'var(--muted)';
     const foto = p.foto ? `<img src="${p.foto}" style="width:100%;height:100%;object-fit:cover">` : '';
     return `<div class="prod-card" onclick="openModalProducto('${p.id}')" style="background:var(--white);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;cursor:pointer">
-      <div style="width:100%;height:150px;background:var(--bg)">${foto}</div>
-      <div style="padding:14px">
+      <div class="prod-foto">${foto}</div>
+      <div class="prod-info">
         <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;gap:8px">
           <span style="font-size:var(--fs-sm);color:var(--ink)">${esc(p.nombre)}</span>
           <span style="font-size:var(--fs-sm);color:var(--ink);text-decoration:underline;cursor:pointer" onclick="event.stopPropagation();abrirDesgloseCosto('${p.id}')" title="Ver de dónde sale el costo">${fmt(p.precio)}</span>
