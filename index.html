@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261003153801">
+<meta name="app-version" content="20261003154416">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 <style>
@@ -271,7 +271,15 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 #dash-tab-costeo .card-title{font-size:var(--fs-h3)}
 @media (max-width:900px){#dash-tab-costeo{grid-template-columns:1fr}}
 .charts-grid,.cod-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
-.cod-grid{align-items:start} /* Inventario bajo plegado no se estira al alto del cierre */
+.inv-bajo-card{display:flex;flex-direction:column;min-width:0}
+.inv-bajo-lista{display:flex;flex-direction:column;gap:8px;margin-top:12px;overflow-y:auto;flex:1;min-height:0}
+.inv-bajo-lista>*{flex-shrink:0}
+/* Inventario bajo mide lo mismo que el Cierre de caja y la lista se
+   scrollea adentro: contain:size hace que su contenido no estire la fila,
+   así la altura la pone el cierre. En una columna (celular) no hay al
+   lado contra qué medirse: tope fijo con scroll. */
+@media (min-width:1101px){.inv-bajo-card{contain:size}}
+@media (max-width:1100px){.inv-bajo-lista{max-height:320px}}
 .charts-grid>:first-child,.cod-grid>:first-child{grid-column:span 3}
 @media (max-width:1100px){
   .charts-grid,.cod-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -550,12 +558,12 @@ textarea.field{height:auto}
             <button class="btn btn-outline btn-block" style="margin-top:10px" onclick="generateCierreCajaPDF()"><i class="ph ph-download-simple"></i> Reporte PDF</button>
           </div>
 
-          <div class="card">
+          <div class="card inv-bajo-card">
             <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleAlerts()">
               <div class="dash-titulo" style="margin-bottom:0"><i class="ph ph-warning"></i> Inventario bajo <span class="badge" id="dash-alertas-count">0</span></div>
               <i class="ph ph-caret-up" id="dash-alertas-caret" style="font-size:var(--fs-sm);color:var(--muted)"></i>
             </div>
-            <div id="dash-alertas-list" style="display:flex;flex-direction:column;gap:8px;margin-top:12px"></div>
+            <div id="dash-alertas-list" class="inv-bajo-lista"></div>
           </div>
         </div>
 
@@ -1584,12 +1592,12 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261003153801"></script>
-<script src="js/rowsync.js?v=20261003153801"></script>
-<script src="js/sync.js?v=20261003153801"></script>
+<script src="js/core.js?v=20261003154416"></script>
+<script src="js/rowsync.js?v=20261003154416"></script>
+<script src="js/sync.js?v=20261003154416"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/supabaseSync.js?v=20261003153801"></script>
-<script src="js/auth.js?v=20261003153801"></script>
+<script src="js/supabaseSync.js?v=20261003154416"></script>
+<script src="js/auth.js?v=20261003154416"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -5282,7 +5290,7 @@ function renderDonut(ventas) {
 }
 
 /* ─── Inventario bajo (colapsable) ─── */
-let dashAlertasOpen = false; // cerrada: el contador ya avisa; se despliega al tocar
+let dashAlertasOpen = true; // abierta: la lista se scrollea dentro de la tarjeta
 function toggleAlerts() {
   dashAlertasOpen = !dashAlertasOpen;
   renderDashboardAlerts();
