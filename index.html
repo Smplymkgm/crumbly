@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261003160513">
+<meta name="app-version" content="20261003160821">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 <style>
@@ -257,6 +257,10 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 .prod-col-titulo{font-size:var(--fs-body);color:var(--ink);padding:4px 6px}
 .prod-col-titulo span{font-size:var(--fs-xs);color:var(--muted);margin-left:4px}
 .prod-col .prod-card{border-radius:10px}
+.inv-col{flex-basis:300px;gap:0;padding:10px 0}
+.inv-col .prod-col-titulo{padding:4px 16px 8px}
+.inv-col .list-row{border-bottom:1px solid var(--line)}
+.inv-col .list-row:last-child{border-bottom:none}
 .prod-col .prod-info{min-height:0 !important;padding:12px}
 #prod-grid.vista-lista{grid-template-columns:1fr;gap:0;background:var(--white);border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .vista-lista .prod-card{flex-direction:row !important;align-items:center;border:none !important;border-bottom:1px solid var(--line) !important;border-radius:0 !important}
@@ -730,8 +734,12 @@ textarea.field{height:auto}
              contador de filtros activos, mismo patrón que Movimientos)
              los despliega/colapsa. Colapsado por defecto. -->
         <div style="display:flex;gap:8px;align-items:center">
-          <input type="search" id="inv-buscador" class="field" style="flex:1" placeholder="Buscar por nombre..." oninput="setInventarioBusqueda(this.value)">
+          <input type="search" id="inv-buscador" class="field" style="flex:1;min-width:0" placeholder="Buscar por nombre..." oninput="setInventarioBusqueda(this.value)">
           <button class="btn btn-outline" style="padding:6px 10px;flex-shrink:0" onclick="toggleInventarioFiltros()"><i class="ph ph-funnel"></i> <span id="inv-filtros-activos"></span></button>
+          <div class="vista-toggle" id="inv-vista-toggle" role="group" aria-label="Cómo ver el inventario">
+            <button type="button" data-vista="lista" onclick="setVistaInventario('lista')" aria-label="Lista" title="Lista"><i class="ph ph-list"></i></button>
+            <button type="button" data-vista="columnas" onclick="setVistaInventario('columnas')" aria-label="Una columna por categoría" title="Por categoría"><i class="ph ph-columns"></i></button>
+          </div>
         </div>
         <div id="inv-filtro-panel" style="display:none;flex-direction:column;gap:10px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px">
           <div>
@@ -751,7 +759,7 @@ textarea.field{height:auto}
           </div>
           <button style="align-self:flex-start;background:transparent;border:none;color:var(--muted);font-size:var(--fs-sm);font-weight:var(--fw-medium);cursor:pointer;padding:4px 0" onclick="clearInventarioFiltros()">Limpiar filtros</button>
         </div>
-        <div class="card" style="padding:0;overflow:hidden">
+        <div class="card" id="inv-list-card" style="padding:0;overflow:hidden">
           <div id="inv-list"><p class="empty" style="padding:1.5rem">No hay insumos registrados</p></div>
         </div>
 
@@ -1596,12 +1604,12 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261003160513"></script>
-<script src="js/rowsync.js?v=20261003160513"></script>
-<script src="js/sync.js?v=20261003160513"></script>
+<script src="js/core.js?v=20261003160821"></script>
+<script src="js/rowsync.js?v=20261003160821"></script>
+<script src="js/sync.js?v=20261003160821"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/supabaseSync.js?v=20261003160513"></script>
-<script src="js/auth.js?v=20261003160513"></script>
+<script src="js/supabaseSync.js?v=20261003160821"></script>
+<script src="js/auth.js?v=20261003160821"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -3830,8 +3838,35 @@ function renderNecesidadesCompra() {
       </div>`).join('')
     : '<p class="empty">Todo el inventario está en buen nivel</p>';
 }
+// Vista del inventario: lista (la de siempre) o una columna por categoría
+// (la que tiene más insumos primero). Se recuerda en este dispositivo.
+let vistaInventario = 'lista';
+try { vistaInventario = localStorage.getItem('crumbly-vista-inventario') === 'columnas' ? 'columnas' : 'lista'; } catch (e) {}
+function setVistaInventario(v) {
+  vistaInventario = v;
+  try { localStorage.setItem('crumbly-vista-inventario', v); } catch (e) {}
+  renderInventario();
+}
+// Arma columnas (.prod-columnas, mismo estilo que Productos) a partir de
+// filas { categoria, nombre, html }; la categoría con más filas primero.
+function columnasPorCategoria_(filas) {
+  const grupos = {};
+  filas.forEach(f => { const c = f.categoria || 'Sin categoría'; (grupos[c] = grupos[c] || []).push(f); });
+  const alf = (a, b) => (a.nombre || '').localeCompare(b.nombre || '', 'es', { sensitivity: 'base' });
+  return '<div class="prod-columnas">' + Object.keys(grupos)
+    .sort((a, b) => grupos[b].length - grupos[a].length || a.localeCompare(b, 'es'))
+    .map(c => `<div class="prod-col inv-col">
+      <div class="prod-col-titulo">${esc(c)} <span>${grupos[c].length}</span></div>
+      ${grupos[c].sort(alf).map(f => f.html).join('')}
+    </div>`).join('') + '</div>';
+}
+
 function renderInventario() {
   renderNecesidadesCompra();
+  const enColumnas = vistaInventario === 'columnas';
+  document.querySelectorAll('#inv-vista-toggle button').forEach(b => b.classList.toggle('active', b.dataset.vista === vistaInventario));
+  // En columnas cada categoría trae su propia tarjeta: el contenedor no.
+  document.getElementById('inv-list-card').className = enColumnas ? '' : 'card';
   const tipos = ['todos', 'materia', 'empaques', 'toppings', 'preparaciones']; // Z3: preparaciones, cuarto tipo real
   document.getElementById('inv-chips-tipo').innerHTML = tipos.map(t =>
     `<button class="chip ${t === insInventarioTipo ? 'active' : ''}" onclick="setInventarioTipo('${t}',this)">${t === 'todos' ? 'Todos' : esc(TIPO_INSUMO_LABEL[t])}</button>`
@@ -3871,7 +3906,7 @@ function renderInventario() {
       // 84.000g donde debía mostrar 840 — ver PROGRESO.md § Y0).
       // #34: sin papelera al lado de "Producir lote" (era fácil tocar la
       // equivocada) — se elimina desde adentro de la preparación.
-      filasPrep.push({ nombre: prep.nombre, html: `<div class="list-row" style="padding:12px 16px;cursor:pointer" onclick="openModalPreparacion('${prep.id}')">
+      filasPrep.push({ nombre: prep.nombre, categoria: 'Preparaciones', html: `<div class="list-row" style="padding:12px 16px;cursor:pointer" onclick="openModalPreparacion('${prep.id}')">
         <div style="flex:1;min-width:0">
           <div class="item-name">${esc(prep.nombre)}</div>
           <div class="item-sub" style="${error ? 'color:var(--danger)' : ''}">${modoLabel} · ${fmtCant(costo.gramosTotal, 'g')} totales · ${error ? error : fmtGramoCosto(costo.costoPorGramo) + '/g'}</div>
@@ -3887,7 +3922,7 @@ function renderInventario() {
   if (insInventarioTipo === 'preparaciones') {
     if (!state.preparaciones.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">No hay preparaciones registradas</p>'; return; }
     if (!filasPrep.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">Ninguna preparación coincide con "' + esc(insInventarioBusqueda) + '"</p>'; return; }
-    el.innerHTML = filasPrep.sort(alfabetico).map(f => f.html).join('');
+    el.innerHTML = enColumnas ? columnasPorCategoria_(filasPrep) : filasPrep.sort(alfabetico).map(f => f.html).join('');
     return;
   }
 
@@ -3916,7 +3951,7 @@ function renderInventario() {
     const sub = it.unidadPendiente
       ? esc(it.categoria || '—') + ' · ' + fmtCant(it.cantidad) + ' (unidad sin definir) · ' + fmtCostoUnitario_(it.costo)
       : esc(it.categoria || '—') + ' · ' + esc(fmtCant(it.cantidad, it.unidad)) + ' · ' + fmtCostoUnitario_(it.costo) + '/' + esc(unidadCorta_(it.unidad)) + (sospechoso ? ' · revisá este costo' : '');
-    return { nombre: it.nombre, html: `<div class="list-row" style="padding:12px 16px;cursor:pointer" onclick="openInsumoModal('${it.id}')">
+    return { nombre: it.nombre, categoria: it.categoria, html: `<div class="list-row" style="padding:12px 16px;cursor:pointer" onclick="openInsumoModal('${it.id}')">
       <div style="flex:1;min-width:0">
         <div class="item-name">${esc(it.nombre)}</div>
         <div class="item-sub" style="${(sospechoso || it.unidadPendiente) ? 'color:var(--danger)' : ''}">${sub}</div>
@@ -3926,7 +3961,9 @@ function renderInventario() {
       <i class="ph ph-caret-right" style="color:var(--soft);font-size:var(--fs-sm);margin-left:10px"></i>
     </div>` };
   });
-  el.innerHTML = filasInsumo.concat(filasPrep).sort(alfabetico).map(f => f.html).join('');
+  el.innerHTML = enColumnas
+    ? columnasPorCategoria_(filasInsumo.concat(filasPrep))
+    : filasInsumo.concat(filasPrep).sort(alfabetico).map(f => f.html).join('');
   renderDashboardAlerts();
 }
 // Z3/Z4: la lista de preparaciones vive ahora dentro de renderInventario
@@ -4532,7 +4569,8 @@ function renderProductos() {
   if (!enColumnas) { el.innerHTML = productos.map(tarjeta).join(''); return; }
   const porCategoria = {};
   productos.forEach(p => { const c = p.categoria || 'Sin categoría'; (porCategoria[c] = porCategoria[c] || []).push(p); });
-  el.innerHTML = '<div class="prod-columnas">' + Object.keys(porCategoria).sort((a, b) => a.localeCompare(b, 'es')).map(c => `
+  // Columnas: la categoría con más productos primero (empate: alfabético).
+  el.innerHTML = '<div class="prod-columnas">' + Object.keys(porCategoria).sort((a, b) => porCategoria[b].length - porCategoria[a].length || a.localeCompare(b, 'es')).map(c => `
     <div class="prod-col">
       <div class="prod-col-titulo">${esc(c)} <span>${porCategoria[c].length}</span></div>
       ${porCategoria[c].map(tarjeta).join('')}
