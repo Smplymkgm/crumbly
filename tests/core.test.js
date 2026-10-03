@@ -959,6 +959,21 @@ test('findOrCreateCliente: un teléfono escrito en el campo de nombre se trata c
   assert.strictEqual(C.buscarCliente(s, 'Beto', ''), null);
 });
 
+test('unirClientesDuplicados: junta mismo nombre (sin tildes/mayúsculas), mueve las ventas y respeta teléfonos distintos', () => {
+  const s = { clientes: [
+    { id: 'a1', nombre: 'Ángie', telefono: '' },
+    { id: 'a2', nombre: 'angie ', telefono: '300 111 2222' },
+    { id: 'b1', nombre: 'Ana', telefono: '3001' },
+    { id: 'b2', nombre: 'Ana', telefono: '3002' },
+    { id: 'c1', nombre: 'Luis', telefono: '' }
+  ], ventas: [{ id: 'v1', clienteId: 'a1' }, { id: 'v2', clienteId: 'a2' }, { id: 'v3', clienteId: 'a2' }] };
+  assert.strictEqual(C.gruposClientesDuplicados(s).length, 1); // las dos Ana tienen teléfonos distintos
+  const r = C.unirClientesDuplicados(s);
+  assert.deepStrictEqual(r, { grupos: 1, eliminados: 1 });
+  assert.deepStrictEqual(s.clientes.map(c => c.id), ['a2', 'b1', 'b2', 'c1']); // queda la Angie con más ventas
+  assert.ok(s.ventas.every(v => v.clienteId === 'a2'));
+});
+
 test('eliminarGasto después de una merma: resta solo lo que la compra sumó (antes volvía al snapshot y "des-hacía" la merma)', () => {
   const s = stateConGastos(); // 1000g a $10
   const g = C.registrarGasto(s, { tipo: 'inventario', categoria: 'Materia prima', monto: 24000, insumoTipo: 'materia', insumoId: 'm1', cantidad: 2000 });

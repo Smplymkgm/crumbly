@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261003160354">
+<meta name="app-version" content="20261003160513">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 <style>
@@ -837,6 +837,7 @@ textarea.field{height:auto}
           <button class="btn" onclick="openClienteModal()"><i class="ph ph-plus"></i> Nuevo cliente</button>
         </div>
         <input type="search" id="clientes-buscador" class="field" placeholder="Buscar por nombre o teléfono..." autocomplete="off" oninput="setClientesBusqueda(this.value)">
+        <div id="clientes-duplicados" class="card" style="display:none;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap"></div>
         <div class="card" style="padding:0;overflow:hidden">
           <div id="clientes-list"><p class="empty" style="padding:1.5rem">Aún no hay clientes. Se crean solos al registrar una venta, o los agregas aquí.</p></div>
         </div>
@@ -1595,12 +1596,12 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261003160354"></script>
-<script src="js/rowsync.js?v=20261003160354"></script>
-<script src="js/sync.js?v=20261003160354"></script>
+<script src="js/core.js?v=20261003160513"></script>
+<script src="js/rowsync.js?v=20261003160513"></script>
+<script src="js/sync.js?v=20261003160513"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/supabaseSync.js?v=20261003160354"></script>
-<script src="js/auth.js?v=20261003160354"></script>
+<script src="js/supabaseSync.js?v=20261003160513"></script>
+<script src="js/auth.js?v=20261003160513"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -6903,18 +6904,45 @@ function renderCaja() {
 let clientesBusqueda = '';
 function setClientesBusqueda(v) { clientesBusqueda = v; renderClientes(); }
 function renderClientes() {
+  renderClientesDuplicados_();
   const el = document.getElementById('clientes-list');
   if (!state.clientes.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">Aún no hay clientes. Se crean solos al registrar una venta, o los agregas aquí.</p>'; return; }
   // #27: orden alfabético + buscador (nombre o teléfono), sin tildes.
   const clientes = CrumblyCore.filtrarOrdenarPorNombre(state.clientes, clientesBusqueda, ['telefono']);
   if (!clientes.length) { el.innerHTML = '<p class="empty" style="padding:1.5rem">Ningún cliente coincide con "' + esc(clientesBusqueda) + '"</p>'; return; }
-  el.innerHTML = clientes.map(c => `<div class="list-row" style="padding:12px 16px;cursor:pointer" onclick="openClienteModal('${c.id}')">
+  el.innerHTML = clientes.map(c => `<div class="list-row" style="padding:10px 12px 10px 16px;cursor:pointer" onclick="openClienteModal('${c.id}')">
       <div style="flex:1;min-width:0">
         <div class="item-name">${esc(c.nombre)}</div>
-        <div class="item-sub">${esc(c.telefono || '—')}${c.direccion ? ' · ' + esc(c.direccion) : ''}</div>
+        <div class="item-sub">${esc(c.telefono || 'Sin teléfono')}${c.direccion ? ' · ' + esc(c.direccion) : ''}</div>
       </div>
-      <i class="ph ph-caret-right" style="color:var(--soft);font-size:var(--fs-sm)"></i>
+      <div style="display:flex;gap:2px" onclick="event.stopPropagation()">
+        <button class="btn-icon" onclick="openClienteModal('${c.id}')" title="Editar" aria-label="Editar ${esc(c.nombre)}"><i class="ph ph-pencil-simple"></i></button>
+        <button class="btn-icon" onclick="eliminarCliente_('${c.id}')" title="Eliminar" aria-label="Eliminar ${esc(c.nombre)}"><i class="ph ph-trash"></i></button>
+      </div>
     </div>`).join('');
+}
+// Aviso con los clientes repetidos (de antes del arreglo) y botón para unirlos.
+function renderClientesDuplicados_() {
+  const box = document.getElementById('clientes-duplicados');
+  const grupos = CrumblyCore.gruposClientesDuplicados(state);
+  if (!grupos.length) { box.style.display = 'none'; return; }
+  const sobran = grupos.reduce((a, g) => a + g.length - 1, 0);
+  box.style.display = 'flex';
+  box.innerHTML = `<span class="item-sub" style="flex:1;min-width:200px">Hay ${sobran} ${sobran === 1 ? 'cliente repetido' : 'clientes repetidos'}: ${grupos.map(g => esc(g[0].nombre)).join(', ')}.</span>
+    <button class="btn" onclick="unirClientesRepetidos_()">Unir repetidos</button>`;
+}
+function unirClientesRepetidos_() {
+  if (!confirm('Se deja un solo cliente por nombre y sus ventas pasan a ese. ¿Unir?')) return;
+  const r = CrumblyCore.unirClientesDuplicados(state);
+  saveState(); renderClientes();
+  showToast(r.eliminados + (r.eliminados === 1 ? ' cliente unido' : ' clientes unidos'));
+}
+function eliminarCliente_(id) {
+  const c = state.clientes.find(x => x.id === id);
+  if (!c || !confirm('¿Eliminar a ' + c.nombre + '? Sus ventas pasadas no se modifican.')) return;
+  state.clientes = state.clientes.filter(x => x.id !== id);
+  saveState(); renderClientes();
+  showToast('Cliente eliminado');
 }
 function openClienteModal(id) {
   document.getElementById('cli-edit-id').value = id || '';

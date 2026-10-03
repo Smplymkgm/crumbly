@@ -1653,6 +1653,47 @@
   // teléfono aparte, si vino). Compartido con la UI (onVentaClienteInput)
   // para que el formulario de "cliente nuevo" y el guardado usen el mismo
   // criterio de coincidencia.
+  // Clientes repetidos (de antes del arreglo de buscarCliente): mismo
+  // nombre ignorando mayúsculas, tildes y espacios, y teléfonos que no
+  // chocan (iguales, o al menos uno vacío). Dos "Ana" con teléfonos
+  // distintos son dos personas: no se juntan.
+  function gruposClientesDuplicados(state) {
+    var porNombre = {};
+    (state.clientes || []).forEach(function (c) {
+      var k = normalizarBusqueda(String(c.nombre || '').trim().replace(/\s+/g, ' '));
+      if (k) (porNombre[k] = porNombre[k] || []).push(c);
+    });
+    var grupos = [];
+    Object.keys(porNombre).forEach(function (k) {
+      var lista = porNombre[k];
+      if (lista.length < 2) return;
+      var tels = {};
+      lista.forEach(function (c) { var t = soloDigitos_(c.telefono); if (t) tels[t] = true; });
+      if (Object.keys(tels).length <= 1) grupos.push(lista);
+    });
+    return grupos;
+  }
+  // Une cada grupo en el cliente con más ventas: sus ventas pasan a él,
+  // hereda teléfono/dirección si le faltaban, y los demás se borran.
+  function unirClientesDuplicados(state) {
+    var grupos = gruposClientesDuplicados(state);
+    var nVentas = {};
+    (state.ventas || []).forEach(function (v) { if (v.clienteId) nVentas[v.clienteId] = (nVentas[v.clienteId] || 0) + 1; });
+    var borrar = {};
+    grupos.forEach(function (lista) {
+      var queda = lista.slice().sort(function (a, b) { return (nVentas[b.id] || 0) - (nVentas[a.id] || 0); })[0];
+      lista.forEach(function (c) {
+        if (c === queda) return;
+        if (!queda.telefono && c.telefono) queda.telefono = c.telefono;
+        if (!queda.direccion && c.direccion) queda.direccion = c.direccion;
+        borrar[c.id] = queda.id;
+      });
+    });
+    (state.ventas || []).forEach(function (v) { if (borrar[v.clienteId]) v.clienteId = borrar[v.clienteId]; });
+    state.clientes = (state.clientes || []).filter(function (c) { return !borrar[c.id]; });
+    return { grupos: grupos.length, eliminados: Object.keys(borrar).length };
+  }
+
   function buscarCliente(state, nombre, telefono) {
     nombre = (nombre || '').trim();
     telefono = (telefono || '').trim();
@@ -4029,6 +4070,8 @@
     findInsumoConTipo: findInsumoConTipo,
     findOrCreateCliente: findOrCreateCliente,
     buscarCliente: buscarCliente,
+    gruposClientesDuplicados: gruposClientesDuplicados,
+    unirClientesDuplicados: unirClientesDuplicados,
     getTicketPromedio: getTicketPromedio,
     contarUnidades: contarUnidades,
     getCierrePorMedioPago: getCierrePorMedioPago,
