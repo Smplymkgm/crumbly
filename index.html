@@ -89,7 +89,7 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 /* ─── Cards / pills / chips ─── */
 .card{background:var(--white);border:1px solid var(--line);border-radius:16px;padding:18px}
 /* Ingresos por día: tarjeta oscura */
-.ing-titulo{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:var(--fw-bold);font-size:var(--fs-body);margin-bottom:14px}
+.ing-titulo{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:var(--fw-bold);font-size:var(--fs-h3);margin-bottom:14px}
 .ing-titulo i{color:var(--muted);margin-right:4px}
 .ing-rango{display:inline-flex;align-items:center;gap:6px;font-size:var(--fs-xs);font-weight:var(--fw-medium);color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:6px 10px;white-space:nowrap}
 .ing-rango i{margin:0;color:var(--muted)}
@@ -246,31 +246,37 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
 @media (max-width:1100px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}
 @media (max-width:560px){
-  .kpi-grid{grid-template-columns:1fr;gap:10px}
-  /* Ícono + valor + etiqueta en fila (no apilados) — en una sola columna,
-     apilarlos verticalmente con el padding normal dejaba cada tarjeta
-     enorme, con el ícono flotando muy arriba y mucho vacío debajo. */
-  .kpi-card{display:grid;grid-template-columns:auto 1fr;column-gap:12px;align-items:center;padding:12px 14px}
-  .kpi-card > div:first-child{grid-row:1/3}
-  .kpi-value{grid-column:2;grid-row:1;margin-top:0;font-size:var(--fs-h3)}
-  .kpi-label{grid-column:2;grid-row:2;margin-top:1px}
+  /* 2×2 en el celular: apilados en una columna los 4 números ocupaban una
+     pantalla entera antes de llegar al gráfico. */
+  .kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  #page-dashboard .kpi-card{padding:12px}
+  .kpi-value{margin-top:8px;font-size:var(--fs-h3)}
 }
 .kpi-card{position:relative;background:var(--white);border:1px solid var(--line);border-radius:16px;padding:16px} /* ancla de la burbuja (i) */
 .kpi-icon{width:30px;height:30px;border-radius:10px;background:var(--bg);border:1px solid var(--line);display:flex;align-items:center;justify-content:center}
 .kpi-value{font-size:var(--fs-h2);line-height:var(--lh-tight);font-weight:var(--fw-bold);color:var(--ink);letter-spacing:.02em;margin-top:11px}
 .kpi-label{font-size:var(--fs-xs);color:var(--muted);margin-top:3px}
-.charts-grid{display:grid;grid-template-columns:2fr 1fr;gap:14px}
-@media (max-width:900px){.charts-grid{grid-template-columns:1fr}}
-.cod-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:14px}
-@media (max-width:900px){.cod-grid{grid-template-columns:1fr}}
+/* Resumen: todas las filas sobre la misma grilla de 4 columnas que los
+   KPI (la tarjeta grande ocupa 3), así los bordes quedan alineados y el
+   espacio entre tarjetas es siempre el mismo (14px). */
+#dash-tab-resumen,#dash-tab-costeo{display:flex;flex-direction:column;gap:14px}
+.charts-grid,.cod-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.charts-grid>:first-child,.cod-grid>:first-child{grid-column:span 3}
+@media (max-width:1100px){
+  .charts-grid,.cod-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .charts-grid>:first-child,.cod-grid>:first-child{grid-column:auto}
+}
+@media (max-width:900px){.charts-grid,.cod-grid{grid-template-columns:1fr}}
+.dash-titulo{display:flex;align-items:center;gap:8px;font-weight:var(--fw-bold);font-size:var(--fs-h3);color:var(--ink);margin-bottom:14px}
+.dash-titulo i{color:var(--muted)}
 
 /* Dashboard: en pantallas de escritorio con altura normal, todo cabe sin
    scroll — versión más compacta que el resto de pantallas (que sí pueden
    crecer y scrollear libremente). */
 @media (min-width:861px){
-  #page-dashboard.active{gap:10px}
-  #page-dashboard .card{padding:11px}
-  #page-dashboard .kpi-card{padding:11px}
+  #page-dashboard.active{gap:14px}
+  #page-dashboard .card{padding:16px}
+  #page-dashboard .kpi-card{padding:16px}
   #page-dashboard .kpi-value{margin-top:6px}
   .app-content:has(#page-dashboard.active){padding:14px 26px 10px}
 }
@@ -479,17 +485,14 @@ textarea.field{height:auto}
             <div id="dash-chart-bars"></div>
           </div>
           <div class="card" style="display:flex;flex-direction:column">
-            <div class="card-title" style="margin-bottom:8px">Más vendidos</div>
+            <div class="dash-titulo"><i class="ph ph-star"></i> Más vendidos</div>
             <div id="dash-donut"><p class="empty">Aún no hay ventas</p></div>
           </div>
         </div>
 
         <div class="cod-grid">
           <div class="card">
-            <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px">
-              <div style="font-weight:var(--fw-bold);font-size:var(--fs-sm)">Cierre de caja de hoy</div>
-              <i class="ph ph-cash-register" style="font-size:var(--fs-h3);color:var(--muted)"></i>
-            </div>
+            <div class="dash-titulo"><i class="ph ph-cash-register"></i> Cierre de caja de hoy</div>
             <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
               <div><div style="font-size:var(--fs-body);font-weight:var(--fw-bold)" id="cc-num-ventas">0</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:2px">Ventas</div></div>
               <div><div style="font-size:var(--fs-body);font-weight:var(--fw-bold)" id="cc-unidades">0</div><div style="font-size:var(--fs-xs);color:var(--muted);margin-top:2px">Unidades</div></div>
@@ -509,11 +512,7 @@ textarea.field{height:auto}
 
           <div class="card">
             <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleAlerts()">
-              <div style="display:flex;align-items:center;gap:7px">
-                <i class="ph ph-warning" style="font-size:var(--fs-body);color:var(--ink)"></i>
-                <span style="font-weight:var(--fw-bold);font-size:var(--fs-sm);color:var(--ink)">Inventario bajo</span>
-                <span class="badge" id="dash-alertas-count">0</span>
-              </div>
+              <div class="dash-titulo" style="margin-bottom:0"><i class="ph ph-warning"></i> Inventario bajo <span class="badge" id="dash-alertas-count">0</span></div>
               <i class="ph ph-caret-up" id="dash-alertas-caret" style="font-size:var(--fs-sm);color:var(--muted)"></i>
             </div>
             <div id="dash-alertas-list" style="display:flex;flex-direction:column;gap:8px;margin-top:12px"></div>
@@ -3829,7 +3828,7 @@ function renderInventario() {
   // producto por producto.
   const COSTO_SOSPECHOSO_POR_UNIDAD = { g: 200, ml: 200, kg: 50000, unidad: 50000 };
   const filasInsumo = items.map(it => {
-    const bajo = it.cantidad <= it.minimo;
+    const bajo = CrumblyCore.estaBajoStock(it);
     const sospechoso = it.costo > (COSTO_SOSPECHOSO_POR_UNIDAD[it.unidad] || 50000);
     // T2: insumo con unidad undefined/inválida (nunca se adivina — ver
     // getInsumosUnificados) — se marca en vez de mostrarse como si nada.
@@ -5206,13 +5205,13 @@ function renderDonut(ventas) {
 }
 
 /* ─── Inventario bajo (colapsable) ─── */
-let dashAlertasOpen = true;
+let dashAlertasOpen = false; // cerrada: el contador ya avisa; se despliega al tocar
 function toggleAlerts() {
   dashAlertasOpen = !dashAlertasOpen;
   renderDashboardAlerts();
 }
 function renderDashboardAlerts() {
-  const bajos = CrumblyCore.getInsumosUnificados(state).filter(i => i.cantidad <= i.minimo);
+  const bajos = CrumblyCore.getInsumosUnificados(state).filter(CrumblyCore.estaBajoStock);
   document.getElementById('dash-alertas-count').textContent = bajos.length;
   document.getElementById('dash-alertas-caret').className = 'ph ' + (dashAlertasOpen ? 'ph-caret-up' : 'ph-caret-down');
   const el = document.getElementById('dash-alertas-list');
@@ -5289,8 +5288,8 @@ function renderVentasCostoInvalido_() {
 let dashTabActivo = 'resumen';
 function setDashTab(tab) {
   dashTabActivo = tab;
-  document.getElementById('dash-tab-resumen').style.display = tab === 'resumen' ? 'block' : 'none';
-  document.getElementById('dash-tab-costeo').style.display = tab === 'costeo' ? 'block' : 'none';
+  document.getElementById('dash-tab-resumen').style.display = tab === 'resumen' ? '' : 'none';
+  document.getElementById('dash-tab-costeo').style.display = tab === 'costeo' ? '' : 'none';
   document.getElementById('dash-tab-btn-resumen').classList.toggle('active', tab === 'resumen');
   document.getElementById('dash-tab-btn-costeo').classList.toggle('active', tab === 'costeo');
   if (tab === 'costeo') renderReportesCosteo();
@@ -5314,7 +5313,9 @@ function renderReportesCosteo() {
   // 1. Break-even diario
   const be = CrumblyCore.getBreakEven(state, inicio, fin);
   const llevadoHoy = getVentasByPeriod('dia').reduce((a, v) => a + v.total, 0);
-  document.getElementById('costeo-bep-diario').textContent = isFinite(be.bepDiarioContable) ? fmt(be.bepDiarioContable) : 'Sin margen de contribución positivo';
+  const bepEl = document.getElementById('costeo-bep-diario');
+  bepEl.textContent = isFinite(be.bepDiarioContable) ? fmt(be.bepDiarioContable) : 'Sin margen de contribución positivo';
+  bepEl.style.fontSize = isFinite(be.bepDiarioContable) ? '' : 'var(--fs-h3)'; // el aviso en texto normal, no en tamaño de cifra
   document.getElementById('costeo-bep-llevado').textContent = fmt(llevadoHoy);
   document.getElementById('costeo-bep-caja').textContent = isFinite(be.bepDiarioCaja) ? fmt(be.bepDiarioCaja) : '—';
 
@@ -6002,7 +6003,7 @@ function exportInventarioCSV() {
   // estuviera en kg) y decimales es-CO sin separador de miles, para que el
   // Sheet lo lea como número ("0,4", no "0").
   const num = (n, dec) => (Math.round((Number(n) || 0) * 1e4) / 1e4).toLocaleString('es-CO', { maximumFractionDigits: dec || 2, useGrouping: false });
-  const fila = (tipo, m, unidadDefecto, precio) => [tipo, m.nombre, num(m.cantidad), m.unidad || unidadDefecto, num(m.costo, 4), precio, num(m.minimo), m.cantidad <= m.minimo ? 'Urgente' : 'OK'];
+  const fila = (tipo, m, unidadDefecto, precio) => [tipo, m.nombre, num(m.cantidad), m.unidad || unidadDefecto, num(m.costo, 4), precio, num(m.minimo), CrumblyCore.estaBajoStock(m) ? 'Urgente' : 'OK'];
   state.materia.forEach(m => rows.push(fila('Materia prima', m, 'g', '')));
   state.empaques.forEach(m => rows.push(fila('Empaque', m, 'unidad', '')));
   state.toppings.forEach(m => rows.push(fila('Topping', m, 'unidad', num(m.precio, 4))));

@@ -1225,6 +1225,14 @@
   function esUnidadValida(unidad) {
     return UNIDADES_VALIDAS.indexOf(unidad) !== -1;
   }
+  // Bajo stock = tiene un mínimo definido (> 0) y no lo supera. Con mínimo
+  // 0 nadie pidió que se vigile (servicios como "Domicilio", insumos de
+  // temporada): no es una alerta.
+  function estaBajoStock(insumo) {
+    var minimo = Number(insumo && insumo.minimo) || 0;
+    return minimo > 0 && (Number(insumo.cantidad) || 0) <= minimo;
+  }
+
   function getInsumosUnificados(state) {
     var out = [];
     ['materia', 'empaques', 'toppings'].forEach(function (tipo) {
@@ -1918,7 +1926,7 @@
         var consumoTot = consumo[bucket][m.id] || 0;
         var consumoSemanal = consumoTot * (7 / days);
         var semanasRestantes = consumoSemanal > 0 ? m.cantidad / consumoSemanal : Infinity;
-        var necesitaComprar = m.cantidad <= m.minimo || semanasRestantes <= 1;
+        var necesitaComprar = estaBajoStock(m) || semanasRestantes <= 1;
         var sugerido = 0;
         if (necesitaComprar) {
           sugerido = Math.max(consumoSemanal * 2 - m.cantidad, m.minimo * 2 - m.cantidad, 0);
@@ -3981,6 +3989,7 @@
     getIngresosPorDia: getIngresosPorDia,
     fechaLocalISO: fechaLocalISO,
     getInsumosUnificados: getInsumosUnificados,
+    estaBajoStock: estaBajoStock,
     UNIDADES_VALIDAS: UNIDADES_VALIDAS,
     esUnidadValida: esUnidadValida,
     factorUnidadAGramos: factorUnidadAGramos_,

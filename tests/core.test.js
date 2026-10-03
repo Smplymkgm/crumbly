@@ -569,6 +569,13 @@ test('precio variable: el costeo del producto lleva +8% y la valuación queda al
   assert.ok(Math.abs(C.getCostoProducto(p, s) - 50 * 10) < 0.001);
 });
 
+test('estaBajoStock: solo con mínimo definido (> 0)', () => {
+  assert.strictEqual(C.estaBajoStock({ cantidad: 0, minimo: 0 }), false);
+  assert.strictEqual(C.estaBajoStock({ cantidad: 50, minimo: 100 }), true);
+  assert.strictEqual(C.estaBajoStock({ cantidad: 100, minimo: 100 }), true);
+  assert.strictEqual(C.estaBajoStock({ cantidad: 101, minimo: 100 }), false);
+});
+
 console.log('\n== Migración v9: recalcular valuación contaminada por el +8% ==');
 
 test('migrateState v9 recalcula el costo desde el historial de compras (dos compras de 100g a $10/g contaminadas a $10.8)', () => {
