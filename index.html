@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261003155640">
+<meta name="app-version" content="20261003155804">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 <style>
@@ -246,19 +246,14 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 .vista-toggle{display:inline-flex;gap:2px;padding:3px;background:var(--white);border:1px solid var(--line);border-radius:999px;flex-shrink:0}
 .vista-toggle button{border:none;background:transparent;width:36px;height:32px;border-radius:999px;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px}
 .vista-toggle button.active{background:var(--bg);color:var(--ink)}
-#prod-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px}
-.prod-foto{width:100%;height:150px;background:var(--bg)}
-.prod-info{padding:14px}
-#prod-grid.vista-iconos{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
-.vista-iconos .prod-foto{height:90px}
-.vista-iconos .prod-info{padding:10px}
-.vista-iconos .prod-info>div:first-child{flex-direction:column;align-items:flex-start !important;gap:2px !important}
+#prod-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.prod-info{padding:16px;display:flex;flex-direction:column;gap:6px}
+#prod-grid:not(.vista-lista) .prod-info{min-height:92px;justify-content:space-between}
 #prod-grid.vista-lista{grid-template-columns:1fr;gap:0;background:var(--white);border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .vista-lista .prod-card{flex-direction:row !important;align-items:center;border:none !important;border-bottom:1px solid var(--line) !important;border-radius:0 !important}
 .vista-lista .prod-card:last-child{border-bottom:none !important}
 .vista-lista .prod-card:hover{transform:none;box-shadow:none;background:var(--bg) !important}
-.vista-lista .prod-foto{width:44px;height:44px;flex-shrink:0;margin:8px 0 8px 12px;border-radius:8px;overflow:hidden}
-.vista-lista .prod-info{flex:1;min-width:0;padding:10px 14px}
+.vista-lista .prod-info{flex:1;min-width:0;padding:12px 16px;gap:2px}
 .prod-card{transition:box-shadow .15s ease,transform .15s ease,border-color .15s ease}
 .prod-card:hover{box-shadow:0 8px 20px rgba(17,17,17,.10);transform:translateY(-2px);border-color:var(--soft)}
 .btn{display:flex;align-items:center;gap:7px;font-weight:var(--fw-bold);font-size:var(--fs-sm);padding:9px 14px;border-radius:999px;cursor:pointer;border:1px solid var(--ink);background:var(--ink);color:var(--white);font-family:inherit}
@@ -819,8 +814,7 @@ textarea.field{height:auto}
         <div style="display:flex;gap:10px;align-items:center">
           <input type="search" id="prod-buscador" class="field" style="flex:1;min-width:0" placeholder="Buscar producto..." autocomplete="off" oninput="setProductosBusqueda(this.value)">
           <div class="vista-toggle" role="group" aria-label="Cómo ver los productos">
-            <button type="button" data-vista="cuadricula" onclick="setVistaProductos('cuadricula')" aria-label="Cuadrícula con foto" title="Cuadrícula"><i class="ph ph-squares-four"></i></button>
-            <button type="button" data-vista="iconos" onclick="setVistaProductos('iconos')" aria-label="Íconos chicos" title="Íconos"><i class="ph ph-dots-nine"></i></button>
+            <button type="button" data-vista="cuadricula" onclick="setVistaProductos('cuadricula')" aria-label="Tarjetas" title="Tarjetas"><i class="ph ph-squares-four"></i></button>
             <button type="button" data-vista="lista" onclick="setVistaProductos('lista')" aria-label="Lista" title="Lista"><i class="ph ph-list"></i></button>
           </div>
         </div>
@@ -1095,17 +1089,6 @@ textarea.field{height:auto}
   <div class="modal">
     <button class="close-modal" onclick="pedirCerrarModal('modal-producto')">✕</button>
     <div class="modal-title" id="modal-prod-title">Nuevo producto</div>
-    <div class="modal-field" id="p-foto-wrap" style="display:none">
-      <div style="width:100%;height:140px;border-radius:8px;overflow:hidden;background:var(--bg);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;position:relative">
-        <img id="p-foto-preview" style="display:none;width:100%;height:100%;object-fit:cover">
-        <span id="p-foto-empty" style="font-size:var(--fs-xs);color:var(--muted)">Foto del producto</span>
-      </div>
-      <label class="dropzone" style="margin-top:8px">
-        <input type="file" accept="image/*" onchange="onProductoFotoChange(event)">
-        <i class="ph ph-upload-simple" style="font-size:var(--fs-h3);color:var(--muted)"></i>
-        <span id="p-foto-label" style="font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--text)">Subir foto</span>
-      </label>
-    </div>
     <div class="modal-field">
       <label>Nombre del producto</label>
       <input type="text" id="p-nombre" placeholder="Ej: Oblea Especial">
@@ -1616,12 +1599,12 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261003155640"></script>
-<script src="js/rowsync.js?v=20261003155640"></script>
-<script src="js/sync.js?v=20261003155640"></script>
+<script src="js/core.js?v=20261003155804"></script>
+<script src="js/rowsync.js?v=20261003155804"></script>
+<script src="js/sync.js?v=20261003155804"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/supabaseSync.js?v=20261003155640"></script>
-<script src="js/auth.js?v=20261003155640"></script>
+<script src="js/supabaseSync.js?v=20261003155804"></script>
+<script src="js/auth.js?v=20261003155804"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -4301,47 +4284,6 @@ function eliminarLoteUI(id) {
 /* ─── PRODUCTOS ─── */
 let ingRows = [];
 let empRows = [];
-let productoFotoData = '';
-// Sube a Drive vía el backend y guarda solo la URL — igual que los
-// comprobantes (onComprobanteChange). Bug real: antes esto guardaba la
-// foto completa en base64 directo en `producto.foto`, dentro de
-// `state` → localStorage se llenaba con una sola foto de celular
-// (varios MB en base64) y `saveState()` empezaba a fallar con
-// "almacenamiento lleno" — no solo para esta foto, para TODO lo que se
-// guardara después. Con la URL de Drive, `producto.foto` es un string
-// de un par de cientos de bytes.
-async function onProductoFotoChange(e) {
-  const f = e.target.files && e.target.files[0];
-  const labelEl = document.getElementById('p-foto-label');
-  if (!f) return;
-
-  if (!auth.isAuthenticated()) {
-    showToast('Iniciá sesión para subir fotos de producto');
-    e.target.value = '';
-    return;
-  }
-  if (f.size > 10 * 1024 * 1024) {
-    showToast('La foto pesa más de 10MB. Elegí una más liviana');
-    e.target.value = '';
-    return;
-  }
-
-  labelEl.textContent = 'Subiendo...';
-  try {
-    const base64 = await fileToBase64(f);
-    const res = await CrumblySync.uploadFile(auth.getBackendUrl(), auth.getToken(), f.name, f.type, base64);
-    if (!res.ok) throw new Error(res.error || 'error desconocido');
-    productoFotoData = res.url;
-    document.getElementById('p-foto-preview').src = productoFotoData;
-    document.getElementById('p-foto-preview').style.display = 'block';
-    document.getElementById('p-foto-empty').style.display = 'none';
-    labelEl.textContent = 'Subir foto';
-  } catch (err) {
-    showToast('No se pudo subir la foto: ' + mensajeErrorSubida_(err));
-    labelEl.textContent = 'Subir foto';
-    e.target.value = '';
-  }
-}
 function openModalProducto(id) {
   ingRows = [];
   empRows = [];
@@ -4358,11 +4300,6 @@ function openModalProducto(id) {
     document.getElementById('p-precio').value = p.precio;
     document.getElementById('p-empaque-manual').value = p.empaqueManual || '';
     document.getElementById('p-edit-id').value = id;
-    productoFotoData = p.foto || '';
-    document.getElementById('p-foto-wrap').style.display = 'block';
-    document.getElementById('p-foto-preview').style.display = productoFotoData ? 'block' : 'none';
-    document.getElementById('p-foto-preview').src = productoFotoData;
-    document.getElementById('p-foto-empty').style.display = productoFotoData ? 'none' : 'block';
     p.componentes.forEach(c => addIngRow(c.tipo, c.refId, c.gramos));
     (p.empaquesUsados || []).forEach(e => addEmpRow(e.empaqueId, e.cantidad));
     document.getElementById('p-save-btn').textContent = 'Guardar cambios';
@@ -4374,8 +4311,6 @@ function openModalProducto(id) {
     document.getElementById('p-precio').value = '';
     document.getElementById('p-empaque-manual').value = '';
     document.getElementById('p-edit-id').value = '';
-    productoFotoData = '';
-    document.getElementById('p-foto-wrap').style.display = 'none';
     addIngRow();
     document.getElementById('p-save-btn').textContent = 'Crear producto';
     document.getElementById('p-delete-btn').style.display = 'none';
@@ -4512,9 +4447,9 @@ function saveProducto() {
   // cada producto.
   if (editId) {
     const idx = state.productos.findIndex(x => x.id === editId);
-    state.productos[idx] = { ...state.productos[idx], nombre, categoria, precio, componentes, empaquesUsados, empaqueManual, foto: productoFotoData };
+    state.productos[idx] = { ...state.productos[idx], nombre, categoria, precio, componentes, empaquesUsados, empaqueManual };
   } else {
-    state.productos.push({ id: uid(), nombre, categoria, precio, componentes, empaquesUsados, empaqueManual, foto: productoFotoData });
+    state.productos.push({ id: uid(), nombre, categoria, precio, componentes, empaquesUsados, empaqueManual });
   }
   saveState(); closeModal('modal-producto'); renderProductos();
   showToast('Producto guardado ✓');
@@ -4534,10 +4469,10 @@ function setProductosCategoria(cat, el) {
 }
 let productosBusqueda = '';
 function setProductosBusqueda(v) { productosBusqueda = v; renderProductos(); }
-// Vista de Productos: cuadrícula con foto (la de siempre), íconos chicos o
-// lista. Se recuerda en este dispositivo.
+// Vista de Productos: tarjetas o lista (sin fotos: ocupaban espacio en
+// Drive y en la pantalla). Se recuerda en este dispositivo.
 let vistaProductos = 'cuadricula';
-try { vistaProductos = localStorage.getItem('crumbly-vista-productos') || 'cuadricula'; } catch (e) {}
+try { vistaProductos = localStorage.getItem('crumbly-vista-productos') === 'lista' ? 'lista' : 'cuadricula'; } catch (e) {}
 function setVistaProductos(v) {
   vistaProductos = v;
   try { localStorage.setItem('crumbly-vista-productos', v); } catch (e) {}
@@ -4545,7 +4480,6 @@ function setVistaProductos(v) {
 }
 function aplicarVistaProductos_() {
   const el = document.getElementById('prod-grid');
-  el.classList.toggle('vista-iconos', vistaProductos === 'iconos');
   el.classList.toggle('vista-lista', vistaProductos === 'lista');
   document.querySelectorAll('.vista-toggle button').forEach(b => b.classList.toggle('active', b.dataset.vista === vistaProductos));
 }
@@ -4576,13 +4510,11 @@ function renderProductos() {
       : ''; // margen bajo: ya lo dice el texto en rojo, sin insignia
     // Rojo para todo margen bajo (< 50%); solo la venta a pérdida lleva insignia.
     const marginColor = perdida || margenBajo || (r.costo && margenPct < 50) ? 'var(--danger)' : 'var(--muted)';
-    const foto = p.foto ? `<img src="${p.foto}" style="width:100%;height:100%;object-fit:cover">` : '';
     return `<div class="prod-card" onclick="openModalProducto('${p.id}')" style="background:var(--white);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;cursor:pointer">
-      <div class="prod-foto">${foto}</div>
       <div class="prod-info">
-        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;gap:8px">
-          <span style="font-size:var(--fs-sm);color:var(--ink)">${esc(p.nombre)}</span>
-          <span style="font-size:var(--fs-sm);color:var(--ink);text-decoration:underline;cursor:pointer" onclick="event.stopPropagation();abrirDesgloseCosto('${p.id}')" title="Ver de dónde sale el costo">${fmt(p.precio)}</span>
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px">
+          <span style="font-size:var(--fs-body);color:var(--ink)">${esc(p.nombre)}</span>
+          <span style="font-size:var(--fs-body);color:var(--ink);text-decoration:underline;cursor:pointer;white-space:nowrap" onclick="event.stopPropagation();abrirDesgloseCosto('${p.id}')" title="Ver de dónde sale el costo">${fmt(p.precio)}</span>
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
           <span style="font-size:var(--fs-xs);color:${marginColor}">${(p.componentes || []).length ? 'margen ' + margenPct + '%' + (r.costo ? ' · ' + fmt(r.ganancia) : '') : 'sin receta'}</span>
