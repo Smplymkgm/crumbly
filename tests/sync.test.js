@@ -117,6 +117,17 @@ test('propaga ok:false del backend (ej. token inválido) sin lanzar', async () =
   assert.strictEqual(r.error, 'token inválido');
 });
 
+group('subirRespaldo');
+
+test('manda action=respaldo con token, filename y data por POST text/plain', async () => {
+  const f = mockFetch([{ body: { ok: true, fileId: 'r1' } }]);
+  const r = await Sync.subirRespaldo('https://x.com/exec', 'tok', 'respaldo_2026-10-03.json', 'e30=', f);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(f.calls[0].opts.method, 'POST');
+  assert.strictEqual(f.calls[0].opts.headers['Content-Type'], 'text/plain;charset=utf-8');
+  assert.deepStrictEqual(JSON.parse(f.calls[0].opts.body), { token: 'tok', action: 'respaldo', filename: 'respaldo_2026-10-03.json', data: 'e30=' });
+});
+
 group('uploadFile');
 
 test('usa POST con Content-Type text/plain, igual que push (evita el preflight)', async () => {

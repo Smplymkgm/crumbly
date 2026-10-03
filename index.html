@@ -2451,6 +2451,24 @@ function cerrarSesion() {
   auth.logout();
   showLoginGate();
 }
+// Respaldo automático: una vez por día, con el estado recién bajado de
+// Supabase, se guarda una copia en Drive ("Crumbly - Respaldos", privada,
+// un archivo por día). Si falla (sin red, Apps Script sin redesplegar) no
+// molesta: se reintenta la próxima vez que se abra la app.
+async function respaldoDiario_() {
+  const hoy = todayLocalISO();
+  let ultimo = null;
+  try { ultimo = localStorage.getItem('crumbly-respaldo-ultimo'); } catch (e) {}
+  if (ultimo === hoy || !auth.getToken()) return;
+  try {
+    const bytes = new TextEncoder().encode(JSON.stringify(state));
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    const res = await CrumblySync.subirRespaldo(auth.getBackendUrl(), auth.getToken(), 'respaldo_' + hoy + '.json', btoa(bin));
+    if (res && res.ok) { try { localStorage.setItem('crumbly-respaldo-ultimo', hoy); } catch (e) {} }
+  } catch (e) { console.warn('Respaldo diario no subido:', e); }
+}
+
 function pullOnLoad() {
   if (!state.config.lastSync) return;
   if (!auth.isAuthenticated()) return;
@@ -2460,6 +2478,7 @@ function pullOnLoad() {
         if (!r.ok) { updateSyncStatus('Error al sincronizar: ' + (r.error || 'desconocido'), true); return; }
         updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
         refreshAll();
+        respaldoDiario_();
       })
       .catch(() => updateSyncStatus('Trabajando sin conexión con el backend. Se sincronizará cuando vuelva la red', true));
     return;

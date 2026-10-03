@@ -141,6 +141,9 @@ function doPost(e) {
   if (body.action === 'uploadComprobante') {
     return uploadComprobante_(body);
   }
+  if (body.action === 'respaldo') {
+    return guardarRespaldo_(body);
+  }
   return json_({ ok: false, error: 'acción desconocida: ' + body.action });
 }
 
@@ -172,6 +175,31 @@ function uploadComprobante_(body) {
     // (bug real: con getUrl(), las fotos de producto no se mostraban).
     var url = 'https://lh3.googleusercontent.com/d/' + file.getId();
     return json_({ ok: true, url: url, fileId: file.getId() });
+  } catch (err) {
+    return json_({ ok: false, error: String(err) });
+  }
+}
+
+// Respaldo diario del estado completo: la app lo manda una vez por día
+// (el primer dispositivo que abre la app ese día). A diferencia de los
+// comprobantes, el archivo queda PRIVADO (sin setSharing): tiene todo el
+// negocio. Uno por día: si ya existe el de ese día, se reemplaza (el
+// viejo va a la papelera de Drive, que lo guarda 30 días).
+// ponytail: los respaldos viejos no se borran (~cientos de KB por día, años
+// antes de pesar en Drive); agregar una poda si algún día molesta.
+var RESPALDOS_FOLDER = 'Crumbly - Respaldos';
+
+function guardarRespaldo_(body) {
+  if (typeof body.filename !== 'string' || !/^respaldo_\d{4}-\d{2}-\d{2}\.json$/.test(body.filename) || !body.data) {
+    return json_({ ok: false, error: 'respaldo inválido' });
+  }
+  try {
+    var folders = DriveApp.getFoldersByName(RESPALDOS_FOLDER);
+    var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(RESPALDOS_FOLDER);
+    var viejos = folder.getFilesByName(body.filename);
+    while (viejos.hasNext()) viejos.next().setTrashed(true);
+    var blob = Utilities.newBlob(Utilities.base64Decode(body.data), 'application/json', body.filename);
+    return json_({ ok: true, fileId: folder.createFile(blob).getId() });
   } catch (err) {
     return json_({ ok: false, error: String(err) });
   }

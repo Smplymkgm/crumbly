@@ -418,7 +418,20 @@
     }).then(parseResponse);
   }
 
+  // Respaldo diario: el estado completo en JSON (base64) para la carpeta
+  // privada "Crumbly - Respaldos" de Drive. Un Apps Script viejo responde
+  // "acción desconocida" (ok:false) y la app reintenta otro día.
+  function subirRespaldo(backendUrl, token, filename, base64Data, fetchImpl) {
+    var f = resolveFetch(fetchImpl);
+    return f(backendUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ token: token, action: 'respaldo', filename: filename, data: base64Data })
+    }).then(parseResponse);
+  }
+
   return {
+    subirRespaldo: subirRespaldo,
     isConfigured: isConfigured,
     ping: ping,
     pull: pull,
