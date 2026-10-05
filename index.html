@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261003160821">
+<meta name="app-version" content="20261004205412">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 <style>
@@ -1604,12 +1604,12 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261003160821"></script>
-<script src="js/rowsync.js?v=20261003160821"></script>
-<script src="js/sync.js?v=20261003160821"></script>
+<script src="js/core.js?v=20261004205412"></script>
+<script src="js/rowsync.js?v=20261004205412"></script>
+<script src="js/sync.js?v=20261004205412"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/supabaseSync.js?v=20261003160821"></script>
-<script src="js/auth.js?v=20261003160821"></script>
+<script src="js/supabaseSync.js?v=20261004205412"></script>
+<script src="js/auth.js?v=20261004205412"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -1623,6 +1623,12 @@ let soloTopRowCount = 0;
 // (HANDOFF.md §20) — nunca se duplican aquí.
 const fmt = CrumblyCore.formatCOP;
 const esc = CrumblyCore.escapeHtml;
+// Texto del usuario como argumento de un onclick="f(...)": esc() solo no
+// alcanza, porque el navegador decodifica &#39; a ' antes de correr el
+// handler y una categoría con apóstrofo rompía el string (o inyectaba
+// código). JSON.stringify arma un literal JS válido y esc() lo protege
+// dentro del atributo. Uso: onclick="f(${jsArg(c)})" (sin comillas).
+const jsArg = v => esc(JSON.stringify(String(v)));
 // Tanda 3 #23: un solo formato de cantidad ("1.000 g", "0,4 kg", "5 und")
 // y uno de costo por unidad de medida ("$4,72/g", "$8.333/und") — ambos en
 // core.js. Hasta 4 decimales solo por debajo de $1 (costo por gramo, ver
@@ -3488,7 +3494,7 @@ function openInsumoModal(id) {
   document.querySelectorAll('#modal-insumo details.info').forEach(d => { d.open = false; });
   actualizarEtiquetasUnidad_();
   document.getElementById('ins-categorias-chips').innerHTML = insumoCategorias().map(c =>
-    `<button type="button" class="chip" onclick="document.getElementById('ins-categoria').value='${esc(c)}'">${esc(c)}</button>`
+    `<button type="button" class="chip" onclick="document.getElementById('ins-categoria').value=${jsArg(c)}">${esc(c)}</button>`
   ).join('');
   // Z1: colapsadas cada vez que se abre el modal, sin importar cómo quedaron la última vez.
   document.getElementById('ins-categorias-chips').style.display = 'none';
@@ -3877,7 +3883,7 @@ function renderInventario() {
   document.getElementById('inv-categoria-wrap').style.display = categoriaAplica ? 'block' : 'none';
   const cats = categoriaAplica ? insumoCategorias() : [];
   document.getElementById('inv-chips').innerHTML = ['todos', ...cats].map(c =>
-    `<button class="chip ${c === insInventarioCategoria ? 'active' : ''}" onclick="setInventarioCategoria('${esc(c)}',this)">${c === 'todos' ? 'Todas las categorías' : esc(c)}</button>`
+    `<button class="chip ${c === insInventarioCategoria ? 'active' : ''}" onclick="setInventarioCategoria(${jsArg(c)},this)">${c === 'todos' ? 'Todas las categorías' : esc(c)}</button>`
   ).join('');
   document.getElementById('inv-categoria-activa-label').textContent = (categoriaAplica && insInventarioCategoria !== 'todos') ? '· ' + insInventarioCategoria : '';
   // Z1: contador de filtros activos, visible en el botón sin necesidad de abrirlo.
@@ -4328,7 +4334,7 @@ function openModalProducto(id) {
   document.getElementById('prod-ings-wrap').innerHTML = '';
   document.getElementById('prod-emp-wrap').innerHTML = '';
   document.getElementById('p-categorias-chips').innerHTML = Array.from(new Set(state.productos.map(p => p.categoria).filter(Boolean))).sort().map(c =>
-    `<button type="button" class="chip" onclick="document.getElementById('p-categoria').value='${esc(c)}'">${esc(c)}</button>`
+    `<button type="button" class="chip" onclick="document.getElementById('p-categoria').value=${jsArg(c)}">${esc(c)}</button>`
   ).join('');
   if (id) {
     const p = state.productos.find(x => x.id === id);
@@ -4527,7 +4533,7 @@ function renderProductos() {
   aplicarVistaProductos_();
   const cats = Array.from(new Set(state.productos.map(p => p.categoria).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es'));
   document.getElementById('prod-chips').innerHTML = ['todos', ...cats].map(c =>
-    `<button class="chip ${c === productosCategoriaActiva ? 'active' : ''}" onclick="setProductosCategoria('${esc(c)}',this)">${c === 'todos' ? 'Todos' : esc(c)}</button>`
+    `<button class="chip ${c === productosCategoriaActiva ? 'active' : ''}" onclick="setProductosCategoria(${jsArg(c)},this)">${c === 'todos' ? 'Todos' : esc(c)}</button>`
   ).join('');
   const el = document.getElementById('prod-grid');
   // Vista columnas: una columna por categoría con todos sus productos, así
@@ -6089,12 +6095,12 @@ function renderCategoriasComportamiento() {
     return `
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
         <span style="flex:1 1 100px;font-size:var(--fs-sm);color:var(--ink)">${esc(cat)}</span>
-        <select class="field field-sm" style="flex:1 1 110px" onchange="setComportamientoCategoria('${esc(cat)}',this.value)">
+        <select class="field field-sm" style="flex:1 1 110px" onchange="setComportamientoCategoria(${jsArg(cat)},this.value)">
           <option value="fijo" ${c.comportamiento === 'fijo' ? 'selected' : ''}>Fijo</option>
           <option value="variable" ${c.comportamiento === 'variable' ? 'selected' : ''}>Variable</option>
           <option value="mixto" ${c.comportamiento === 'mixto' ? 'selected' : ''}>Mixto</option>
         </select>
-        ${c.comportamiento === 'mixto' ? `<input type="number" min="0" max="100" step="1" value="${pct}" class="field field-sm" style="flex:0 0 64px" onchange="setPctVariableCategoria('${esc(cat)}',this.value)">` : ''}
+        ${c.comportamiento === 'mixto' ? `<input type="number" min="0" max="100" step="1" value="${pct}" class="field field-sm" style="flex:0 0 64px" onchange="setPctVariableCategoria(${jsArg(cat)},this.value)">` : ''}
       </div>`;
   }).join('');
 }
