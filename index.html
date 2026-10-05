@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261004205412">
+<meta name="app-version" content="20261004205859">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
 <style>
@@ -462,7 +462,7 @@ textarea.field{height:auto}
              reorganizado. Ver PROGRESO.md § W3. -->
         <button class="icon-btn" onclick="openModal('modal-ajustes')" title="Ajustes"><i class="ph ph-gear-six"></i></button>
         <button class="icon-btn" onclick="abrirCentroAlertas()" title="Alertas"><i class="ph ph-bell"></i><span id="alertas-punto" style="display:none;position:absolute;top:8px;right:9px;width:8px;height:8px;border-radius:50%;background:var(--danger);border:1.5px solid var(--bg)"></span></button>
-        <div class="avatar-ink" onclick="openModal('modal-sesion')" title="Cuenta" style="cursor:pointer"><i class="ph ph-user"></i></div>
+        <div class="avatar-ink" onclick="openModal('modal-sesion')" title="Cuenta" style="cursor:pointer;position:relative"><i class="ph ph-user"></i><span id="sync-punto" style="display:none;position:absolute;top:0;right:0;width:10px;height:10px;border-radius:50%;background:var(--danger);border:1.5px solid var(--bg)"></span></div>
       </div>
     </header>
 
@@ -1604,12 +1604,12 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261004205412"></script>
-<script src="js/rowsync.js?v=20261004205412"></script>
-<script src="js/sync.js?v=20261004205412"></script>
+<script src="js/core.js?v=20261004205859"></script>
+<script src="js/rowsync.js?v=20261004205859"></script>
+<script src="js/sync.js?v=20261004205859"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/supabaseSync.js?v=20261004205412"></script>
-<script src="js/auth.js?v=20261004205412"></script>
+<script src="js/supabaseSync.js?v=20261004205859"></script>
+<script src="js/auth.js?v=20261004205859"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -1753,26 +1753,35 @@ function mensajeErrorSubida_(err) {
 // Cuántas veces se guardó un cambio local — pullSupabase_ lo mira para no
 // reemplazar el state con un pull completo si hubo una edición mientras bajaba.
 let mutacionesLocales = 0;
+// Desde cuándo hay un cambio local sin subir (null = todo subido). Lo usa
+// el punto rojo del avatar (renderPuntoSync_).
+let cambioSinSubirDesde = null;
 function saveState() {
   mutacionesLocales++;
   let ok = true;
   try {
     localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso()));
     saveConteoEnProgresoLocal();
-    schedulePush();
   } catch (e) {
-    showPersistentError(
-      'No se pudo guardar: el almacenamiento del navegador está lleno o no disponible.',
-      'Exportar respaldo ahora',
-      () => { exportVentasCSV(); exportInventarioCSV(); }
-    );
+    avisarAlmacenamientoLleno_();
     ok = false;
   }
+  // Fuera del try: con el almacenamiento lleno la venta igual tiene que
+  // llegar al servidor (el state en memoria está bien, solo no se guardó acá).
+  if (usaSupabase && !cambioSinSubirDesde) cambioSinSubirDesde = Date.now();
+  try { schedulePush(); } catch (e) { console.error(e); }
   // Pedidos (el "(n)" del menú y la pantalla): toda venta registrada o
   // borrada y todo cambio de estado pasa por acá — así el número nunca
   // queda viejo. Es barato (solo los pedidos en curso + los de hoy).
   try { renderPedidos(); } catch (e) { console.error(e); }
   return ok;
+}
+function avisarAlmacenamientoLleno_() {
+  showPersistentError(
+    'No se pudo guardar: el almacenamiento del navegador está lleno o no disponible.',
+    'Exportar respaldo ahora',
+    () => { exportVentasCSV(); exportInventarioCSV(); }
+  );
 }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 
@@ -1831,6 +1840,22 @@ function saveSupabaseBase(s) {
 function copiaParaSync_() {
   return JSON.parse(JSON.stringify(stateSinConteoEnProgreso()));
 }
+// Guarda el state y DESPUÉS la base. Al revés, si la base entraba y el
+// state no (almacenamiento lleno), la próxima apertura comparaba una base
+// más nueva que el state y el push tomaba como borradas las filas que
+// faltaban. Si el state no entra, la base guardada se borra (la próxima
+// apertura re-baja todo limpio). La de memoria sigue: en esta sesión
+// state y base van juntos y los pushes continúan.
+function guardarStateYBase_(base) {
+  baseEnMemoria = base;
+  try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); }
+  catch (e) {
+    try { localStorage.removeItem(SUPABASE_BASE_KEY); } catch (e2) {}
+    avisarAlmacenamientoLleno_();
+    return;
+  }
+  saveSupabaseBase(base);
+}
 
 // Sube lo que cambió desde la base. Lo enviado se copia ANTES de mandar:
 // si el usuario edita mientras el push está en vuelo, esa edición no
@@ -1842,6 +1867,7 @@ function copiaParaSync_() {
 // mientras el push estaba en vuelo pudo llegar por realtime el cambio de
 // otro dispositivo (ej. un pedido marcado Listo), y reemplazarla lo borraba.
 async function pushSupabase_() {
+  const mutacionesAntes = mutacionesLocales;
   const enviado = copiaParaSync_();
   const idsABorrar = CrumblySync.getBorradosPendientes();
   const r = await CrumblySupabaseSync.push(auth.getSupabase(), enviado, idsABorrar, loadSupabaseBase());
@@ -1872,8 +1898,8 @@ async function pushSupabase_() {
   }
   state.config.lastSync = r.ts;
   if (base.config) base.config.lastSync = r.ts; // lastSync es de este dispositivo: no cuenta como cambio a subir
-  saveSupabaseBase(base);
-  try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
+  guardarStateYBase_(base);
+  if (mutacionesLocales === mutacionesAntes) cambioSinSubirDesde = null;
   return r;
 }
 // Push y pull nunca se superponen: uno en vuelo mientras el otro reemplaza
@@ -1926,9 +1952,9 @@ async function pullSupabase_() {
   state = migrarState_(r.state);
   restaurarConteoEnProgresoLocal();
   state.config.lastSync = new Date().toISOString();
-  saveSupabaseBase(copiaParaSync_());
+  guardarStateYBase_(copiaParaSync_());
   saveSupabaseDesde(r.hasta);
-  try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
+  cambioSinSubirDesde = null;
   iniciarRealtime_();
   return { ok: true };
 }
@@ -1957,9 +1983,8 @@ function aplicarCambiosSupabase_(r) {
   }
   state.config.lastSync = new Date().toISOString();
   if (base.config) base.config.lastSync = state.config.lastSync; // lastSync es de este dispositivo: no cuenta como cambio a subir
-  saveSupabaseBase(base);
+  guardarStateYBase_(base);
   saveSupabaseDesde(r.hasta);
-  try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
   if (pedidosNuevos) avisarPedidoNuevo_();
   iniciarRealtime_();
 }
@@ -1971,6 +1996,8 @@ function aplicarCambiosSupabase_(r) {
 // (supabase/migrations/0002_realtime.sql).
 let realtimeCanal = null;
 let refrescoRemotoTimer = null;
+let realtimeReintento = null; // el setTimeout de reconexión: detenerRealtime_ lo cancela (si no, resucitaba tras cerrar sesión)
+let realtimeSeCorto = false;
 function iniciarRealtime_() {
   if (!usaSupabase || realtimeCanal) return;
   let sb;
@@ -1984,16 +2011,26 @@ function iniciarRealtime_() {
     if (realtimeCanal !== canal) return; // un canal viejo ya reemplazado
     enVivo = estado === 'SUBSCRIBED';
     renderEstadoEnVivo_();
+    // Reconectó después de un corte: lo que pasó en el hueco no llegó por
+    // realtime, se trae con un pull incremental (una vez).
+    if (enVivo && realtimeSeCorto) {
+      realtimeSeCorto = false;
+      enCola_(pullSupabase_).then(r => { if (r && r.ok) refreshAll(); }).catch(() => {});
+    }
     // Se cortó (red, celular dormido, token vencido): se descarta y se
     // reintenta; mientras tanto el respaldo de Pedidos sigue trayendo.
     if (estado === 'CHANNEL_ERROR' || estado === 'TIMED_OUT' || estado === 'CLOSED') {
       realtimeCanal = null;
+      realtimeSeCorto = true;
       sb.removeChannel(canal);
-      setTimeout(iniciarRealtime_, 5000);
+      clearTimeout(realtimeReintento);
+      realtimeReintento = setTimeout(iniciarRealtime_, 5000);
     }
   });
 }
 function detenerRealtime_() {
+  clearTimeout(realtimeReintento);
+  realtimeSeCorto = false;
   if (realtimeCanal) { const c = realtimeCanal; realtimeCanal = null; c.unsubscribe(); }
   enVivo = false;
 }
@@ -2037,8 +2074,7 @@ function aplicarFilaRemota_(coleccion, fila) {
   const base = loadSupabaseBase();
   const r = aplicarFila_(base, coleccion, fila);
   if (!r) return;
-  saveSupabaseBase(base);
-  try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
+  guardarStateYBase_(base);
   if (r === 'pedido-nuevo') avisarPedidoNuevo_();
   // Una venta llega junto con varias filas de stock — un solo refresco.
   clearTimeout(refrescoRemotoTimer);
@@ -2337,13 +2373,49 @@ async function migrarASupabase(opciones) {
   return CrumblySupabaseSync.migrarDesdeState(auth.getSupabase(), limpio, opciones);
 }
 
+// Restaurar desde un respaldo (el JSON diario de Drive "Crumbly -
+// Respaldos", o el `crumbly-local-<fecha>.json` que baja "Descartar
+// cambios"). Solo para la dueña o soporte, A MANO desde la consola, con
+// sesión iniciada en Supabase:
+//   await restaurarDesdeRespaldo(<contenido del .json, texto u objeto>)
+// Qué hace: valida que tenga forma de state, pide confirmación, reemplaza
+// el state de este dispositivo (por migrarState_, igual que al abrir),
+// lo guarda local y sube TODO con upsert (migrarDesdeState con forzar).
+// Después olvida la base y hace un pull completo.
+// Qué NO hace: no borra filas del servidor creadas después del respaldo
+// (siguen ahí y vuelven a bajar). Las filas que el respaldo sí tiene
+// quedan con la versión del respaldo, aunque después se hayan editado o
+// borrado en el servidor. Devuelve { migracion, pull }: en
+// migracion.diferencias se ven las colecciones con más filas en el
+// servidor que en el respaldo (lo creado después).
+async function restaurarDesdeRespaldo(json) {
+  const datos = typeof json === 'string' ? JSON.parse(json) : json;
+  const esState = datos && typeof datos === 'object' && datos.config && typeof datos.config === 'object' &&
+    CrumblySupabaseSync.COLECCIONES.every(c => datos[c] === undefined || Array.isArray(datos[c])) && Array.isArray(datos.ventas);
+  if (!esState) throw new Error('No parece un respaldo de Crumbly (falta config o las colecciones no son listas)');
+  if (!usaSupabase || !auth.isAuthenticated()) throw new Error('Hace falta sesión iniciada con Supabase');
+  if (!confirm('¿Reemplazar los datos de este dispositivo con el respaldo (' + datos.ventas.length + ' ventas) y subirlo entero al servidor? Lo creado en el servidor después del respaldo no se borra.')) return null;
+  const res = await enCola_(async () => {
+    olvidarBaseSupabase_(); // sin base, ningún push en segundo plano compara el respaldo contra la base vieja
+    state = migrarState_(JSON.parse(JSON.stringify(datos)));
+    restaurarConteoEnProgresoLocal();
+    saveState();
+    const { conteoEnProgreso, ...limpio } = JSON.parse(JSON.stringify(state));
+    const migracion = await CrumblySupabaseSync.migrarDesdeState(auth.getSupabase(), limpio, { forzar: true });
+    if (migracion.error) return { migracion, pull: null };
+    return { migracion, pull: await pullSupabase_() };
+  });
+  refreshAll();
+  console.log('Restauración:', res);
+  return res;
+}
+
 function pushInBackground() {
   if (usaSupabase) {
     enCola_(pushSupabase_)
       .then(r => {
         if (r.code === 'BORRADO_MASIVO') {
-          showPersistentError('No se sincronizó: ' + r.error + '. Los cambios quedan en este dispositivo. Recargá la app; si vuelve a pasar, avisá antes de seguir.', 'Recargar', () => location.reload());
-          updateSyncStatus('Sincronización detenida por seguridad', true);
+          avisarBorradoMasivo_(r);
           return;
         }
         if (!r.ok) { updateSyncStatus('Error al sincronizar: ' + (r.error || 'desconocido'), true); return; }
@@ -2400,6 +2472,46 @@ function pushInBackground() {
       }
     })
     .catch(() => updateSyncStatus('Sin conexión con el backend. Los cambios quedan solo en este navegador por ahora', true));
+}
+
+// El freno de BORRADO_MASIVO (js/supabaseSync.js) deja este dispositivo
+// trabado: el pull sube primero y vuelve a chocar. La salida es descartar
+// lo local y volver a bajar todo, después de descargar una copia.
+function avisarBorradoMasivo_(r) {
+  showPersistentError('No se sincronizó: ' + r.error + '. Los cambios quedan en este dispositivo. Avisá antes de seguir. Si los datos de este dispositivo están mal, descartalos: antes se descarga una copia.', 'Descartar cambios de este dispositivo y volver a bajar', descartarCambiosLocales_);
+  updateSyncStatus('Sincronización detenida por seguridad', true);
+}
+function descargarJSON_(obj, nombre) {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(obj)], { type: 'application/json' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nombre;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+// Olvida lo que este dispositivo sabía de Supabase (base, `desde`, borrados
+// pendientes): el próximo pull es completo y reemplaza el state local.
+function olvidarBaseSupabase_() {
+  clearTimeout(syncPushTimer);
+  baseEnMemoria = null;
+  try { localStorage.removeItem(SUPABASE_BASE_KEY); localStorage.removeItem(SUPABASE_DESDE_KEY); } catch (e) {}
+  CrumblySync.limpiarBorradosPendientes(CrumblySync.getBorradosPendientes());
+}
+function descartarCambiosLocales_() {
+  descargarJSON_(state, 'crumbly-local-' + todayLocalISO() + '.json');
+  if (!confirm('Se descargó una copia de los datos de este dispositivo. ¿Descartar los cambios sin subir y volver a bajar todo del servidor?')) return;
+  enCola_(() => { olvidarBaseSupabase_(); return pullSupabase_(); })
+    .then(r => {
+      if (!r.ok) { updateSyncStatus('Error al sincronizar: ' + (r.error || 'desconocido'), true); showToast('No se pudo bajar: ' + (r.error || 'revisá tu conexión')); return; }
+      const banner = document.getElementById('persistent-error');
+      if (banner) banner.remove();
+      refreshAll();
+      updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
+      showToast('Datos bajados de nuevo del servidor');
+    })
+    .catch(() => updateSyncStatus('Sin conexión con el backend. Se reintenta al volver a abrir la app', true));
 }
 
 // U4 (C2): un push chocó contra una versión de catálogo más nueva.
@@ -2549,14 +2661,27 @@ async function respaldoDiario_() {
   const hoy = todayLocalISO();
   let ultimo = null;
   try { ultimo = localStorage.getItem('crumbly-respaldo-ultimo'); } catch (e) {}
-  if (ultimo === hoy || !auth.getToken()) return;
+  if (ultimo === hoy) return;
+  if (!auth.getToken()) { avisarRespaldoViejo_(ultimo); return; }
+  let subido = false;
   try {
     const bytes = new TextEncoder().encode(JSON.stringify(state));
     let bin = '';
     for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
     const res = await CrumblySync.subirRespaldo(auth.getBackendUrl(), auth.getToken(), 'respaldo_' + hoy + '.json', btoa(bin));
-    if (res && res.ok) { try { localStorage.setItem('crumbly-respaldo-ultimo', hoy); } catch (e) {} }
+    if (res && res.ok) { subido = true; try { localStorage.setItem('crumbly-respaldo-ultimo', hoy); } catch (e) {} }
   } catch (e) { console.warn('Respaldo diario no subido:', e); }
+  if (!subido) avisarRespaldoViejo_(ultimo);
+}
+// Si el último respaldo tiene más de 2 días (o nunca hubo uno y ya hay
+// ventas), avisa sin bloquear, una sola vez por apertura de la app.
+let avisoRespaldoMostrado = false;
+function avisarRespaldoViejo_(ultimo) {
+  if (avisoRespaldoMostrado) return;
+  const dias = ultimo ? Math.round((new Date(todayLocalISO() + 'T00:00:00') - new Date(ultimo + 'T00:00:00')) / 86400000) : null;
+  if (ultimo ? !(dias > 2) : !(state.ventas || []).length) return;
+  avisoRespaldoMostrado = true;
+  showToast('El respaldo diario a Drive no se está guardando. Revisá la sesión en Ajustes.', 6000);
 }
 
 function pullOnLoad() {
@@ -2565,6 +2690,7 @@ function pullOnLoad() {
   if (usaSupabase) {
     enCola_(pullSupabase_)
       .then(r => {
+        if (r.code === 'BORRADO_MASIVO') { avisarBorradoMasivo_(r); return; }
         if (!r.ok) { updateSyncStatus('Error al sincronizar: ' + (r.error || 'desconocido'), true); return; }
         updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
         refreshAll();
@@ -3137,12 +3263,29 @@ async function renderMigrationStatus() {
   }
   detalleEl.innerHTML = html;
 }
+let syncConError = false;
 function updateSyncStatus(msg, isError) {
+  syncConError = !!isError;
+  renderPuntoSync_();
   const el = document.getElementById('sync-status');
   if (!el) return;
   el.textContent = msg;
   el.style.color = isError ? 'var(--danger)' : 'var(--muted)';
 }
+// Punto rojo en el avatar: el último push/pull falló, o hay cambios de
+// este dispositivo sin subir hace más de 2 minutos. Tocarlo abre Sesión,
+// donde está el detalle (#sync-status).
+function renderPuntoSync_() {
+  const atrasado = !!cambioSinSubirDesde && Date.now() - cambioSinSubirDesde > 120000;
+  const punto = document.getElementById('sync-punto');
+  if (punto) punto.style.display = (syncConError || atrasado) ? 'block' : 'none';
+  const el = document.getElementById('sync-status');
+  if (el && atrasado && !syncConError) {
+    el.textContent = 'Hay cambios de este dispositivo sin subir hace más de 2 minutos. Revisá la conexión.';
+    el.style.color = 'var(--danger)';
+  }
+}
+setInterval(renderPuntoSync_, 30000);
 function formatSyncTime(iso) {
   if (!iso) return '';
   const d = new Date(iso);
