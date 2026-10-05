@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261004205945">
+<meta name="app-version" content="20261004210002">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" integrity="sha384-6p9AefaqUhEVheRlj1mpAkbngHXy9mbYMrIdcIt4Jlc9lOLIablJq3bBsLOjGwZ7" crossorigin="anonymous">
 <style>
@@ -1598,14 +1598,14 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261004205945"></script>
-<script src="js/rowsync.js?v=20261004205945"></script>
-<script src="js/sync.js?v=20261004205945"></script>
+<script src="js/core.js?v=20261004210002"></script>
+<script src="js/rowsync.js?v=20261004210002"></script>
+<script src="js/sync.js?v=20261004210002"></script>
 <!-- Versión fija + SRI. Es dist/umd/supabase.js (ya viene minificado): el
      .min.js de jsdelivr se genera al vuelo y no sirve con SRI. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js" integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok" crossorigin="anonymous"></script>
-<script src="js/supabaseSync.js?v=20261004205945"></script>
-<script src="js/auth.js?v=20261004205945"></script>
+<script src="js/supabaseSync.js?v=20261004210002"></script>
+<script src="js/auth.js?v=20261004210002"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -1616,11 +1616,11 @@ let empRowCount = 0;
 // (HANDOFF.md §20) — nunca se duplican aquí.
 const fmt = CrumblyCore.formatCOP;
 const esc = CrumblyCore.escapeHtml;
-// Texto del usuario como argumento de un onclick="f(...)": esc() solo no
+// Texto del usuario como argumento de un manejador inline (onclick): esc() solo no
 // alcanza, porque el navegador decodifica &#39; a ' antes de correr el
 // handler y una categoría con apóstrofo rompía el string (o inyectaba
 // código). JSON.stringify arma un literal JS válido y esc() lo protege
-// dentro del atributo. Uso: onclick="f(${jsArg(c)})" (sin comillas).
+// dentro del atributo. Uso: setX(${jsArg(c)}) dentro del onclick, sin comillas.
 const jsArg = v => esc(JSON.stringify(String(v)));
 const normalizarBusqueda_ = CrumblyCore.normalizarBusqueda;
 // Tanda 3 #23: un solo formato de cantidad ("1.000 g", "0,4 kg", "5 und")
