@@ -156,14 +156,23 @@ var COMPROBANTE_MAX_BYTES = 10 * 1024 * 1024;
 var RESPALDO_MAX_BYTES = 25 * 1024 * 1024;
 
 function esTipoComprobante_(mime) {
-  return /^image\/(jpeg|png|webp|gif|heic|heif)$/.test(mime) || mime === 'application/pdf';
+  return /^image\/(jpeg|jpg|png|webp|gif|heic|heif|avif|bmp)$/.test(mime) || mime === 'application/pdf';
+}
+// Algunos navegadores mandan el tipo vacío (HEIC en Chrome/Windows, ciertos
+// selectores de Android): se deduce de la extensión del nombre.
+var MIME_POR_EXTENSION = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', heic: 'image/heic', heif: 'image/heif', avif: 'image/avif', bmp: 'image/bmp', pdf: 'application/pdf' };
+function mimeComprobante_(mime, nombre) {
+  mime = String(mime || '').toLowerCase();
+  if (mime && mime !== 'application/octet-stream') return mime;
+  var ext = (String(nombre || '').match(/\.([a-z0-9]+)$/i) || [])[1];
+  return MIME_POR_EXTENSION[String(ext || '').toLowerCase()] || mime;
 }
 
 function uploadComprobante_(body) {
   if (!body.filename || !body.data) {
     return json_({ ok: false, error: 'falta filename o data' });
   }
-  var mime = String(body.mimeType || '').toLowerCase();
+  var mime = mimeComprobante_(body.mimeType, body.filename);
   if (!esTipoComprobante_(mime)) return json_({ ok: false, error: 'tipo de archivo no permitido (solo fotos o PDF)' });
   try {
     var bytes = Utilities.base64Decode(body.data);
@@ -228,7 +237,7 @@ function carpetaPropia_(propiedad, nombre) {
   var props = PropertiesService.getScriptProperties();
   var id = props.getProperty(propiedad);
   if (id) {
-    try { return DriveApp.getFolderById(id); } catch (err) { /* borrada: se busca/crea de nuevo abajo */ }
+    try { var guardada = DriveApp.getFolderById(id); if (!guardada.isTrashed()) return guardada; } catch (err) { /* borrada: se busca/crea de nuevo abajo */ }
   }
   var yo = Session.getEffectiveUser().getEmail();
   var folders = DriveApp.getFoldersByName(nombre);
