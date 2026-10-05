@@ -4,16 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261003160821">
+<meta name="app-version" content="20261004205919">
 <title>Crumbly</title>
-<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" integrity="sha384-6p9AefaqUhEVheRlj1mpAkbngHXy9mbYMrIdcIt4Jlc9lOLIablJq3bBsLOjGwZ7" crossorigin="anonymous">
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; letter-spacing: 0.01em; }
 :root{
   --bg:#FAFAFA; --line:#E4E4E4; --soft:#D6D6D6; --mid:#8C8C8C; --ink:#111111; --text:#1A1A1A; --muted:#767676; --white:#FFFFFF;
   --danger:#B23B3B; --success:#111111;
-  /* alias retenidos: algo de JS viejo referencia estos nombres */
-  --cream:#FAFAFA; --beige:#E4E4E4; --warm:#D6D6D6; --brown:#767676; --dark:#111111; --accent:#111111;
   /* ─── W1 (Ronda 6): escala tipográfica ───────────────────────────────
      Antes: 14 tamaños literales elegidos caso por caso (9 a 28px, 174
      apariciones — inventario completo en PROGRESO.md § W1). Ahora: 7
@@ -356,13 +354,9 @@ textarea.field{height:auto}
 .item-name{font-size:var(--fs-h3);font-weight:var(--fw-medium);color:var(--ink)}
 .item-sub{font-size:var(--fs-sm);color:var(--muted);margin-top:2px}
 .badge{font-size:var(--fs-xs);font-weight:var(--fw-bold);background:var(--ink);color:var(--white);padding:3px 8px;border-radius:999px;white-space:nowrap}
-.badge-outline{font-size:var(--fs-xs);font-weight:var(--fw-bold);padding:3px 7px;border-radius:999px;background:var(--bg);border:1px solid var(--line);color:var(--ink)}
 .dropzone{display:flex;align-items:center;gap:10px;border:1px dashed var(--soft);border-radius:14px;padding:12px;cursor:pointer;background:var(--bg)}
 .dropzone input{display:none}
 .checkbox-row{display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 0}
-.checkbox-box{width:16px;height:16px;border-radius:6px;border:1px solid var(--soft);display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.checkbox-box.checked{background:var(--ink);border-color:var(--ink)}
-.checkbox-box.checked i{color:#fff;font-size:var(--fs-xs)}
 
 /* ─── Modal ─── */
 .modal-overlay{position:fixed;inset:0;background:rgba(17,17,17,.45);display:none;align-items:center;justify-content:center;z-index:200;padding:20px}
@@ -1601,28 +1595,28 @@ textarea.field{height:auto}
 
 <div class="toast" id="toast"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261003160821"></script>
-<script src="js/rowsync.js?v=20261003160821"></script>
-<script src="js/sync.js?v=20261003160821"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="js/supabaseSync.js?v=20261003160821"></script>
-<script src="js/auth.js?v=20261003160821"></script>
+<script src="js/core.js?v=20261004205919"></script>
+<script src="js/rowsync.js?v=20261004205919"></script>
+<script src="js/sync.js?v=20261004205919"></script>
+<!-- Versión fija + SRI. Es dist/umd/supabase.js (ya viene minificado): el
+     .min.js de jsdelivr se genera al vuelo y no sirve con SRI. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js" integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok" crossorigin="anonymous"></script>
+<script src="js/supabaseSync.js?v=20261004205919"></script>
+<script src="js/auth.js?v=20261004205919"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
-let saleRowCount = 1;
 let ingRowCount = 0;
 let empRowCount = 0;
-let topRowCount = 0;
-let soloTopRowCount = 0;
 
 // Todas las fórmulas de período/costeo/inventario viven en js/core.js
 // (HANDOFF.md §20) — nunca se duplican aquí.
 const fmt = CrumblyCore.formatCOP;
 const esc = CrumblyCore.escapeHtml;
+const normalizarBusqueda_ = CrumblyCore.normalizarBusqueda;
 // Tanda 3 #23: un solo formato de cantidad ("1.000 g", "0,4 kg", "5 und")
 // y uno de costo por unidad de medida ("$4,72/g", "$8.333/und") — ambos en
 // core.js. Hasta 4 decimales solo por debajo de $1 (costo por gramo, ver
@@ -2875,7 +2869,7 @@ function abrirResolverDuplicado_(idA, idB) {
       <div style="font-size:var(--fs-sm);color:var(--ink);margin-bottom:4px">${esc(f.item.nombre)}</div>
       <div style="font-size:var(--fs-xs);color:var(--muted)">Tipo: ${TIPO_INSUMO_LABEL[f.tipo] || f.tipo}</div>
       <div style="font-size:var(--fs-xs);color:var(--muted)">Costo: ${fmtCostoUnitario_(f.item.costo)}/${esc(unidadCorta_(f.item.unidad))}</div>
-      <div style="font-size:var(--fs-xs);color:var(--muted)">Stock: ${fmtCant(f.item.cantidad, f.item.unidad)}</div>
+      <div style="font-size:var(--fs-xs);color:var(--muted)">Stock: ${esc(fmtCant(f.item.cantidad, f.item.unidad))}</div>
       <div style="font-size:var(--fs-xs);color:var(--muted);margin-bottom:8px">Usos: ${uso.productos.length} producto(s), ${uso.preparaciones.length} preparación(es)</div>
       <button class="btn-primary" style="width:100%" onclick="previewRepunte_('${idDescartar}','${idConservar}')">Conservar este</button>
     </div>`;
@@ -4072,7 +4066,7 @@ function addPrepComponenteRow(tipo, refId, valor) {
     </select>
     <input type="search" class="comp-buscar" placeholder="Buscar" autocomplete="off" oninput="onPrepComponenteBuscar('${rowId}')">
     <select class="prep-comp-ref" onchange="calcPrepCosto()"></select>
-    <input type="number" class="prep-comp-valor" placeholder="${placeholder}" value="${valor || ''}" min="0" step="0.0001" oninput="calcPrepCosto()">
+    <input type="number" class="prep-comp-valor" placeholder="${placeholder}" value="${esc(valor || '')}" min="0" step="0.0001" oninput="calcPrepCosto()">
     <button onclick="removePrepComponenteRow('${rowId}')">✕</button>
   </div>`;
   document.getElementById('prep-componentes-wrap').insertAdjacentHTML('beforeend', html);
@@ -4363,7 +4357,7 @@ function addEmpRow(empaqueId = '', cantidad = '') {
     CrumblyCore.filtrarOrdenarPorNombre(state.empaques).map(m => `<option value="${m.id}" ${m.id === empaqueId ? 'selected' : ''}>${esc(m.nombre)}</option>`).join('');
   const html = `<div class="ing-row" id="${rowId}">
     <select onchange="calcProdCost()"><option value="">-- Empaque --</option>${opts}</select>
-    <input type="number" placeholder="cant." value="${cantidad}" min="0" step="0.1" oninput="calcProdCost()">
+    <input type="number" placeholder="cant." value="${esc(cantidad)}" min="0" step="0.1" oninput="calcProdCost()">
     <button onclick="removeEmpRow('${rowId}')">✕</button>
   </div>`;
   document.getElementById('prod-emp-wrap').insertAdjacentHTML('beforeend', html);
@@ -4400,7 +4394,7 @@ function addIngRow(tipo, refId, gramos) {
     </select>
     <input type="search" class="comp-buscar" placeholder="Buscar" autocomplete="off" oninput="onProdComponenteBuscar('${rowId}')">
     <select class="prod-comp-ref" onchange="calcProdCost()"></select>
-    <input type="number" class="prod-comp-gramos" placeholder="cant." value="${gramos || ''}" min="0" step="0.1" oninput="calcProdCost()">
+    <input type="number" class="prod-comp-gramos" placeholder="cant." value="${esc(gramos || '')}" min="0" step="0.1" oninput="calcProdCost()">
     <button onclick="removeIngRow('${rowId}')">✕</button>
   </div>`;
   document.getElementById('prod-ings-wrap').insertAdjacentHTML('beforeend', html);
@@ -4611,7 +4605,7 @@ function abrirDesgloseCosto(productoId) {
     <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:8px 10px;border-radius:8px;background:${l.sospechoso || anomalo ? 'rgba(200,60,60,0.1)' : 'var(--bg)'}">
       <div>
         <div style="font-size:var(--fs-sm);color:var(--ink)">${esc(l.nombre)}${l.sospechoso ? ' <strong style="color:var(--danger)">⚠ costo sospechoso</strong>' : ''}</div>
-        <div style="font-size:var(--fs-xs);color:var(--muted)">${grupoLabel[l.grupo] || l.grupo} · ${l.tipo === 'manual' ? 'monto fijo' : (fmtCant(l.cantidad, l.unidad) + ' × ' + fmtCostoUnitario_(l.cantidad ? l.subtotal / l.cantidad : 0) + '/' + unidadCorta_(l.unidad))}</div>
+        <div style="font-size:var(--fs-xs);color:var(--muted)">${grupoLabel[l.grupo] || l.grupo} · ${l.tipo === 'manual' ? 'monto fijo' : esc(fmtCant(l.cantidad, l.unidad) + ' × ' + fmtCostoUnitario_(l.cantidad ? l.subtotal / l.cantidad : 0) + '/' + unidadCorta_(l.unidad))}</div>
       </div>
       <div style="text-align:right;white-space:nowrap">
         <div style="font-size:var(--fs-sm);color:var(--ink)">${fmt(l.subtotal)}</div>
@@ -4842,7 +4836,6 @@ function renderDraftAdiciones() {
 // Buscador de adiciones: filtra ocultando filas (sin re-dibujar), así no
 // se pierde el foco ni lo que se estaba escribiendo. Ignora tildes.
 let adicionesFiltro = '';
-function normalizarBusqueda_(t) { return String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
 function filtrarAdiciones_(q) {
   adicionesFiltro = q;
   const n = normalizarBusqueda_(q.trim());
@@ -4988,12 +4981,12 @@ function renderCartLines() {
       const precioUnit = l.precio + l.adiciones.reduce((a, x) => a + x.precio, 0);
       const extra = l.adiciones.length ? l.adiciones.map(a => '+ ' + a.label).join(' · ') : (l.toppingId ? 'Topping suelto' : '');
       const cant = l.unidadQty
-        ? `<label class="vf-cant"><input type="number" min="1" step="1" inputmode="numeric" value="${l.qty}" aria-label="Cantidad en ${l.unidadQty}" onchange="setCartLineQty('${l.id}', this.value)">${l.unidadQty}</label>`
+        ? `<label class="vf-cant"><input type="number" min="1" step="1" inputmode="numeric" value="${l.qty}" aria-label="Cantidad en ${esc(l.unidadQty)}" onchange="setCartLineQty('${l.id}', this.value)">${esc(l.unidadQty)}</label>`
         : `<div class="vf-stepper"><button type="button" onclick="cambiarCantLinea_('${l.id}',-1)" aria-label="Menos">−</button><span>${l.qty}</span><button type="button" onclick="cambiarCantLinea_('${l.id}',1)" aria-label="Más">+</button></div>`;
       return `<div class="vf-fila">
         <div class="vf-producto"><div class="vf-producto-nombre">${esc(l.nombre)}</div>${extra ? `<div class="vf-producto-extra">${esc(extra)}</div>` : ''}</div>
         ${cant}
-        <span class="vf-num vf-col-precio">${fmt(precioUnit)}${l.unidadQty ? '/' + l.unidadQty : ''}</span>
+        <span class="vf-num vf-col-precio">${fmt(precioUnit)}${l.unidadQty ? '/' + esc(l.unidadQty) : ''}</span>
         <span class="vf-num" style="font-weight:var(--fw-bold);color:var(--ink)">${fmt(cartLineSubtotal(l))}</span>
         <button type="button" class="vf-quitar" onclick="removeLineFromCart('${l.id}')" aria-label="Quitar"><i class="ph ph-x"></i></button>
       </div>`;
@@ -5755,7 +5748,6 @@ async function entregarPDF_(doc, nombre, avisoDescarga) {
 }
 
 /* ─── EXPORTAR PDF ─── */
-function getWeekRangeLabel() { return getPeriodRangeLabel('semana'); }
 function generateSalesReportPDF() {
   if (!window.jspdf) { showToast('No se pudo cargar el generador de PDF'); return; }
   const { jsPDF } = window.jspdf;
@@ -6114,11 +6106,18 @@ function setPctVariableCategoria(categoria, valorPct) {
   saveState();
   renderReportes();
 }
+// Una celda de CSV. Anti "CSV injection": un texto que empieza con
+// = + - @ tab o CR, Excel/Sheets lo ejecuta como fórmula — se le antepone
+// una comilla simple. Los números de verdad (también "-500" o "-0,4" ya
+// formateados) se dejan como están para que el Sheet los siga sumando.
+function csvCelda_(c) {
+  let s = String(c ?? '');
+  const esNumero = typeof c === 'number' || /^-?\d+([.,]\d+)?$/.test(s);
+  if (!esNumero && /^[=+\-@\t\r]/.test(s)) s = "'" + s;
+  return /[",\n\r;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
 function downloadCSV(filename, rows) {
-  const csv = '\uFEFF' + rows.map(r => r.map(c => {
-    const s = String(c ?? '');
-    return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-  }).join(',')).join('\n');
+  const csv = '\uFEFF' + rows.map(r => r.map(csvCelda_).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -6231,7 +6230,7 @@ function opcionesInsumoGasto_(valor) {
     if (!list.length) return '';
     return `<optgroup label="${label}">` + list.map(x => {
       const v = tipo + ':' + x.id;
-      return `<option value="${esc(v)}" ${v === valor ? 'selected' : ''}>${esc(x.nombre)} (actual: ${fmtCostoUnitario_(x.costo)}/${unidadCortaInsumo_(x)})</option>`;
+      return `<option value="${esc(v)}" ${v === valor ? 'selected' : ''}>${esc(x.nombre)} (actual: ${fmtCostoUnitario_(x.costo)}/${esc(unidadCortaInsumo_(x))})</option>`;
     }).join('') + '</optgroup>';
   }).join('');
   return `<option value="">${grupos ? 'Elegí el insumo' : 'No hay insumos creados'}</option>` + grupos;
@@ -6261,7 +6260,7 @@ function renderGastoLineas() {
         </div>
         <div class="gf-fila">
           <div>
-            <label class="field-label" for="${l.id}-cantidad">Cantidad (<span id="${l.id}-unidad">${u === 'unidad' ? 'unidades' : u}</span>)</label>
+            <label class="field-label" for="${l.id}-cantidad">Cantidad (<span id="${l.id}-unidad">${u === 'unidad' ? 'unidades' : esc(u)}</span>)</label>
             <input type="number" id="${l.id}-cantidad" class="field" inputmode="decimal" placeholder="2000" min="0" step="0.01" value="${esc(l.cantidad)}" oninput="setLineaGasto('${l.id}','cantidad',this.value)">
           </div>
           ${monto}
@@ -7088,111 +7087,6 @@ document.addEventListener('click', function (e) {
   closeModal(id);
 });
 
-// P2-6: doble confirmación porque es destructivo y no hay deshacer.
-// Importación única del menú Crumbly 2026 (PDF que compartió el usuario).
-// Los 12 waffles quedan con precio de venta pero SIN fórmula — el menú no
-// trae gramos/costos, así que no se inventa un costeo falso (P0-2: el
-// costo siempre se calcula en vivo desde la fórmula real, nunca se
-// fabrica). Los complementos a la carta (salsas/toppings/frutas/base) se
-// cargan como toppings vendibles (mismo mecanismo de "vender un topping
-// suelto" recién restaurado) con costo $0 — el menú solo trae el precio
-// al cliente, no el costo del insumo. Idempotente: si ya existe un
-// producto/topping con ese nombre exacto, no lo duplica — se puede tocar
-// el botón más de una vez sin miedo.
-// ponytail: función sin caller — quedó del import inicial del menú
-// (Ajustes → "Importar menú Crumbly 2026", retirado del UI a pedido
-// explícito el 30 ago 2026 porque era una herramienta de una sola vez,
-// no algo para la app ya lista para lanzar). Se deja el código acá por
-// si hace falta re-importar el menú alguna vez — borrarla si no.
-function importMenuCrumbly() {
-  const waffles = [
-    { nombre: 'New York (Waffle)', categoria: 'Waffle', precio: 24000 },
-    { nombre: 'Brasil (Waffle)', categoria: 'Waffle', precio: 24000 },
-    { nombre: 'London (Waffle)', categoria: 'Waffle', precio: 24000 },
-    { nombre: 'Caramel (Waffle)', categoria: 'Waffle', precio: 20000 },
-    { nombre: 'New York (Waffle Belga)', categoria: 'Waffle Belga', precio: 18000 },
-    { nombre: 'Brasil (Waffle Belga)', categoria: 'Waffle Belga', precio: 18000 },
-    { nombre: 'London (Waffle Belga)', categoria: 'Waffle Belga', precio: 18000 },
-    { nombre: 'Caramel (Waffle Belga)', categoria: 'Waffle Belga', precio: 16000 },
-    { nombre: 'New York (Croffle)', categoria: 'Croffle', precio: 22000 },
-    { nombre: 'Brasil (Croffle)', categoria: 'Croffle', precio: 22000 },
-    { nombre: 'London (Croffle)', categoria: 'Croffle', precio: 22000 },
-    { nombre: 'Caramel (Croffle)', categoria: 'Croffle', precio: 20000 }
-  ];
-  const complementos = [
-    // Salsas
-    { nombre: 'Honey butter', categoria: 'Salsas', precio: 4500 },
-    { nombre: 'Nutella', categoria: 'Salsas', precio: 5600 },
-    { nombre: 'Chocolate 43%', categoria: 'Salsas', precio: 4500 },
-    { nombre: 'Arequipe', categoria: 'Salsas', precio: 1500 },
-    { nombre: 'Ganache chocolate', categoria: 'Salsas', precio: 2000 },
-    { nombre: 'Chocolate blanco', categoria: 'Salsas', precio: 2600 },
-    { nombre: 'Frutos rojos (mermelada)', categoria: 'Salsas', precio: 3500 },
-    { nombre: 'Frutos amarillos (mermelada)', categoria: 'Salsas', precio: 3500 },
-    { nombre: 'Caramelo salado', categoria: 'Salsas', precio: 2500 },
-    // Toppings
-    { nombre: 'Marañón', categoria: 'Toppings', precio: 3000 },
-    { nombre: 'Maní', categoria: 'Toppings', precio: 2000 },
-    { nombre: 'Crocante de pistacho', categoria: 'Toppings', precio: 2000 },
-    { nombre: 'Nuez de brasil', categoria: 'Toppings', precio: 2800 },
-    { nombre: 'Almendra laminada', categoria: 'Toppings', precio: 2500 },
-    { nombre: 'Miel', categoria: 'Toppings', precio: 2000 },
-    { nombre: 'Helado de vainilla', categoria: 'Toppings', precio: 4900 },
-    { nombre: 'Crumble de galleta', categoria: 'Toppings', precio: 2000 },
-    { nombre: 'Crema', categoria: 'Toppings', precio: 3500 },
-    // Frutas
-    { nombre: 'Kiwi', categoria: 'Frutas', precio: 2000 },
-    { nombre: 'Fresas', categoria: 'Frutas', precio: 2000 },
-    { nombre: 'Banano', categoria: 'Frutas', precio: 1000 },
-    { nombre: 'Zarzamoras', categoria: 'Frutas', precio: 7500 },
-    { nombre: 'Frambuesas', categoria: 'Frutas', precio: 6500 },
-    { nombre: 'Arándanos', categoria: 'Frutas', precio: 3800 },
-    { nombre: 'Mango', categoria: 'Frutas', precio: 2000 },
-    // Base (waffle solo, sin armar)
-    { nombre: 'Waffle belga (base)', categoria: 'Base', precio: 5000 },
-    { nombre: 'Croffle (base)', categoria: 'Base', precio: 7200 },
-    { nombre: 'Waffle de arroz (base)', categoria: 'Base', precio: 7000 }
-  ];
-
-  let productosAgregados = 0, productosOmitidos = 0;
-  waffles.forEach(w => {
-    if (state.productos.some(p => p.nombre === w.nombre)) { productosOmitidos++; return; }
-    state.productos.push({ id: uid(), nombre: w.nombre, categoria: w.categoria, precio: w.precio, componentes: [], empaquesUsados: [], empaqueManual: 0, foto: '' });
-    productosAgregados++;
-  });
-
-  // Cada complemento se vende como su propia línea de venta (igual que un
-  // producto) vía "Vender un topping suelto" — NO como adición: marcarlos
-  // esAdicion mostraba los 28 como una pared de chips debajo de CADA
-  // producto en el modal de Venta, antes incluso de elegir un producto.
-  // Si un import anterior ya los había marcado como adición, se revierte
-  // aquí (upsert en los dos sentidos, sigue siendo idempotente).
-  let toppingsAgregados = 0, toppingsActualizados = 0;
-  complementos.forEach(c => {
-    const existente = state.toppings.find(t => t.nombre === c.nombre);
-    if (existente) {
-      if (existente.esAdicion) {
-        existente.esAdicion = false;
-        existente.precioAdicion = 0;
-        existente.porcion = 0;
-        toppingsActualizados++;
-      }
-      return;
-    }
-    state.toppings.push({
-      id: uid(), nombre: c.nombre, categoria: c.categoria, cantidad: 0, costo: 0, precio: c.precio, minimo: 0, unidad: 'unidad',
-      margenVariable: false, esAdicion: false, precioAdicion: 0, porcion: 0, nombreAdicion: ''
-    });
-    toppingsAgregados++;
-  });
-
-  saveState();
-  refreshAll();
-  const partes = [`${productosAgregados} waffles y ${toppingsAgregados} complementos nuevos`];
-  if (toppingsActualizados) partes.push(`${toppingsActualizados} complementos corregidos`);
-  if (productosOmitidos) partes.push(`${productosOmitidos} waffles ya existían`);
-  showToast('Importado: ' + partes.join(' · '));
-}
 function refreshAll() {
   updateHeaderDate();
   renderInventario();
