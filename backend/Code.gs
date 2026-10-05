@@ -148,20 +148,28 @@ function doPost(e) {
 }
 
 // ─── Comprobantes (fotos/PDF de pago, ventas y gastos) ─────────────────
-// Sube el archivo (base64) a una carpeta de Drive del dueño del script —
-// NO se comparte públicamente: el archivo queda visible solo para la
-// cuenta de Google que desplegó el script (misma cuenta que ya lee/escribe
-// la hoja), igual que cualquier archivo que crees a mano en tu Drive. Si
-// quieres compartir uno puntual, hazlo desde Drive normalmente.
+// Sube el archivo (base64) a una carpeta de Drive del dueño del script y lo
+// deja visible para "cualquiera con el link" (ver abajo: la app lo muestra
+// con ese link). Solo imágenes y PDF, hasta 10 MB.
 var COMPROBANTES_FOLDER = 'Crumbly - Comprobantes';
+var COMPROBANTE_MAX_BYTES = 10 * 1024 * 1024;
+var RESPALDO_MAX_BYTES = 25 * 1024 * 1024;
+
+function esTipoComprobante_(mime) {
+  return /^image\/(jpeg|png|webp|gif|heic|heif)$/.test(mime) || mime === 'application/pdf';
+}
 
 function uploadComprobante_(body) {
   if (!body.filename || !body.data) {
     return json_({ ok: false, error: 'falta filename o data' });
   }
+  var mime = String(body.mimeType || '').toLowerCase();
+  if (!esTipoComprobante_(mime)) return json_({ ok: false, error: 'tipo de archivo no permitido (solo fotos o PDF)' });
   try {
     var bytes = Utilities.base64Decode(body.data);
-    var blob = Utilities.newBlob(bytes, body.mimeType || 'application/octet-stream', body.filename);
+    if (bytes.length > COMPROBANTE_MAX_BYTES) return json_({ ok: false, error: 'el archivo pesa más de 10 MB' });
+    var nombre = String(body.filename).replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').slice(0, 120);
+    var blob = Utilities.newBlob(bytes, mime, nombre);
     var folder = getOrCreateMesFolder_(getOrCreateComprobantesFolder_(), mesComprobante_(body.fecha));
     var file = folder.createFile(blob);
     // "Cualquiera con el link" — necesario para que las fotos de producto
@@ -194,11 +202,12 @@ function guardarRespaldo_(body) {
     return json_({ ok: false, error: 'respaldo inválido' });
   }
   try {
-    var folders = DriveApp.getFoldersByName(RESPALDOS_FOLDER);
-    var folder = folders.hasNext() ? folders.next() : DriveApp.createFolder(RESPALDOS_FOLDER);
+    var bytes = Utilities.base64Decode(body.data);
+    if (bytes.length > RESPALDO_MAX_BYTES) return json_({ ok: false, error: 'respaldo demasiado grande' });
+    var folder = carpetaPropia_('CRUMBLY_RESPALDOS_FOLDER_ID', RESPALDOS_FOLDER);
     var viejos = folder.getFilesByName(body.filename);
     while (viejos.hasNext()) viejos.next().setTrashed(true);
-    var blob = Utilities.newBlob(Utilities.base64Decode(body.data), 'application/json', body.filename);
+    var blob = Utilities.newBlob(bytes, 'application/json', body.filename);
     return json_({ ok: true, fileId: folder.createFile(blob).getId() });
   } catch (err) {
     return json_({ ok: false, error: String(err) });
@@ -206,9 +215,32 @@ function guardarRespaldo_(body) {
 }
 
 function getOrCreateComprobantesFolder_() {
-  var folders = DriveApp.getFoldersByName(COMPROBANTES_FOLDER);
-  if (folders.hasNext()) return folders.next();
-  return DriveApp.createFolder(COMPROBANTES_FOLDER);
+  return carpetaPropia_('CRUMBLY_COMPROBANTES_FOLDER_ID', COMPROBANTES_FOLDER);
+}
+
+// Carpeta raíz de Crumbly en Drive, guardada por ID en las Script
+// Properties. Buscar solo por nombre era riesgoso: getFoldersByName también
+// devuelve carpetas que OTRA cuenta comparte con el dueño (el nombre es
+// público en el repo), y los respaldos podían terminar en la carpeta de un
+// tercero. La primera vez se adopta una carpeta con ese nombre solo si es
+// del dueño del script; si no hay, se crea.
+function carpetaPropia_(propiedad, nombre) {
+  var props = PropertiesService.getScriptProperties();
+  var id = props.getProperty(propiedad);
+  if (id) {
+    try { return DriveApp.getFolderById(id); } catch (err) { /* borrada: se busca/crea de nuevo abajo */ }
+  }
+  var yo = Session.getEffectiveUser().getEmail();
+  var folders = DriveApp.getFoldersByName(nombre);
+  var folder = null;
+  while (folders.hasNext()) {
+    var f = folders.next();
+    var duenio = f.getOwner();
+    if (duenio && duenio.getEmail() === yo) { folder = f; break; }
+  }
+  if (!folder) folder = DriveApp.createFolder(nombre);
+  props.setProperty(propiedad, folder.getId());
+  return folder;
 }
 
 // Una subcarpeta por mes dentro de "Crumbly - Comprobantes" (ej. "2026-10"),
@@ -236,7 +268,11 @@ function isValidSession_(token) {
   var row = findRowByValue_(getSesionesSheet_(), 0, token);
   if (!row) return false;
   var expira = new Date(row.data[3]);
-  return expira.getTime() > Date.now();
+  if (!(expira.getTime() > Date.now())) return false;
+  // Desactivar a alguien en "usuarios" corta también sus sesiones abiertas
+  // (antes seguían valiendo hasta 90 días).
+  var usuario = findUsuarioByEmail_(String(row.data[1] || '').trim().toLowerCase());
+  return !!usuario && isActivoCell_(usuario.data[4]);
 }
 
 function mintSession_(email) {
@@ -282,6 +318,7 @@ function authGoogle_(body) {
   // cualquiera, solo en uno que Google mismo certifica como válido y
   // recién emitido para nuestra app.
   if (!info || info.aud !== clientId) return json_({ success: false, authorized: false, message: 'token de Google inválido' });
+  if (info.iss !== 'accounts.google.com' && info.iss !== 'https://accounts.google.com') return json_({ success: false, authorized: false, message: 'token de Google inválido' });
   if (info.email_verified !== 'true' && info.email_verified !== true) return json_({ success: false, authorized: false, message: 'correo de Google no verificado' });
   var email = String(info.email || '').trim().toLowerCase();
 
