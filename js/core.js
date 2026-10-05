@@ -969,16 +969,6 @@
     return costo;
   }
 
-  function getEmpaqueTotalProducto(producto, state) {
-    if (!producto) return 0;
-    var total = Number(producto.empaqueManual) || 0;
-    (producto.empaquesUsados || []).forEach(function (e) {
-      var m = (state.empaques || []).find(function (x) { return x.id === e.empaqueId; });
-      if (m) total += costoPorGramoInsumo_(m) * (Number(e.cantidad) || 0);
-    });
-    return total;
-  }
-
   // C1 (auditoría de costeo): el empaque hoy va MEZCLADO dentro del costo
   // del plato — Toast y R365 lo reportan como línea aparte ("paper cost").
   // Esta función desglosa exactamente el mismo recorrido que
@@ -1937,10 +1927,7 @@
   // agregado por tipo+id, recorriendo AMBOS tipos de ítem de venta
   // (productoId y toppingId — antes solo se miraba productoId).
   // Expande el consumo teórico de un conjunto YA FILTRADO de ventas —
-  // compartido por getConsumptionRolling (ventana móvil de N días) y
-  // getConsumptionEnRango (D1: rango exacto de fechas, para que la
-  // varianza compare el mismo período que el snapshot inicial/final, sin
-  // el redondeo a días enteros de la ventana móvil).
+  // lo usa getConsumptionRolling (ventana móvil de N días).
   function consumoTeoricoDeVentas(state, ventas) {
     var consumo = { materia: {}, empaques: {}, toppings: {} };
     function add(bucket, id, cant) {
@@ -1973,12 +1960,6 @@
   }
   function getConsumptionRolling(state, days, ref) {
     return consumoTeoricoDeVentas(state, getVentasRolling(state.ventas, days || 7, ref));
-  }
-  // D1: mismo motor, pero sobre un rango exacto [startISO, endISO] — la
-  // varianza necesita el consumo teórico del MISMO período que cubren
-  // los snapshots, no una ventana de N días redondeados.
-  function getConsumptionEnRango(state, startISO, endISO) {
-    return consumoTeoricoDeVentas(state, getVentasByRange(state.ventas, startISO, endISO));
   }
 
   function calcInventoryNeeds(state, days, ref) {
@@ -3971,7 +3952,6 @@
     emptyState: emptyState,
     migrateState: migrateState,
     getCostoProducto: getCostoProducto,
-    getEmpaqueTotalProducto: getEmpaqueTotalProducto,
     aplicarComponentes: aplicarComponentes,
     getCostoProductoDesglosado: getCostoProductoDesglosado,
     getDesgloseCostoProducto: getDesgloseCostoProducto,
@@ -3990,7 +3970,6 @@
     filtrarOrdenarPorNombre: filtrarOrdenarPorNombre,
     revertVenta: revertVenta,
     getConsumptionRolling: getConsumptionRolling,
-    getConsumptionEnRango: getConsumptionEnRango,
     calcInventoryNeeds: calcInventoryNeeds,
     findProductosUsandoMateria: findProductosUsandoMateria,
     findProductosUsandoEmpaque: findProductosUsandoEmpaque,
