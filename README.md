@@ -12,6 +12,8 @@ index.html        # la app completa (UI + script inline)
 js/core.js        # lógica de negocio pura (costeo, ventas, stock, períodos) — con tests
 js/supabaseSync.js# sincronización con Supabase (push por diferencias, pull incremental)
 js/auth.js        # login con Google → Supabase (+ sesión de Apps Script)
+js/almacen.js     # state y base de Supabase en IndexedDB (sin el tope de ~5 MB de
+                  #   localStorage); el resto de llaves chicas sigue en localStorage
 js/sync.js        # subidas a Drive y respaldo diario vía Apps Script; además el
 js/rowsync.js     #   camino viejo a Google Sheets (solo emergencia: localStorage
                   #   'crumbly-backend' = 'sheets')
