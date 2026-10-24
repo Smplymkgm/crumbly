@@ -244,3 +244,34 @@ Date: 2026-10-24 · Status: COMPLETE
 Que el dueño abra la app en el celular: "Sincronizado", ventas visibles y
 archivo del día en "Crumbly - Respaldos" (Drive de crumbly2026). Luego ciclo
 final.
+
+---
+
+# AUDIT CYCLE 5 — FINAL (verificación independiente)
+
+Date: 2026-10-24 · Status: COMPLETE
+
+Verificador independiente sobre HEAD 42e9616: 0 CRITICAL, 0 HIGH. 533
+tests, node --check OK, producción sirve la versión de HEAD, pg_policies y
+asesores OK, sw.js correcto, matemática de descuentos consistente, XSS sin
+hallazgos nuevos.
+
+Hallazgos y arreglos (este ciclo):
+- MEDIUM: el cursor `desde` se guardaba antes de que IndexedDB confirmara
+  state+base → ahora solo tras `guardarStateYBase_` OK.
+- LOW: migración mezclaba llaves de IndexedDB y localStorage → solo migra
+  si IndexedDB no tiene ninguna.
+- LOW: total con centavos (toppings por gramo) y tope del descuento → total
+  redondeado a pesos en `applyVenta`, descuento con tope correcto (test).
+- LOW: punto de equilibrio ignoraba descuentos → `getCMPonderado` los
+  descuenta (test).
+- LOW: `errores_insertar` no ataba el email al JWT → corregido y aplicado
+  (verificado en pg_policies).
+
+Confirmado por el dueño en el celular: "Sincronizado ✓", ventas visibles,
+`respaldo_2026-10-24.json` en Drive (12:38), tabla `errores` vacía.
+
+## CYCLE RESULT
+PRODUCTION_READY. Quedan como revisión humana (no bloquean): comprobantes
+con link público, repo público, proyectos de Apps Script "sin título"
+sueltos en crumbly2026.

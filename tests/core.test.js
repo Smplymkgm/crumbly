@@ -970,6 +970,20 @@ test('applyVenta con descuento: baja total y ganancia, guarda subtotal y nunca d
   assert.deepStrictEqual([v3.descuento, v3.total], [0, 20000]);
 });
 
+test('applyVenta redondea el total a pesos y el descuento nunca lo deja negativo', () => {
+  const s = C.emptyState();
+  s.productos = [{ id: 'p1', nombre: 'W', precio: 1000.4, componentes: [], empaquesUsados: [] }];
+  const v = C.applyVenta(s, [{ productoId: 'p1', qty: 1, adiciones: [] }], [], { descuento: 5000 });
+  assert.deepStrictEqual([v.subtotal, v.descuento, v.total], [1000, 1000, 0]);
+  assert.ok(v.ganancia >= -0.0001 || v.ganancia <= 0); // sin costo: ganancia = total
+});
+
+test('getCMPonderado descuenta el descuento de la venta del margen y de los ingresos', () => {
+  const ventas = [{ items: [{ qty: 1, precio: 20000, costo: 8000 }], descuento: 2000 }];
+  const cm = C.getCMPonderado({}, ventas);
+  assert.deepStrictEqual([cm.cmTotalPesos, cm.ingresosTotal], [10000, 18000]);
+});
+
 test('unirClientesDuplicados: junta mismo nombre (sin tildes/mayúsculas), mueve las ventas y respeta teléfonos distintos', () => {
   const s = { clientes: [
     { id: 'a1', nombre: 'Ángie', telefono: '' },

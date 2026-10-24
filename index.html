@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261024122143">
+<meta name="app-version" content="20261024124636">
 <title>Crumbly</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -1622,15 +1622,15 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261024122143"></script>
-<script src="js/rowsync.js?v=20261024122143"></script>
-<script src="js/sync.js?v=20261024122143"></script>
+<script src="js/core.js?v=20261024124636"></script>
+<script src="js/rowsync.js?v=20261024124636"></script>
+<script src="js/sync.js?v=20261024124636"></script>
 <!-- Versión fija + SRI. Es dist/umd/supabase.js (ya viene minificado): el
      .min.js de jsdelivr se genera al vuelo y no sirve con SRI. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js" integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok" crossorigin="anonymous"></script>
-<script src="js/supabaseSync.js?v=20261024122143"></script>
-<script src="js/auth.js?v=20261024122143"></script>
-<script src="js/almacen.js?v=20261024122143"></script>
+<script src="js/supabaseSync.js?v=20261024124636"></script>
+<script src="js/auth.js?v=20261024124636"></script>
+<script src="js/almacen.js?v=20261024124636"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -1901,12 +1901,16 @@ function guardarStateYBase_(base) {
     try { CrumblyAlmacen.remove(SUPABASE_BASE_KEY); } catch (e2) {}
     avisarAlmacenamientoLleno_();
   };
+  // Devuelve si quedó guardado: el cursor `desde` del pull incremental se
+  // guarda SOLO después (si no, tras un cierre a mitad de escritura la
+  // próxima apertura tendría el state viejo con el cursor nuevo y se
+  // saltearía los cambios de ese intervalo).
   try {
-    CrumblyAlmacen.setMany({
+    return CrumblyAlmacen.setMany({
       'crumbly-state': JSON.stringify(stateSinConteoEnProgreso()),
       [SUPABASE_BASE_KEY]: JSON.stringify(base),
-    }).then(ok => { if (!ok) fallo(); });
-  } catch (e) { fallo(); }
+    }).then(ok => { if (!ok) fallo(); return !!ok; });
+  } catch (e) { fallo(); return Promise.resolve(false); }
 }
 
 // Sube lo que cambió desde la base. Lo enviado se copia ANTES de mandar:
@@ -2009,8 +2013,8 @@ function aplicarPullCompleto_(r) {
   state = migrarState_(r.state);
   restaurarConteoEnProgresoLocal();
   state.config.lastSync = new Date().toISOString();
-  guardarStateYBase_(copiaParaSync_());
-  saveSupabaseDesde(r.hasta);
+  const hasta = r.hasta;
+  guardarStateYBase_(copiaParaSync_()).then(ok => { if (ok) saveSupabaseDesde(hasta); });
   cambioSinSubirDesde = null;
   iniciarRealtime_();
   return { ok: true };
@@ -2040,8 +2044,8 @@ function aplicarCambiosSupabase_(r) {
   }
   state.config.lastSync = new Date().toISOString();
   if (base.config) base.config.lastSync = state.config.lastSync; // lastSync es de este dispositivo: no cuenta como cambio a subir
-  guardarStateYBase_(base);
-  saveSupabaseDesde(r.hasta);
+  const hasta = r.hasta;
+  guardarStateYBase_(base).then(ok => { if (ok) saveSupabaseDesde(hasta); });
   if (pedidosNuevos) avisarPedidoNuevo_();
   iniciarRealtime_();
 }

@@ -2127,7 +2127,12 @@
     // Descuento de toda la venta, en pesos (la pantalla convierte el %).
     // Baja lo cobrado y la ganancia; el costo y los precios de cada ítem
     // no cambian. Nunca más que lo vendido ni negativo.
-    var descuento = Math.round(Math.min(Math.max(Number(opts.descuento) || 0, 0), total));
+    // Total en pesos enteros (los toppings por gramo dejan centavos): así
+    // coincide con lo que la pantalla cobra y valida en el pago dividido.
+    var centavos = Math.round(total) - total;
+    total += centavos;
+    ganancia += centavos;
+    var descuento = Math.min(Math.round(Math.max(Number(opts.descuento) || 0, 0)), total);
     var metodoPago = opts.metodoPago || 'efectivo';
     var venta = {
       id: opts.id || genId(),
@@ -3207,6 +3212,12 @@
         cmTotalPesos += cmUnit * qty;
         ingresosTotal += (Number(item.precio) || 0) * qty;
       });
+      // El descuento de la venta baja lo cobrado y lo que deja (los precios
+      // de cada ítem son de lista): sin esto el punto de equilibrio salía
+      // más bajo de lo real en días con descuentos.
+      var desc = Number(v.descuento) || 0;
+      cmTotalPesos -= desc;
+      ingresosTotal -= desc;
     });
     return {
       cmPromedioPesos: totalQty > 0 ? cmTotalPesos / totalQty : 0,

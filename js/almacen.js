@@ -126,10 +126,14 @@
         .then(function (valores) {
           var almacen = ls();
           var migrar = {};
+          // Se migra desde localStorage solo si IndexedDB no tiene NINGUNA de
+          // las llaves: mezclar un state de IndexedDB con una base vieja de
+          // localStorage (o al revés) dejaría la base desfasada del state.
+          var idbVacio = LLAVES.every(function (k) { return valores[k] === null || valores[k] === undefined; });
           LLAVES.forEach(function (k) {
             if (tocadasAntes[k]) return;
             var v = valores[k];
-            if (v === null || v === undefined) {
+            if ((v === null || v === undefined) && idbVacio) {
               var viejo = null;
               try { viejo = almacen ? almacen.getItem(k) : null; } catch (e) { viejo = null; }
               if (viejo !== null && viejo !== undefined) { v = viejo; migrar[k] = viejo; }
