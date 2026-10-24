@@ -39,8 +39,8 @@ Ninguno.
 
 ## HIGH
 Ninguno en código. Acciones del dueño (bloquean PRODUCTION_READY):
-1. Correr `0004_rls_initplan.sql` + `0005_errores.sql` en el SQL Editor
-   (verificado 2026-10-24: 0004 todavía no aplicada).
+1. ~~Correr 0004 + 0005~~ → aplicadas 2026-10-24 y verificadas (pg_policies;
+   asesor de rendimiento sin avisos de initplan).
 2. Supabase → Authentication → Providers: desactivar **Email** y los
    registros nuevos (cualquiera puede crear una cuenta; no ve datos, pero
    hoy sí ve la lista de usuarios hasta que se aplique 0004).
@@ -50,8 +50,9 @@ Ninguno en código. Acciones del dueño (bloquean PRODUCTION_READY):
 ## MEDIUM
 - Comprobantes con link público (cualquiera con la URL los ve). Hacerlos
   privados requiere un proxy autenticado — HUMAN_REVIEW_REQUIRED.
-- localStorage: estado + base ≈ 2× el estado; Safari ~5 MB ≈ 1.500–2.000
-  ventas. Plan: guardar solo los últimos N días o pasar a IndexedDB.
+- ~~Tope de localStorage~~ → resuelto (ed90cd5): state y base en IndexedDB
+  (`js/almacen.js`), escritos juntos en una transacción; migración automática
+  desde localStorage; probado con ~35 MB / 26.000 ventas.
 - ~~Sin PWA~~ → resuelto (f314ee3): manifest, íconos y `sw.js` network-first
   (no esconde versiones nuevas; arranque offline desde caché).
 - ~~Sin monitoreo~~ → resuelto en código (7d69e6d): errores a la tabla
