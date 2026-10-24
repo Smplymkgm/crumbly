@@ -1,6 +1,6 @@
 # AUDIT STATE
 
-Status: READY_FOR_REVIEW  (pendiente: acciones del dueño → luego ciclo final)
+Status: READY_FOR_REVIEW  (acciones del dueño hechas 2026-10-24; falta confirmar en el celular)
 
 Current audit cycle: 2
 
@@ -41,11 +41,14 @@ Ninguno.
 Ninguno en código. Acciones del dueño (bloquean PRODUCTION_READY):
 1. ~~Correr 0004 + 0005~~ → aplicadas 2026-10-24 y verificadas (pg_policies;
    asesor de rendimiento sin avisos de initplan).
-2. Supabase → Authentication → Providers: desactivar **Email** y los
-   registros nuevos (cualquiera puede crear una cuenta; no ve datos, pero
-   hoy sí ve la lista de usuarios hasta que se aplique 0004).
-3. Redesplegar el Apps Script con `backend/Code.gs` (sesiones de usuarios
-   desactivados, validación de subidas, carpetas por ID).
+2. ~~Desactivar proveedor Email~~ → hecho 2026-10-24 (verificado en
+   /auth/v1/settings: email=false, google=true). Registro con Google sigue
+   abierto a propósito (empleados nuevos); sin estar en `usuarios` no ven datos.
+3. ~~Redesplegar Apps Script~~ → hecho 2026-10-24: "Crumbly Backend",
+   implementación "Autenticación con Google" (la URL que usa la app) pasó de
+   la versión 3 (29 ago) a la 6. Hallazgo: los redespliegues anteriores
+   habían ido a proyectos nuevos sin título, así que el respaldo diario y las
+   carpetas por mes nunca habían funcionado. Corrió sin pedir permisos nuevos.
 
 ## MEDIUM
 - Comprobantes con link público (cualquiera con la URL los ve). Hacerlos

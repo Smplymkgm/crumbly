@@ -219,3 +219,28 @@ localStorage, repo público, total del carrito duplicado.
 
 ## CYCLE RESULT
 IMPROVED
+
+---
+
+# AUDIT CYCLE 4 — ACCIONES DEL DUEÑO (con el navegador)
+
+Date: 2026-10-24 · Status: COMPLETE
+
+- 0004 + 0005 corridas en el SQL Editor. Primer intento con
+  `(select auth.jwt() ->> 'email')` dejó el aviso initplan; se reescribió a
+  `((select auth.jwt()) ->> 'email')` (265adfc) y se volvió a correr:
+  asesor de rendimiento sin initplan (solo 5 INFO de índices sin uso).
+  pg_policies verificado.
+- Proveedor Email desactivado (verificado por /auth/v1/settings).
+- Apps Script: el código nuevo se pegó en "Crumbly Backend" y se publicó
+  como versión 6 en la implementación AKfycbwh… (la de la app). Antes
+  corría la versión 3 del 29 ago: el respaldo diario (acción `respaldo`) y
+  las carpetas por mes nunca habían estado activos. Hay 2 proyectos "sin
+  título" de crumbly2026 (3 oct) con código suelto que no usa nadie.
+- Almacenamiento: state y base pasaron a IndexedDB (ed90cd5), probado con
+  ~35 MB / 26.000 ventas y con migración desde localStorage.
+
+## PENDIENTE PARA PRODUCTION_READY
+Que el dueño abra la app en el celular: "Sincronizado", ventas visibles y
+archivo del día en "Crumbly - Respaldos" (Drive de crumbly2026). Luego ciclo
+final.
