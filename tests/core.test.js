@@ -959,6 +959,17 @@ test('findOrCreateCliente: un teléfono escrito en el campo de nombre se trata c
   assert.strictEqual(C.buscarCliente(s, 'Beto', ''), null);
 });
 
+test('applyVenta con descuento: baja total y ganancia, guarda subtotal y nunca descuenta más que lo vendido', () => {
+  const s = C.emptyState();
+  s.productos = [{ id: 'p1', nombre: 'Waffle', precio: 20000, componentes: [], empaquesUsados: [] }];
+  const v = C.applyVenta(s, [{ productoId: 'p1', qty: 2, adiciones: [] }], [], { descuento: 5000 });
+  assert.deepStrictEqual([v.subtotal, v.descuento, v.total, v.ganancia], [40000, 5000, 35000, 35000]);
+  const v2 = C.applyVenta(s, [{ productoId: 'p1', qty: 1, adiciones: [] }], [], { descuento: 99999 });
+  assert.deepStrictEqual([v2.descuento, v2.total], [20000, 0]);
+  const v3 = C.applyVenta(s, [{ productoId: 'p1', qty: 1, adiciones: [] }], [], {});
+  assert.deepStrictEqual([v3.descuento, v3.total], [0, 20000]);
+});
+
 test('unirClientesDuplicados: junta mismo nombre (sin tildes/mayúsculas), mueve las ventas y respeta teléfonos distintos', () => {
   const s = { clientes: [
     { id: 'a1', nombre: 'Ángie', telefono: '' },

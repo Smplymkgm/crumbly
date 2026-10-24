@@ -1311,7 +1311,9 @@
   // y getVentasCostoInvalidoEnPeriodo (V3.4, acotada a un período).
   function ventaCostoInvalido_(v) {
     var costoTotal = (v.items || []).reduce(function (a, it) { return a + (Number(it.costo) || 0) * (Number(it.qty) || 0); }, 0);
-    return costoTotal > (Number(v.total) || 0);
+    // Contra lo vendido antes del descuento: una cortesía o un descuento
+    // grande no es un costo mal guardado.
+    return costoTotal > (Number(v.subtotal !== undefined ? v.subtotal : v.total) || 0);
   }
 
   // ─── V3.4 (auditoría Ronda 5): el dashboard no puede promediar basura en
@@ -2122,13 +2124,19 @@
 
     if (!items.length) return null;
 
+    // Descuento de toda la venta, en pesos (la pantalla convierte el %).
+    // Baja lo cobrado y la ganancia; el costo y los precios de cada ítem
+    // no cambian. Nunca más que lo vendido ni negativo.
+    var descuento = Math.round(Math.min(Math.max(Number(opts.descuento) || 0, 0), total));
     var metodoPago = opts.metodoPago || 'efectivo';
     var venta = {
       id: opts.id || genId(),
       fecha: opts.fecha || new Date().toISOString(),
       items: items,
-      total: total,
-      ganancia: ganancia,
+      subtotal: total,
+      descuento: descuento,
+      total: total - descuento,
+      ganancia: ganancia - descuento,
       stockInsuficiente: !!opts.stockInsuficiente,
       consumoReal: consumoReal,
       faltanteGenerado: faltanteGenerado,

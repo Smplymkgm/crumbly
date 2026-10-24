@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261004210728">
+<meta name="app-version" content="20261024114638">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" integrity="sha384-6p9AefaqUhEVheRlj1mpAkbngHXy9mbYMrIdcIt4Jlc9lOLIablJq3bBsLOjGwZ7" crossorigin="anonymous">
 <style>
@@ -241,6 +241,9 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 .chip{border:1px solid var(--soft);background:var(--white);color:var(--text);font-size:var(--fs-sm);font-weight:var(--fw-medium);padding:6px 12px;border-radius:999px;cursor:pointer;transition:background .12s ease,border-color .12s ease}
 .chip.active{background:var(--ink);color:var(--white);border-color:var(--ink)}
 .chip:not(.active):hover{background:var(--bg);border-color:var(--mid)}
+.venta-descuento{display:flex;align-items:center;gap:10px;margin-top:10px}
+.venta-descuento .field{flex:1;min-width:0;max-width:160px}
+.vf-descuento-linea{color:var(--muted)}
 .vista-toggle{display:inline-flex;gap:2px;padding:3px;background:var(--white);border:1px solid var(--line);border-radius:999px;flex-shrink:0}
 .vista-toggle button{border:none;background:transparent;width:36px;height:32px;border-radius:999px;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px}
 .vista-toggle button.active{background:var(--bg);color:var(--ink)}
@@ -1375,8 +1378,22 @@ textarea.field{height:auto}
           <span>Producto</span><span class="vf-centro">Cant.</span><span class="vf-num vf-col-precio">Precio</span><span class="vf-num">Total</span><span></span>
         </div>
         <div id="venta-cart-lines"></div>
+        <div class="vf-fila vf-pie vf-descuento-linea" id="venta-subtotal-fila" style="display:none">
+          <span>Subtotal</span><span id="venta-subtotal" class="vf-num">$0</span>
+        </div>
+        <div class="vf-fila vf-pie vf-descuento-linea" id="venta-descuento-fila" style="display:none">
+          <span>Descuento</span><span id="venta-descuento-monto" class="vf-num">$0</span>
+        </div>
         <div class="vf-fila vf-pie">
           <span>Total</span><strong id="venta-cart-total" class="vf-num">$0</strong>
+        </div>
+      </div>
+      <div class="venta-descuento">
+        <label class="field-label" for="venta-descuento" style="margin:0">Descuento</label>
+        <input type="number" id="venta-descuento" class="field" inputmode="decimal" min="0" step="any" placeholder="0" oninput="renderVentaTotal_()">
+        <div class="vista-toggle" role="group" aria-label="Tipo de descuento">
+          <button type="button" data-desc="monto" class="active" onclick="setVentaDescuentoTipo('monto')" aria-label="En pesos">$</button>
+          <button type="button" data-desc="pct" onclick="setVentaDescuentoTipo('pct')" aria-label="En porcentaje">%</button>
         </div>
       </div>
       <p class="item-sub" id="venta-total-nota" style="display:none;margin-top:6px;text-align:right"></p>
@@ -1598,14 +1615,14 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261004210728"></script>
-<script src="js/rowsync.js?v=20261004210728"></script>
-<script src="js/sync.js?v=20261004210728"></script>
+<script src="js/core.js?v=20261024114638"></script>
+<script src="js/rowsync.js?v=20261024114638"></script>
+<script src="js/sync.js?v=20261024114638"></script>
 <!-- Versión fija + SRI. Es dist/umd/supabase.js (ya viene minificado): el
      .min.js de jsdelivr se genera al vuelo y no sirve con SRI. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js" integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok" crossorigin="anonymous"></script>
-<script src="js/supabaseSync.js?v=20261004210728"></script>
-<script src="js/auth.js?v=20261004210728"></script>
+<script src="js/supabaseSync.js?v=20261024114638"></script>
+<script src="js/auth.js?v=20261024114638"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -4818,6 +4835,8 @@ function openSaleModal() {
   document.getElementById('venta-cliente-nuevo-form').style.display = 'none';
   document.getElementById('venta-nota').value = '';
   document.getElementById('venta-nombre-pedido').value = '';
+  document.getElementById('venta-descuento').value = '';
+  setVentaDescuentoTipo('monto');
   document.getElementById('venta-draft-producto').value = '';
   document.getElementById('venta-draft-qty').textContent = '1';
   document.getElementById('venta-buscar-sugerencias').style.display = 'none';
@@ -4868,11 +4887,29 @@ function setVentaMetodoPago(m) {
   renderVentaMetodoPago();
   if (m === 'dividido' && !document.getElementById('venta-monto-efectivo').value) document.getElementById('venta-monto-efectivo').focus();
 }
-// Total de la venta redondeado a pesos (carrito + lo elegido sin
-// agregar) — contra esto se valida que el pago dividido cuadre.
-function ventaCartTotal_() {
+// Subtotal (carrito + lo elegido sin agregar), sin descuento.
+function ventaSubtotal_() {
   const draft = lineaDesdeDraft_();
   return Math.round(ventaCart.reduce((a, l) => a + cartLineSubtotal(l), 0) + (draft ? cartLineSubtotal(draft) : 0));
+}
+// Descuento en pesos: el campo es un monto o un % del subtotal. Nunca más
+// que el subtotal ni negativo (applyVenta aplica el mismo tope).
+let ventaDescuentoTipo = 'monto';
+function setVentaDescuentoTipo(t) {
+  ventaDescuentoTipo = t;
+  document.querySelectorAll('.venta-descuento [data-desc]').forEach(b => b.classList.toggle('active', b.dataset.desc === t));
+  document.getElementById('venta-descuento').placeholder = t === 'pct' ? '0 %' : '0';
+  renderVentaTotal_();
+}
+function ventaDescuento_() {
+  const sub = ventaSubtotal_();
+  const v = Math.max(0, parseFloat(document.getElementById('venta-descuento').value) || 0);
+  return Math.round(Math.min(sub, ventaDescuentoTipo === 'pct' ? sub * Math.min(v, 100) / 100 : v));
+}
+// Total a cobrar redondeado a pesos (subtotal − descuento): contra esto se
+// valida que el pago dividido cuadre.
+function ventaCartTotal_() {
+  return ventaSubtotal_() - ventaDescuento_();
 }
 // Al escribir el efectivo, la transferencia se llena sola con lo que
 // falta (se puede corregir a mano; la suma se valida al confirmar).
@@ -5169,6 +5206,11 @@ let ventaTotalMostrado_ = 0;
 function renderVentaTotal_() {
   const draft = lineaDesdeDraft_();
   const total = ventaCartTotal_();
+  const descuento = ventaDescuento_();
+  document.getElementById('venta-subtotal').textContent = fmt(ventaSubtotal_());
+  document.getElementById('venta-descuento-monto').textContent = '-' + fmt(descuento);
+  document.getElementById('venta-subtotal-fila').style.display = descuento ? '' : 'none';
+  document.getElementById('venta-descuento-fila').style.display = descuento ? '' : 'none';
   document.getElementById('venta-cart-total').textContent = fmt(total);
   document.getElementById('venta-confirmar-total').textContent = fmt(total);
   const nota = document.getElementById('venta-total-nota');
@@ -5237,7 +5279,7 @@ function registrarVenta() {
     document.getElementById('venta-cliente-direccion').value
   );
   const fechaInput = document.getElementById('venta-fecha').value;
-  const opts = { stockInsuficiente, clienteId, metodoPago: ventaMetodoPago, comprobante: conComprobante ? ventaComprobante : '', montoEfectivo, montoTransferencia };
+  const opts = { stockInsuficiente, clienteId, metodoPago: ventaMetodoPago, comprobante: conComprobante ? ventaComprobante : '', montoEfectivo, montoTransferencia, descuento: ventaDescuento_() };
   if (fechaInput && fechaInput !== todayLocalISO()) {
     const [y, m, d] = fechaInput.split('-').map(Number);
     const now = new Date();
@@ -7095,7 +7137,7 @@ function renderCaja() {
         <div style="width:26px;height:26px;border-radius:50%;background:var(--bg);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="ph ${icon}" style="font-size:var(--fs-sm);color:var(--ink)"></i></div>
         <div style="min-width:0">
           <div style="font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px">${esc(label)}</div>
-          <div style="font-size:var(--fs-xs);color:var(--muted);margin-top:1px">${hora}</div>
+          <div style="font-size:var(--fs-xs);color:var(--muted);margin-top:1px">${hora}${m.tipo === 'venta' && m.ref.descuento ? ' · descuento ' + fmt(m.ref.descuento) : ''}</div>
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
