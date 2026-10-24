@@ -189,3 +189,33 @@ límite de localStorage.
 ## CYCLE RESULT
 READY_FOR_REVIEW — sin CRITICAL/HIGH en código; PRODUCTION_READY queda
 bloqueado por las 3 acciones del dueño y un ciclo final después de ellas.
+
+---
+
+# AUDIT CYCLE 3 (pendientes MEDIUM)
+
+Date: 2026-10-24 · Status: COMPLETE
+
+## CHANGES
+- PWA (f314ee3): `manifest.webmanifest`, `icons/`, `sw.js` network-first
+  (no intercepta Supabase/Google ni `?check=`; CDN fijados cache-first; solo
+  borra cachés `crumbly-*`). Verificado: instala, arranca offline, la
+  autoactualización sigue funcionando, SRI OK. Confianza: HIGH.
+- Monitoreo (7d69e6d): `reportarError_` (onerror + unhandledrejection, máx.
+  20/sesión) → tabla `errores` (0005, RLS de usuarios activos). Confianza:
+  HIGH. Efectivo cuando el dueño corra 0005.
+- README actualizado (describía la app sin backend).
+- Además (fuera de la auditoría): descuentos en ventas con tests (8a1a05d,
+  91a603f): subtotal/descuento guardados, cortesía no cuenta como costo
+  inválido.
+
+## TESTS
+Unit: PASS (520) · node --check: PASS (inline, js/*.js, sw.js)
+
+## REMAINING
+Acciones del dueño (0004+0005, Auth Email, redesplegar Apps Script) y luego
+ciclo final. Siguen en revisión humana: comprobantes públicos, tope de
+localStorage, repo público, total del carrito duplicado.
+
+## CYCLE RESULT
+IMPROVED

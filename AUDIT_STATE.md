@@ -4,7 +4,7 @@ Status: READY_FOR_REVIEW  (pendiente: acciones del dueño → luego ciclo final)
 
 Current audit cycle: 2
 
-Last updated: 2026-10-04
+Last updated: 2026-10-24
 
 ---
 
@@ -12,7 +12,7 @@ Last updated: 2026-10-04
 
 CRITICAL: 0
 HIGH: 0 (en código; quedan 3 acciones del dueño marcadas abajo)
-MEDIUM: 7
+MEDIUM: 5
 LOW: 6
 INFO: varios
 
@@ -39,8 +39,8 @@ Ninguno.
 
 ## HIGH
 Ninguno en código. Acciones del dueño (bloquean PRODUCTION_READY):
-1. Correr `supabase/migrations/0004_rls_initplan.sql` en el SQL Editor
-   (verificado: todavía no aplicada).
+1. Correr `0004_rls_initplan.sql` + `0005_errores.sql` en el SQL Editor
+   (verificado 2026-10-24: 0004 todavía no aplicada).
 2. Supabase → Authentication → Providers: desactivar **Email** y los
    registros nuevos (cualquiera puede crear una cuenta; no ve datos, pero
    hoy sí ve la lista de usuarios hasta que se aplique 0004).
@@ -52,9 +52,10 @@ Ninguno en código. Acciones del dueño (bloquean PRODUCTION_READY):
   privados requiere un proxy autenticado — HUMAN_REVIEW_REQUIRED.
 - localStorage: estado + base ≈ 2× el estado; Safari ~5 MB ≈ 1.500–2.000
   ventas. Plan: guardar solo los últimos N días o pasar a IndexedDB.
-- Sin PWA (manifest + service worker): sin arranque offline y Safari puede
-  borrar datos a los 7 días si no se instala. Funcionalidad nueva — decidir.
-- Sin monitoreo de errores (window.onerror → tabla). Decidir.
+- ~~Sin PWA~~ → resuelto (f314ee3): manifest, íconos y `sw.js` network-first
+  (no esconde versiones nuevas; arranque offline desde caché).
+- ~~Sin monitoreo~~ → resuelto en código (7d69e6d): errores a la tabla
+  `errores`; falta correr `0005_errores.sql` (dueño).
 - Total del carrito calculado en UI y en core por separado (riesgo de
   redondeo en pago dividido) — HUMAN_REVIEW_REQUIRED (lógica de negocio).
 - `index.html` gigante con handlers por string (mitigado por el smoke test).
