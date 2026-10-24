@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261024115309">
+<meta name="app-version" content="20261024120042">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" integrity="sha384-6p9AefaqUhEVheRlj1mpAkbngHXy9mbYMrIdcIt4Jlc9lOLIablJq3bBsLOjGwZ7" crossorigin="anonymous">
 <style>
@@ -144,11 +144,12 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 .vf-seccion{padding:16px 0;border-top:1px solid var(--line)}
 .vf-seccion:first-of-type{border-top:none;padding-top:0}
 .vf-titulo{font-size:var(--fs-body);font-weight:var(--fw-bold);color:var(--ink)}
-.vf-sub{font-size:var(--fs-xs);color:var(--muted);margin:2px 0 12px}
 .vf-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .vf-grid > *{min-width:0}
 .vf-label-row{display:flex;align-items:center;gap:4px;margin-bottom:6px}
 .vf-label-row .field-label{margin-bottom:0}
+.vf-cabecera{margin-bottom:12px}
+.vf-cuenta{font-size:var(--fs-sm);color:var(--muted)}
 .vf-stepper{display:flex;align-items:center;border:1px solid var(--line);border-radius:999px;background:var(--bg);overflow:hidden;flex-shrink:0}
 .vf-stepper button{width:30px;height:100%;border:none;background:transparent;color:var(--ink);cursor:pointer;font-size:var(--fs-body)}
 .vf-stepper span{min-width:22px;text-align:center;font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--ink)}
@@ -1163,8 +1164,7 @@ textarea.field{height:auto}
 
     <!-- 1. Lo que comparten todas las compras -->
     <section class="vf-seccion">
-      <div class="vf-titulo">Compra</div>
-      <div class="vf-sub">Lo que comparten todas las compras de esta vuelta</div>
+      <div class="vf-label-row vf-cabecera"><span class="vf-titulo">Compra</span> <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Lo que comparten todas las compras de esta vuelta: tipo, fecha y proveedor.</p></details></div>
       <div class="vf-label-row">
         <span class="field-label">Tipo de gasto</span>
         <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p><b>Inventario:</b> compras de materia prima, empaques o toppings; suben el stock. <b>Operativo:</b> arriendo, servicios, nómina, publicidad. <b>Implementos:</b> equipos y mobiliario; su costo se reparte en los meses de vida útil.</p></details>
@@ -1184,11 +1184,10 @@ textarea.field{height:auto}
 
     <!-- 2. Las compras: una línea por cosa comprada -->
     <section class="vf-seccion">
-      <div class="vf-label-row" style="margin-bottom:0">
-        <span class="vf-titulo">Lo que compraste</span>
+      <div class="vf-label-row vf-cabecera">
+        <span class="vf-titulo">Lo que compraste</span><span class="vf-cuenta">· <span id="g-lineas-count">1 compra</span></span>
         <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p id="g-lineas-info"></p></details>
       </div>
-      <div class="vf-sub"><span id="g-lineas-count">1 compra</span> · cada una queda como un gasto</div>
       <div class="vf-tabla">
         <div id="g-lineas"></div>
         <div class="vf-fila vf-pie">
@@ -1200,8 +1199,7 @@ textarea.field{height:auto}
 
     <!-- 3. Pago y comprobantes -->
     <section class="vf-seccion">
-      <div class="vf-titulo">Pago</div>
-      <div class="vf-sub">Cómo pagaste y con qué soporte</div>
+      <div class="vf-label-row vf-cabecera"><span class="vf-titulo">Pago</span> <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Cómo pagaste y con qué soporte (comprobantes).</p></details></div>
       <div class="pill-row" id="g-metodo-pago" style="margin-bottom:12px;width:fit-content;max-width:100%"></div>
       <div id="g-campos-dividido" style="display:none;margin-bottom:12px">
         <div class="gf-fila">
@@ -1336,19 +1334,13 @@ textarea.field{height:auto}
          gente de paso la llenaba de nombres sueltos. Fecha y los datos del
          cliente nuevo se cambian poco: viven abajo, en "Más opciones". -->
     <section class="vf-seccion">
-      <div class="vf-titulo">Pedido</div>
-      <div class="vf-sub">A quién se lo llamamos</div>
+      <div class="vf-label-row vf-cabecera"><span class="vf-titulo">Pedido</span> <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p><b>Nombre para llamar:</b> a quién se lo llamamos cuando esté listo; sale en la pantalla de Pedidos. <b>Cliente</b> (opcional): se busca por nombre o teléfono; si no existe, se crea solo. Teléfono y dirección de un cliente nuevo van en "Más opciones", abajo.</p></details></div>
       <div class="vf-grid">
         <div>
-          <label class="field-label" for="venta-nombre-pedido">Nombre para llamar</label>
-          <input type="text" id="venta-nombre-pedido" class="field" placeholder="Ej: Laura" autocomplete="off">
+          <input type="text" id="venta-nombre-pedido" class="field" placeholder="Nombre para llamar" aria-label="Nombre para llamar" autocomplete="off">
         </div>
         <div>
-          <div class="vf-label-row">
-            <label class="field-label" for="venta-cliente-nombre">Cliente <span style="font-weight:var(--fw-medium)">(opcional)</span></label>
-            <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Se busca por nombre o teléfono; si no existe, se crea solo. Teléfono y dirección de un cliente nuevo van en "Más opciones", abajo.</p></details>
-          </div>
-          <input type="text" id="venta-cliente-nombre" class="field" placeholder="Nombre o tel." list="clientes-datalist" oninput="onVentaClienteInput()">
+          <input type="text" id="venta-cliente-nombre" class="field" placeholder="Cliente (opcional)" aria-label="Cliente, nombre o teléfono (opcional)" list="clientes-datalist" oninput="onVentaClienteInput()">
           <datalist id="clientes-datalist"></datalist>
         </div>
       </div>
@@ -1356,8 +1348,7 @@ textarea.field{height:auto}
 
     <!-- 2. Productos -->
     <section class="vf-seccion">
-      <div class="vf-titulo">Productos</div>
-      <div class="vf-sub">Elegí lo que lleva</div>
+      <div class="vf-label-row vf-cabecera"><span class="vf-titulo">Productos</span> <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Elegí lo que lleva: buscá el producto, ajustá la cantidad y sus adiciones, y agregalo. Si confirmás sin tocar "Agregar", entra solo.</p></details></div>
       <div style="display:flex;gap:8px;margin-bottom:8px">
         <div style="flex:1;min-width:0;position:relative">
           <input type="text" id="venta-draft-producto" class="field" placeholder="Buscar producto o complemento" autocomplete="off" oninput="onVentaBuscarInput()" onfocus="onVentaBuscarFocus()">
@@ -1376,8 +1367,7 @@ textarea.field{height:auto}
     <!-- 3. La cuenta: tabla Producto · Cant. · Precio · Total. En pantallas
          muy angostas se esconde "Precio" (queda en el total de la fila). -->
     <section class="vf-seccion">
-      <div class="vf-titulo">Esta venta</div>
-      <div class="vf-sub"><span id="venta-cart-count">0</span> en la cuenta · podés cambiar cantidades acá</div>
+      <div class="vf-label-row vf-cabecera"><span class="vf-titulo">Esta venta</span><span class="vf-cuenta">· <span id="venta-cart-count">0</span></span> <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>La cuenta: podés cambiar cantidades acá, quitar un producto con la × o ponerle un descuento con "+ Descuento".</p></details></div>
       <div class="vf-tabla">
         <div class="vf-fila vf-encabezado">
           <span>Producto</span><span class="vf-centro">Cant.</span><span class="vf-num vf-col-precio">Precio</span><span class="vf-num">Total</span><span></span>
@@ -1417,8 +1407,7 @@ textarea.field{height:auto}
 
     <!-- 4. Pago -->
     <section class="vf-seccion">
-      <div class="vf-titulo">Pago</div>
-      <div class="vf-sub">Cómo paga</div>
+      <div class="vf-label-row vf-cabecera"><span class="vf-titulo">Pago</span> <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Cómo paga: efectivo, transferencia (con su comprobante) o dividido entre los dos.</p></details></div>
       <div class="pill-row" id="venta-metodo-pago" style="margin-bottom:14px;width:fit-content;max-width:100%"></div>
       <div id="venta-campos-dividido" style="display:none;margin-bottom:12px">
         <div class="vf-grid">
@@ -1627,14 +1616,14 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261024115309"></script>
-<script src="js/rowsync.js?v=20261024115309"></script>
-<script src="js/sync.js?v=20261024115309"></script>
+<script src="js/core.js?v=20261024120042"></script>
+<script src="js/rowsync.js?v=20261024120042"></script>
+<script src="js/sync.js?v=20261024120042"></script>
 <!-- Versión fija + SRI. Es dist/umd/supabase.js (ya viene minificado): el
      .min.js de jsdelivr se genera al vuelo y no sirve con SRI. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js" integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok" crossorigin="anonymous"></script>
-<script src="js/supabaseSync.js?v=20261024115309"></script>
-<script src="js/auth.js?v=20261024115309"></script>
+<script src="js/supabaseSync.js?v=20261024120042"></script>
+<script src="js/auth.js?v=20261024120042"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -6473,11 +6462,11 @@ function renderGastoTipo() {
   document.getElementById('g-tipo').innerHTML = GASTO_TIPOS_
     .map(([id, label]) => `<button type="button" class="pill-btn ${gastoTipo === id ? 'active' : ''}" onclick="setGastoTipo('${id}')">${label}</button>`).join('');
   document.getElementById('g-mas-opciones').style.display = gastoTipo === 'inventario' ? '' : 'none';
-  document.getElementById('g-lineas-info').innerHTML = gastoTipo === 'inventario'
+  document.getElementById('g-lineas-info').innerHTML = 'Cada compra queda como un gasto. ' + (gastoTipo === 'inventario'
     ? 'Una línea por insumo. La cantidad va en la medida del insumo (la que aparece al lado): si compraste 5 kg y el insumo se mide en gramos, escribí 5000; una caja de 100 unidades es 100, no 1. El costo del insumo se recalcula solo, como promedio con el stock que ya tenías.'
     : gastoTipo === 'capex'
       ? 'Una línea por implemento. Su costo no resta de golpe de la utilidad: se reparte (deprecia) en los meses de vida útil.'
-      : 'Una línea por gasto (ej. aseo y transporte del mismo día).';
+      : 'Una línea por gasto (ej. aseo y transporte del mismo día).');
   renderGastoLineas();
 }
 // Cambiar de tipo vacía las líneas (un insumo no tiene sentido como
