@@ -22,8 +22,8 @@ alter table errores enable row level security;
 
 drop policy if exists errores_insertar on errores;
 create policy errores_insertar on errores for insert
-  with check (exists (select 1 from usuarios u where u.email = (select auth.jwt() ->> 'email') and u.activo));
+  with check (exists (select 1 from usuarios u where u.email = ((select auth.jwt()) ->> 'email') and u.activo));
 
 drop policy if exists errores_leer on errores;
 create policy errores_leer on errores for select
-  using (exists (select 1 from usuarios u where u.email = (select auth.jwt() ->> 'email') and u.activo));
+  using (exists (select 1 from usuarios u where u.email = ((select auth.jwt()) ->> 'email') and u.activo));
