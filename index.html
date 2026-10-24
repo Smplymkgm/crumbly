@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261024120841">
+<meta name="app-version" content="20261024122143">
 <title>Crumbly</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -1622,14 +1622,15 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261024120841"></script>
-<script src="js/rowsync.js?v=20261024120841"></script>
-<script src="js/sync.js?v=20261024120841"></script>
+<script src="js/core.js?v=20261024122143"></script>
+<script src="js/rowsync.js?v=20261024122143"></script>
+<script src="js/sync.js?v=20261024122143"></script>
 <!-- Versión fija + SRI. Es dist/umd/supabase.js (ya viene minificado): el
      .min.js de jsdelivr se genera al vuelo y no sirve con SRI. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js" integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok" crossorigin="anonymous"></script>
-<script src="js/supabaseSync.js?v=20261024120841"></script>
-<script src="js/auth.js?v=20261024120841"></script>
+<script src="js/supabaseSync.js?v=20261024122143"></script>
+<script src="js/auth.js?v=20261024122143"></script>
+<script src="js/almacen.js?v=20261024122143"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -1763,7 +1764,7 @@ function migrarState_(raw) {
 function loadState() {
   let raw = null;
   try {
-    raw = localStorage.getItem('crumbly-state');
+    raw = CrumblyAlmacen.get('crumbly-state');
   } catch (e) {
     showToast('No se pudo leer el almacenamiento local del navegador');
   }
@@ -1801,7 +1802,10 @@ function saveState() {
   mutacionesLocales++;
   let ok = true;
   try {
-    localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso()));
+    // Memoria al instante, IndexedDB en segundo plano (js/almacen.js): si
+    // esa escritura falla, avisa el onError de CrumblyAlmacen. Sin
+    // IndexedDB va a localStorage y tira acá, como siempre.
+    CrumblyAlmacen.set('crumbly-state', JSON.stringify(stateSinConteoEnProgreso()));
     saveConteoEnProgresoLocal();
   } catch (e) {
     avisarAlmacenamientoLleno_();
@@ -1858,44 +1862,51 @@ const usaSupabase = (() => { try { return localStorage.getItem('crumbly-backend'
 // colecciones + config.
 const SUPABASE_BASE_KEY = 'crumbly-supabase-base';
 // La base vive en memoria (una sola copia, sin re-parsear en cada evento de
-// realtime) y se persiste en localStorage para la próxima vez que se abra.
+// realtime) y se persiste en IndexedDB (js/almacen.js) para la próxima vez que se abra.
 let baseEnMemoria;
 function loadSupabaseBase() {
   if (baseEnMemoria === undefined) {
-    try { const raw = localStorage.getItem(SUPABASE_BASE_KEY); baseEnMemoria = raw ? JSON.parse(raw) : null; }
+    try { const raw = CrumblyAlmacen.get(SUPABASE_BASE_KEY); baseEnMemoria = raw ? JSON.parse(raw) : null; }
     catch (e) { baseEnMemoria = null; }
   }
   return baseEnMemoria;
 }
 function saveSupabaseBase(s) {
   baseEnMemoria = s;
-  try { localStorage.setItem(SUPABASE_BASE_KEY, JSON.stringify(s)); }
-  catch (e) {
-    // Almacenamiento lleno: esta sesión sigue bien (base en memoria), pero
-    // una base VIEJA guardada haría que la próxima apertura compare contra
-    // datos equivocados — se borra, y al reabrir se re-baja todo limpio.
-    try { localStorage.removeItem(SUPABASE_BASE_KEY); } catch (e2) {}
+  // Almacenamiento lleno: esta sesión sigue bien (base en memoria), pero
+  // una base VIEJA guardada haría que la próxima apertura compare contra
+  // datos equivocados — se borra, y al reabrir se re-baja todo limpio.
+  const fallo = () => {
+    try { CrumblyAlmacen.remove(SUPABASE_BASE_KEY); } catch (e2) {}
     showPersistentError('El almacenamiento del navegador está lleno. La app sigue sincronizando, pero conviene liberar espacio (o exportar un respaldo) antes de cerrarla.', 'Exportar respaldo ahora', () => { exportVentasCSV(); exportInventarioCSV(); });
-  }
+  };
+  try { CrumblyAlmacen.set(SUPABASE_BASE_KEY, JSON.stringify(s)).then(ok => { if (!ok) fallo(); }); }
+  catch (e) { fallo(); }
 }
 function copiaParaSync_() {
   return JSON.parse(JSON.stringify(stateSinConteoEnProgreso()));
 }
-// Guarda el state y DESPUÉS la base. Al revés, si la base entraba y el
-// state no (almacenamiento lleno), la próxima apertura comparaba una base
-// más nueva que el state y el push tomaba como borradas las filas que
-// faltaban. Si el state no entra, la base guardada se borra (la próxima
-// apertura re-baja todo limpio). La de memoria sigue: en esta sesión
-// state y base van juntos y los pushes continúan.
+// Guarda el state y la base JUNTOS, en una sola transacción de IndexedDB
+// (CrumblyAlmacen.setMany): entran los dos o ninguno. Antes iban por
+// separado y, si la base entraba y el state no (almacenamiento lleno), la
+// próxima apertura comparaba una base más nueva que el state y el push
+// tomaba como borradas las filas que faltaban. Si falla, la base guardada
+// se borra (la próxima apertura re-baja todo limpio). La de memoria
+// sigue: en esta sesión state y base van juntos y los pushes continúan.
+// Sin IndexedDB (localStorage) se escribe el state primero y después la
+// base, así que un fallo a mitad deja como mucho el state nuevo solo.
 function guardarStateYBase_(base) {
   baseEnMemoria = base;
-  try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); }
-  catch (e) {
-    try { localStorage.removeItem(SUPABASE_BASE_KEY); } catch (e2) {}
+  const fallo = () => {
+    try { CrumblyAlmacen.remove(SUPABASE_BASE_KEY); } catch (e2) {}
     avisarAlmacenamientoLleno_();
-    return;
-  }
-  saveSupabaseBase(base);
+  };
+  try {
+    CrumblyAlmacen.setMany({
+      'crumbly-state': JSON.stringify(stateSinConteoEnProgreso()),
+      [SUPABASE_BASE_KEY]: JSON.stringify(base),
+    }).then(ok => { if (!ok) fallo(); });
+  } catch (e) { fallo(); }
 }
 
 // Sube lo que cambió desde la base. Lo enviado se copia ANTES de mandar:
@@ -2130,6 +2141,9 @@ function aplicarFilaRemota_(coleccion, fila) {
 // se pone al día con lo cambiado (pull incremental): el canal de realtime
 // pudo haberse cortado mientras tanto.
 document.addEventListener('visibilitychange', () => {
+  // Al irse a segundo plano iOS puede matar la app sin aviso: que termine
+  // de escribir lo pendiente en IndexedDB (js/almacen.js).
+  if (document.visibilityState === 'hidden') { CrumblyAlmacen.flush(); return; }
   if (document.visibilityState !== 'visible') return;
   if (usaSupabase) pullOnLoad();
   revisarVersionNueva_();
@@ -2148,7 +2162,7 @@ async function revisarVersionNueva_() {
     const html = await (await fetch(location.pathname + '?check=' + Date.now(), { cache: 'no-store' })).text();
     const m = html.match(/name=.app-version. content="([^"]+)"/); // sin comillas literales: así el hook de versión no reescribe esta línea
     if (!m || m[1] === APP_VERSION) return;
-    const recargar = () => location.replace(location.pathname + '?v=' + m[1] + location.hash);
+    const recargar = () => CrumblyAlmacen.flush().then(() => location.replace(location.pathname + '?v=' + m[1] + location.hash));
     if (!document.querySelector('.modal-overlay.open')) return recargar();
     showToast('Hay una versión nueva de la app', { label: 'Actualizar', fn: recargar });
   } catch (e) { /* sin red: se revisa la próxima vez */ }
@@ -2513,7 +2527,7 @@ function pushInBackground() {
       if (!r.ok) { updateSyncStatus('Error al sincronizar: ' + (r.error || 'desconocido'), true); return; }
       state.config.lastSync = r.ts || new Date().toISOString();
       saveCatalogBase(r.catalogVersion, catalogoActualDeState()); // U4: mi catálogo ya aceptado tal cual = nueva base
-      try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
+      try { CrumblyAlmacen.set('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
       updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
       // U0: por debajo del tope de bloqueo, pero el CATÁLOGO ya en zona de
       // advertencia — persistente también (nunca un toast que se va solo).
@@ -2551,7 +2565,8 @@ function descargarJSON_(obj, nombre) {
 function olvidarBaseSupabase_() {
   clearTimeout(syncPushTimer);
   baseEnMemoria = null;
-  try { localStorage.removeItem(SUPABASE_BASE_KEY); localStorage.removeItem(SUPABASE_DESDE_KEY); } catch (e) {}
+  try { CrumblyAlmacen.remove(SUPABASE_BASE_KEY); } catch (e) {}
+  try { localStorage.removeItem(SUPABASE_DESDE_KEY); } catch (e) {}
   CrumblySync.limpiarBorradosPendientes(CrumblySync.getBorradosPendientes());
 }
 // Paso 1: descarga la copia y cambia el aviso a un segundo botón. El
@@ -2596,7 +2611,7 @@ function resolverConflictoDePush_(r) {
   const { merged, conflicts } = CrumblyRowSync.mergeCatalogs(base.catalogo, mine, remote);
   Object.assign(state, merged); // solo toca claves de catálogo — las colecciones append-only locales no se tocan acá
   saveCatalogBase(r.remoteVersion, merged);
-  try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
+  try { CrumblyAlmacen.set('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
   refreshAll();
   if (conflicts.length) {
     mostrarConflictosCatalogo(conflicts);
@@ -2787,7 +2802,7 @@ function pullOnLoad() {
         restaurarConteoEnProgresoLocal(); // T0.1: un pull de OTRO dispositivo nunca pisa el conteo en curso de este
         state.config.lastSync = new Date().toISOString();
         saveCatalogBase(r.catalogVersion, catalogoActualDeState());
-        try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
+        try { CrumblyAlmacen.set('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
         updateSyncStatus('Sincronizado ✓ · ' + formatSyncTime(state.config.lastSync));
         refreshAll();
         return;
@@ -2805,7 +2820,7 @@ function pullOnLoad() {
       Object.assign(state, merged); // el catálogo no es el remoto puro — es el fusionado por registro
       state.config.lastSync = new Date().toISOString();
       saveCatalogBase(r.catalogVersion, merged);
-      try { localStorage.setItem('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
+      try { CrumblyAlmacen.set('crumbly-state', JSON.stringify(stateSinConteoEnProgreso())); } catch (e) {}
       refreshAll();
       if (conflicts.length) {
         mostrarConflictosCatalogo(conflicts);
@@ -7391,6 +7406,17 @@ function refreshAll() {
   actualizarPuntoAlertas(); // W3.2: el punto de la campana refleja alertas reales
 }
 
+// Arranque: primero se cargan state y base de IndexedDB a memoria
+// (js/almacen.js; init nunca rechaza, sin IndexedDB cae a localStorage) y
+// RECIÉN DESPUÉS corre todo lo que lee el state.
+window.addEventListener('pagehide', () => { CrumblyAlmacen.flush(); });
+window.addEventListener('beforeunload', () => { CrumblyAlmacen.flush(); });
+CrumblyAlmacen.onError(err => {
+  console.error('No se pudo guardar en IndexedDB', err);
+  avisarAlmacenamientoLleno_();
+});
+CrumblyAlmacen.init().then(() => {
+baseEnMemoria = undefined; // por si algo la leyó antes de init: se vuelve a leer ya cargada
 loadState();
 if (location.hash.length > 1) navTo(location.hash.slice(1));
 auth.restoreSession();
@@ -7417,6 +7443,7 @@ if (auth.isAuthenticated()) {
   // Sin sesión: pedir login antes de mostrar la app.
   showLoginGate();
 }
+});
 </script>
 </body>
 </html>
