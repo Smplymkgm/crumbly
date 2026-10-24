@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261024115111">
+<meta name="app-version" content="20261024115309">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" integrity="sha384-6p9AefaqUhEVheRlj1mpAkbngHXy9mbYMrIdcIt4Jlc9lOLIablJq3bBsLOjGwZ7" crossorigin="anonymous">
 <style>
@@ -241,7 +241,8 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 .chip{border:1px solid var(--soft);background:var(--white);color:var(--text);font-size:var(--fs-sm);font-weight:var(--fw-medium);padding:6px 12px;border-radius:999px;cursor:pointer;transition:background .12s ease,border-color .12s ease}
 .chip.active{background:var(--ink);color:var(--white);border-color:var(--ink)}
 .chip:not(.active):hover{background:var(--bg);border-color:var(--mid)}
-.venta-descuento-rapido{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.venta-descuento-rapido{display:none;gap:6px;flex-wrap:wrap;margin-top:8px}
+.venta-descuento-rapido.abierto{display:flex} /* aparecen al tocar el campo de descuento */
 .vf-linea-desc{font-size:var(--fs-xs);color:var(--muted)}
 .vf-desc-btn{border:none;background:transparent;color:var(--muted);font-size:var(--fs-xs);padding:2px 0;cursor:pointer;text-decoration:underline}
 .venta-descuento{display:flex;align-items:center;gap:10px;margin-top:10px}
@@ -1394,7 +1395,7 @@ textarea.field{height:auto}
       </div>
       <div class="venta-descuento">
         <label class="field-label" for="venta-descuento" style="margin:0">Descuento</label>
-        <input type="number" id="venta-descuento" class="field" inputmode="decimal" min="0" step="any" placeholder="0" oninput="setVentaDescuentoTipo(ventaDescuentoTipo)">
+        <input type="number" id="venta-descuento" class="field" inputmode="decimal" min="0" step="any" placeholder="0" oninput="setVentaDescuentoTipo(ventaDescuentoTipo)" onfocus="document.getElementById('venta-descuento-rapido').classList.add('abierto')">
         <div class="vista-toggle" role="group" aria-label="Tipo de descuento">
           <button type="button" data-desc="monto" class="active" onclick="setVentaDescuentoTipo('monto')" aria-label="En pesos">$</button>
           <button type="button" data-desc="pct" onclick="setVentaDescuentoTipo('pct')" aria-label="En porcentaje">%</button>
@@ -1626,14 +1627,14 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261024115111"></script>
-<script src="js/rowsync.js?v=20261024115111"></script>
-<script src="js/sync.js?v=20261024115111"></script>
+<script src="js/core.js?v=20261024115309"></script>
+<script src="js/rowsync.js?v=20261024115309"></script>
+<script src="js/sync.js?v=20261024115309"></script>
 <!-- Versión fija + SRI. Es dist/umd/supabase.js (ya viene minificado): el
      .min.js de jsdelivr se genera al vuelo y no sirve con SRI. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js" integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok" crossorigin="anonymous"></script>
-<script src="js/supabaseSync.js?v=20261024115111"></script>
-<script src="js/auth.js?v=20261024115111"></script>
+<script src="js/supabaseSync.js?v=20261024115309"></script>
+<script src="js/auth.js?v=20261024115309"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -4847,6 +4848,7 @@ function openSaleModal() {
   document.getElementById('venta-nota').value = '';
   document.getElementById('venta-nombre-pedido').value = '';
   document.getElementById('venta-descuento').value = '';
+  document.getElementById('venta-descuento-rapido').classList.remove('abierto');
   setVentaDescuentoTipo('monto');
   document.getElementById('venta-draft-producto').value = '';
   document.getElementById('venta-draft-qty').textContent = '1';
