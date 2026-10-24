@@ -1,36 +1,44 @@
 # Crumbly
 
-App de una sola página para gestionar insumos, productos, ventas y reportes de un negocio de waffles y obleas. Corre 100% en el navegador — sin backend (por ahora, ver `HANDOFF.md` §12).
+App web para manejar un negocio de waffles: caja (ventas con descuentos,
+pedidos en tiempo real), inventario, recetas y costeo, gastos con
+comprobantes, clientes y reportes. Publicada en GitHub Pages:
+https://smplymkgm.github.io/crumbly/
 
-## Uso local
-
-Abre `index.html` directamente en el navegador. Sin login — la app entra directo al dashboard.
-
-## Estructura
+## Cómo está armada
 
 ```
-index.html       # la app completa (UI + lógica de pantalla)
-js/core.js       # lógica de negocio pura, sin DOM — costeo, períodos,
-                  # validación de stock, aplicar/revertir venta
-js/sync.js       # cliente de sincronización con el backend (Fase E)
-backend/Code.gs  # Apps Script — backend en Google Sheets (ver backend/SETUP.md)
-tests/           # tests — node tests/core.test.js, node tests/sync.test.js
-HANDOFF.md       # especificación, roadmap, bugs, decisiones tomadas
+index.html        # la app completa (UI + script inline)
+js/core.js        # lógica de negocio pura (costeo, ventas, stock, períodos) — con tests
+js/supabaseSync.js# sincronización con Supabase (push por diferencias, pull incremental)
+js/auth.js        # login con Google → Supabase (+ sesión de Apps Script)
+js/sync.js        # subidas a Drive y respaldo diario vía Apps Script; además el
+js/rowsync.js     #   camino viejo a Google Sheets (solo emergencia: localStorage
+                  #   'crumbly-backend' = 'sheets')
+backend/Code.gs   # Apps Script: sesión, comprobantes a Drive, respaldo diario
+supabase/migrations/  # esquema, RLS, realtime, triggers (se corren en el SQL Editor)
+tests/            # node tests/<x>.test.js
 ```
 
-## Backend (Google Sheets, opcional)
-
-Por defecto la app guarda todo en `localStorage` del navegador. Si quieres que los datos vivan en una hoja de Google (y funcionen desde varios dispositivos), sigue `backend/SETUP.md` — despliegas tu propio Apps Script bajo tu cuenta de Google, pegas la URL y un token en Reportes → "Sincronización", y listo. Sin eso configurado, la app sigue funcionando exactamente igual que hoy, solo local.
+- **Datos:** Supabase (Postgres). Cada colección es una tabla `id + data jsonb`
+  con RLS: solo los correos activos de la tabla `usuarios` leen o escriben.
+- **Respaldo:** una copia diaria del estado completo en Drive
+  ("Crumbly - Respaldos"). Para restaurar: `restaurarDesdeRespaldo(json)` en
+  la consola (ver el comentario en `index.html`).
+- **Versiones:** `.githooks/pre-commit` sella `app-version` en cada commit
+  (`git config core.hooksPath .githooks` una vez por clon) y la app se
+  recarga sola cuando hay una versión nueva publicada.
 
 ## Tests
 
 ```bash
-node tests/core.test.js
-node tests/sync.test.js
+for f in tests/*.test.js; do node "$f"; done
 ```
 
-El primero corre todos los tests de la lógica de negocio (costeo, períodos, validación de stock, reversión de venta, migración de esquema). El segundo prueba el cliente de sincronización con un `fetch` simulado (sin red real). Ninguno requiere navegador ni dependencias externas.
+Sin dependencias ni navegador. `tests/handlers.test.js` revisa que cada
+`onclick`/`oninput` de `index.html` llame a una función que existe.
 
-## Estado del proyecto
+## Auditoría
 
-Ver `HANDOFF.md` — es la fuente de verdad de qué está hecho, qué falta y qué se decidió en cada sesión. `IMPLEMENTATION_STATUS.md` trae el detalle bug-por-bug de la última corrida.
+Estado de la auditoría pre-lanzamiento: `AUDIT_STATE.md` (vivo) y
+`AUDIT_HISTORY.md` (historial).

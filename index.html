@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261024120042">
+<meta name="app-version" content="20261024120441">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" integrity="sha384-6p9AefaqUhEVheRlj1mpAkbngHXy9mbYMrIdcIt4Jlc9lOLIablJq3bBsLOjGwZ7" crossorigin="anonymous">
 <style>
@@ -1616,14 +1616,14 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261024120042"></script>
-<script src="js/rowsync.js?v=20261024120042"></script>
-<script src="js/sync.js?v=20261024120042"></script>
+<script src="js/core.js?v=20261024120441"></script>
+<script src="js/rowsync.js?v=20261024120441"></script>
+<script src="js/sync.js?v=20261024120441"></script>
 <!-- Versión fija + SRI. Es dist/umd/supabase.js (ya viene minificado): el
      .min.js de jsdelivr se genera al vuelo y no sirve con SRI. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js" integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok" crossorigin="anonymous"></script>
-<script src="js/supabaseSync.js?v=20261024120042"></script>
-<script src="js/auth.js?v=20261024120042"></script>
+<script src="js/supabaseSync.js?v=20261024120441"></script>
+<script src="js/auth.js?v=20261024120441"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -1640,6 +1640,29 @@ const esc = CrumblyCore.escapeHtml;
 // código). JSON.stringify arma un literal JS válido y esc() lo protege
 // dentro del atributo. Uso: setX(${jsArg(c)}) dentro del onclick, sin comillas.
 const jsArg = v => esc(JSON.stringify(String(v)));
+
+// Monitoreo mínimo: los errores de JavaScript (y promesas sin manejar) se
+// guardan en la tabla `errores` de Supabase (0005_errores.sql) para poder
+// revisarlos sin pedir capturas. Como mucho 20 por sesión y sin repetir el
+// mismo mensaje; si no hay sesión o red, se ignora (nunca rompe la app).
+const erroresReportados_ = new Set();
+function reportarError_(mensaje, origen) {
+  try {
+    const msg = String(mensaje || 'error desconocido').slice(0, 1000);
+    if (erroresReportados_.has(msg) || erroresReportados_.size >= 20) return;
+    erroresReportados_.add(msg);
+    const sb = typeof auth !== 'undefined' && auth.getSupabase && auth.getSupabase();
+    if (!sb) return;
+    sb.from('errores').insert({
+      mensaje: msg,
+      origen: String(origen || '').slice(0, 500),
+      version: (document.querySelector('meta[name="app-version"]') || {}).content || '',
+      agente: navigator.userAgent.slice(0, 300)
+    }).then(() => {}, () => {});
+  } catch (e) { /* el reporte de errores nunca puede romper la app */ }
+}
+window.addEventListener('error', e => reportarError_(e.message, (e.filename || '') + ':' + (e.lineno || '') + ':' + (e.colno || '')));
+window.addEventListener('unhandledrejection', e => reportarError_('Promesa sin manejar: ' + (e.reason && (e.reason.message || e.reason)), e.reason && e.reason.stack ? String(e.reason.stack).split('\n')[1] : ''));
 const normalizarBusqueda_ = CrumblyCore.normalizarBusqueda;
 // Tanda 3 #23: un solo formato de cantidad ("1.000 g", "0,4 kg", "5 und")
 // y uno de costo por unidad de medida ("$4,72/g", "$8.333/und") — ambos en
