@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261024114638">
+<meta name="app-version" content="20261024115111">
 <title>Crumbly</title>
 <link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css" integrity="sha384-6p9AefaqUhEVheRlj1mpAkbngHXy9mbYMrIdcIt4Jlc9lOLIablJq3bBsLOjGwZ7" crossorigin="anonymous">
 <style>
@@ -241,6 +241,9 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 .chip{border:1px solid var(--soft);background:var(--white);color:var(--text);font-size:var(--fs-sm);font-weight:var(--fw-medium);padding:6px 12px;border-radius:999px;cursor:pointer;transition:background .12s ease,border-color .12s ease}
 .chip.active{background:var(--ink);color:var(--white);border-color:var(--ink)}
 .chip:not(.active):hover{background:var(--bg);border-color:var(--mid)}
+.venta-descuento-rapido{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.vf-linea-desc{font-size:var(--fs-xs);color:var(--muted)}
+.vf-desc-btn{border:none;background:transparent;color:var(--muted);font-size:var(--fs-xs);padding:2px 0;cursor:pointer;text-decoration:underline}
 .venta-descuento{display:flex;align-items:center;gap:10px;margin-top:10px}
 .venta-descuento .field{flex:1;min-width:0;max-width:160px}
 .vf-descuento-linea{color:var(--muted)}
@@ -561,6 +564,7 @@ textarea.field{height:auto}
               <div class="cc-medio-fila"><span>Efectivo en caja <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Ventas de hoy cobradas en efectivo, menos los gastos de hoy pagados en efectivo (incluye la parte en efectivo de los pagos divididos). No incluye la base con la que abriste la caja: sumala para saber cuánto debería haber en el cajón.</p></details></span><b id="cc-efectivo-caja">$0</b></div>
               <div class="cc-medio-fila"><span>Transferencias recibidas</span><b id="cc-transf-recibidas">$0</b></div>
               <div class="cc-medio-fila"><span>Transferencias pagadas</span><b id="cc-transf-pagadas">$0</b></div>
+              <div class="cc-medio-fila" id="cc-descuentos-fila" style="display:none"><span>Descuentos dados</span><b id="cc-descuentos">$0</b></div>
               <div class="cc-medio-fila" id="cc-otros-medios" style="display:none"><span>Otros medios (recibido / pagado)</span><b id="cc-otros-valor">$0</b></div>
             </div>
             <button class="btn btn-outline btn-block" style="margin-top:10px" onclick="generateCierreCajaPDF()"><i class="ph ph-download-simple"></i> Reporte PDF</button>
@@ -1390,11 +1394,18 @@ textarea.field{height:auto}
       </div>
       <div class="venta-descuento">
         <label class="field-label" for="venta-descuento" style="margin:0">Descuento</label>
-        <input type="number" id="venta-descuento" class="field" inputmode="decimal" min="0" step="any" placeholder="0" oninput="renderVentaTotal_()">
+        <input type="number" id="venta-descuento" class="field" inputmode="decimal" min="0" step="any" placeholder="0" oninput="setVentaDescuentoTipo(ventaDescuentoTipo)">
         <div class="vista-toggle" role="group" aria-label="Tipo de descuento">
           <button type="button" data-desc="monto" class="active" onclick="setVentaDescuentoTipo('monto')" aria-label="En pesos">$</button>
           <button type="button" data-desc="pct" onclick="setVentaDescuentoTipo('pct')" aria-label="En porcentaje">%</button>
         </div>
+      </div>
+      <div class="venta-descuento-rapido" id="venta-descuento-rapido">
+        <button type="button" class="chip" data-pct="10" onclick="descuentoRapido_(10)">10%</button>
+        <button type="button" class="chip" data-pct="15" onclick="descuentoRapido_(15)">15%</button>
+        <button type="button" class="chip" data-pct="20" onclick="descuentoRapido_(20)">20%</button>
+        <button type="button" class="chip" data-pct="50" onclick="descuentoRapido_(50)">50%</button>
+        <button type="button" class="chip" data-pct="100" onclick="descuentoRapido_(100)">Cortesía</button>
       </div>
       <p class="item-sub" id="venta-total-nota" style="display:none;margin-top:6px;text-align:right"></p>
       <div style="margin-top:14px">
@@ -1615,14 +1626,14 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261024114638"></script>
-<script src="js/rowsync.js?v=20261024114638"></script>
-<script src="js/sync.js?v=20261024114638"></script>
+<script src="js/core.js?v=20261024115111"></script>
+<script src="js/rowsync.js?v=20261024115111"></script>
+<script src="js/sync.js?v=20261024115111"></script>
 <!-- Versión fija + SRI. Es dist/umd/supabase.js (ya viene minificado): el
      .min.js de jsdelivr se genera al vuelo y no sirve con SRI. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js" integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok" crossorigin="anonymous"></script>
-<script src="js/supabaseSync.js?v=20261024114638"></script>
-<script src="js/auth.js?v=20261024114638"></script>
+<script src="js/supabaseSync.js?v=20261024115111"></script>
+<script src="js/auth.js?v=20261024115111"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -4899,12 +4910,45 @@ function setVentaDescuentoTipo(t) {
   ventaDescuentoTipo = t;
   document.querySelectorAll('.venta-descuento [data-desc]').forEach(b => b.classList.toggle('active', b.dataset.desc === t));
   document.getElementById('venta-descuento').placeholder = t === 'pct' ? '0 %' : '0';
+  const v = Number(document.getElementById('venta-descuento').value);
+  document.querySelectorAll('#venta-descuento-rapido [data-pct]').forEach(b => b.classList.toggle('active', t === 'pct' && Number(b.dataset.pct) === v));
   renderVentaTotal_();
 }
+// Descuento de UNA línea del carrito (l.descuentoPct o l.descuentoMonto),
+// en pesos, con tope en lo que vale la línea.
+function descuentoLinea_(l) {
+  const sub = cartLineSubtotal(l);
+  return Math.round(Math.min(sub, l.descuentoPct ? sub * l.descuentoPct / 100 : (l.descuentoMonto || 0)));
+}
+// Pide el descuento de una línea: "10%" o un monto ("2000"). Vacío o 0 lo quita.
+function pedirDescuentoLinea_(id) {
+  const l = ventaCart.find(x => x.id === id);
+  if (!l) return;
+  const actual = l.descuentoPct ? l.descuentoPct + '%' : (l.descuentoMonto || '');
+  const txt = prompt('Descuento para ' + l.nombre + ' (ej. 10% o 2000). Vacío para quitarlo:', actual);
+  if (txt === null) return;
+  const n = Math.max(0, parseFloat(String(txt).replace(',', '.')) || 0);
+  if (/%/.test(txt)) { l.descuentoPct = Math.min(n, 100); delete l.descuentoMonto; }
+  else { l.descuentoMonto = n; delete l.descuentoPct; }
+  renderCartLines();
+}
+// Atajos del evento: un toque pone el % a toda la venta; tocar el mismo lo quita.
+function descuentoRapido_(pct) {
+  const input = document.getElementById('venta-descuento');
+  const yaEsta = ventaDescuentoTipo === 'pct' && Number(input.value) === pct;
+  input.value = yaEsta ? '' : pct;
+  setVentaDescuentoTipo('pct');
+}
+// Descuento total en pesos = el de cada línea + el de toda la venta (el %
+// de toda la venta se calcula sobre lo que queda después de los de línea).
+// Nunca más que el subtotal (applyVenta aplica el mismo tope).
 function ventaDescuento_() {
   const sub = ventaSubtotal_();
+  const deLineas = ventaCart.reduce((a, l) => a + descuentoLinea_(l), 0);
+  const base = Math.max(0, sub - deLineas);
   const v = Math.max(0, parseFloat(document.getElementById('venta-descuento').value) || 0);
-  return Math.round(Math.min(sub, ventaDescuentoTipo === 'pct' ? sub * Math.min(v, 100) / 100 : v));
+  const deVenta = ventaDescuentoTipo === 'pct' ? base * Math.min(v, 100) / 100 : v;
+  return Math.round(Math.min(sub, deLineas + deVenta));
 }
 // Total a cobrar redondeado a pesos (subtotal − descuento): contra esto se
 // valida que el pago dividido cuadre.
@@ -5191,10 +5235,12 @@ function renderCartLines() {
         ? `<label class="vf-cant"><input type="number" min="1" step="1" inputmode="numeric" value="${l.qty}" aria-label="Cantidad en ${esc(l.unidadQty)}" onchange="setCartLineQty('${l.id}', this.value)">${esc(l.unidadQty)}</label>`
         : `<div class="vf-stepper"><button type="button" onclick="cambiarCantLinea_('${l.id}',-1)" aria-label="Menos">−</button><span>${l.qty}</span><button type="button" onclick="cambiarCantLinea_('${l.id}',1)" aria-label="Más">+</button></div>`;
       return `<div class="vf-fila">
-        <div class="vf-producto"><div class="vf-producto-nombre">${esc(l.nombre)}</div>${extra ? `<div class="vf-producto-extra">${esc(extra)}</div>` : ''}</div>
+        <div class="vf-producto"><div class="vf-producto-nombre">${esc(l.nombre)}</div>${extra ? `<div class="vf-producto-extra">${esc(extra)}</div>` : ''}${descuentoLinea_(l)
+          ? `<button type="button" class="vf-desc-btn" onclick="pedirDescuentoLinea_('${l.id}')">Descuento ${l.descuentoPct ? l.descuentoPct + '% ' : ''}-${fmt(descuentoLinea_(l))}</button>`
+          : `<button type="button" class="vf-desc-btn" onclick="pedirDescuentoLinea_('${l.id}')">+ Descuento</button>`}</div>
         ${cant}
         <span class="vf-num vf-col-precio">${fmt(precioUnit)}${l.unidadQty ? '/' + esc(l.unidadQty) : ''}</span>
-        <span class="vf-num" style="font-weight:var(--fw-bold);color:var(--ink)">${fmt(cartLineSubtotal(l))}</span>
+        <span class="vf-num" style="font-weight:var(--fw-bold);color:var(--ink)">${fmt(cartLineSubtotal(l) - descuentoLinea_(l))}</span>
         <button type="button" class="vf-quitar" onclick="removeLineFromCart('${l.id}')" aria-label="Quitar"><i class="ph ph-x"></i></button>
       </div>`;
     }).join('');
@@ -5768,6 +5814,9 @@ function renderCierreCaja() {
   document.getElementById('cc-efectivo-caja').textContent = (medios.efectivoEnCaja < 0 ? '-' : '') + fmt(Math.abs(medios.efectivoEnCaja));
   document.getElementById('cc-transf-recibidas').textContent = fmt(medios.transferenciasRecibidas);
   document.getElementById('cc-transf-pagadas').textContent = fmtResta_(medios.transferenciasPagadas);
+  const descuentos = ventas.reduce((a, v) => a + (Number(v.descuento) || 0), 0);
+  document.getElementById('cc-descuentos-fila').style.display = descuentos ? 'flex' : 'none';
+  document.getElementById('cc-descuentos').textContent = fmtResta_(descuentos);
   const otros = document.getElementById('cc-otros-medios');
   otros.style.display = (medios.otrosRecibidos || medios.otrosPagados) ? 'flex' : 'none';
   document.getElementById('cc-otros-valor').textContent = fmt(medios.otrosRecibidos) + ' / -' + fmt(medios.otrosPagados);
@@ -6339,12 +6388,13 @@ function downloadCSV(filename, rows) {
 }
 function exportVentasCSV() {
   const ventas = getReportVentas();
-  const rows = [['Fecha', 'Productos', 'Total', 'Ganancia']];
+  const rows = [['Fecha', 'Productos', 'Subtotal', 'Descuento', 'Total', 'Ganancia']];
   ventas.forEach(v => {
     const d = new Date(v.fecha);
     const fecha = d.toLocaleDateString('es-CO') + ' ' + d.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
     const productos = v.items.map(i => i.nombre + ' x' + i.qty).join(' | ');
-    rows.push([fecha, productos, v.total.toFixed(0), v.ganancia.toFixed(0)]);
+    const desc = Number(v.descuento) || 0;
+    rows.push([fecha, productos, (v.total + desc).toFixed(0), desc.toFixed(0), v.total.toFixed(0), v.ganancia.toFixed(0)]);
   });
   downloadCSV('crumbly-ventas-' + reportPeriod + '-' + todayLocalISO() + '.csv', rows);
   showToast('CSV de ventas exportado. Súbelo a tu Google Sheet');
