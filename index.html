@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261025110814">
+<meta name="app-version" content="20261025111058">
 <title>Crumbly</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -156,6 +156,7 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 .vf-label-row .field-label{margin-bottom:0}
 .vf-cabecera{margin-bottom:12px}
 .vf-cuenta{font-size:var(--fs-sm);color:var(--muted)}
+.vf-nota{font-size:var(--fs-xs);color:var(--muted);margin-top:4px;overflow-wrap:anywhere}
 .vf-stepper{display:flex;align-items:center;border:1px solid var(--line);border-radius:999px;background:var(--bg);overflow:hidden;flex-shrink:0}
 .vf-stepper button{width:30px;height:100%;border:none;background:transparent;color:var(--ink);cursor:pointer;font-size:var(--fs-body)}
 .vf-stepper span{min-width:22px;text-align:center;font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--ink)}
@@ -1335,19 +1336,25 @@ textarea.field{height:auto}
       <button class="modal-close" onclick="closeSaleModal()"><i class="ph ph-x"></i></button>
     </div>
 
-    <!-- 1. Pedido. "Nombre para llamar" va aparte de "Cliente" a propósito:
-         escribir en Cliente crea un cliente en la lista, y en un local con
-         gente de paso la llenaba de nombres sueltos. Fecha y los datos del
-         cliente nuevo se cambian poco: viven abajo, en "Más opciones". -->
+    <!-- 1. Pedido. "Nombre para llamar" va aparte del cliente a propósito:
+         en un local con gente de paso no todo el que pide es un cliente.
+         C1: el cliente se captura por TELÉFONO (la llave natural), visible
+         y opcional. Un día real de operación con el teléfono escondido en
+         "Más opciones" dejó cero contactos. Si el número ya existe se
+         reconoce solo; si no, aparece "Nombre del cliente" y se crea al
+         confirmar. Dos campos como mucho; casi siempre, solo el teléfono.
+         Fecha (poco usada) vive abajo, en "Más opciones". -->
     <section class="vf-seccion">
-      <div class="vf-label-row vf-cabecera"><span class="vf-titulo">Pedido</span> <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p><b>Nombre para llamar:</b> a quién se lo llamamos cuando esté listo; sale en la pantalla de Pedidos. <b>Cliente</b> (opcional): se busca por nombre o teléfono; si no existe, se crea solo. Teléfono y dirección de un cliente nuevo van en "Más opciones", abajo.</p></details></div>
+      <div class="vf-label-row vf-cabecera"><span class="vf-titulo">Pedido</span> <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Nombre para llamar: a quién se lo llamamos cuando esté listo; sale en la pantalla de Pedidos. Teléfono (opcional): si ya es cliente, se reconoce solo; si no, escribí su nombre y queda guardado en Clientes. El teléfono es un dato personal (Ley 1581 de 2012): pedilo diciendo para qué es (avisarle de su pedido y enviarle promociones) y guardalo solo si el cliente acepta darlo. Sin teléfono la venta se registra igual.</p></details></div>
       <div class="vf-grid">
         <div>
           <input type="text" id="venta-nombre-pedido" class="field" placeholder="Nombre para llamar" aria-label="Nombre para llamar" autocomplete="off">
         </div>
         <div>
-          <input type="text" id="venta-cliente-nombre" class="field" placeholder="Cliente (opcional)" aria-label="Cliente, nombre o teléfono (opcional)" list="clientes-datalist" oninput="onVentaClienteInput()">
-          <datalist id="clientes-datalist"></datalist>
+          <input type="tel" id="venta-cliente-telefono" class="field" inputmode="tel" autocomplete="off" placeholder="Teléfono (opcional)" aria-label="Teléfono del cliente (opcional)" aria-describedby="venta-cliente-proposito" oninput="onVentaTelefonoInput()" onfocus="renderVentaClienteAyuda_()" onblur="renderVentaClienteAyuda_()">
+          <div id="venta-cliente-proposito" class="vf-nota" style="display:none">Para avisarte de tu pedido y enviarte promociones. Es opcional.</div>
+          <div id="venta-cliente-match" class="vf-nota" style="display:none" aria-live="polite"></div>
+          <input type="text" id="venta-cliente-nombre" class="field" placeholder="Nombre del cliente" aria-label="Nombre del cliente" autocomplete="off" style="display:none;margin-top:8px">
         </div>
       </div>
     </section>
@@ -1445,11 +1452,6 @@ textarea.field{height:auto}
             <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Solo para cargar una venta de otro día. Una venta con fecha pasada no entra a Pedidos. No se puede elegir una fecha futura.</p></details>
           </div>
           <input type="date" id="venta-fecha" class="field" style="max-width:180px" onchange="renderVentaMasResumen()">
-        </div>
-        <div id="venta-cliente-nuevo-form" style="display:none;flex-direction:column;gap:8px;padding:10px;background:var(--bg);border:1px solid var(--line);border-radius:9px">
-          <span style="font-size:var(--fs-xs);font-weight:var(--fw-bold);color:var(--ink)">Cliente nuevo: completa sus datos (opcional)</span>
-          <input type="text" id="venta-cliente-telefono" class="field field-sm" placeholder="Teléfono">
-          <input type="text" id="venta-cliente-direccion" class="field field-sm" placeholder="Dirección">
         </div>
       </details>
 
@@ -1622,16 +1624,16 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261025110814"></script>
-<script src="js/rowsync.js?v=20261025110814"></script>
-<script src="js/sync.js?v=20261025110814"></script>
+<script src="js/core.js?v=20261025111058"></script>
+<script src="js/rowsync.js?v=20261025111058"></script>
+<script src="js/sync.js?v=20261025111058"></script>
 <!-- Versión fija + SRI. Es dist/umd/supabase.js (ya viene minificado): el
      .min.js de jsdelivr se genera al vuelo y no sirve con SRI. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js" integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok" crossorigin="anonymous"></script>
-<script src="js/supabaseSync.js?v=20261025110814"></script>
-<script src="js/auth.js?v=20261025110814"></script>
-<script src="js/almacen.js?v=20261025110814"></script>
-<script src="js/imagenes.js?v=20261025110814"></script>
+<script src="js/supabaseSync.js?v=20261025111058"></script>
+<script src="js/auth.js?v=20261025111058"></script>
+<script src="js/almacen.js?v=20261025111058"></script>
+<script src="js/imagenes.js?v=20261025111058"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -4890,8 +4892,7 @@ function openSaleModal() {
   document.getElementById('venta-mas-opciones').open = false;
   document.getElementById('venta-cliente-nombre').value = '';
   document.getElementById('venta-cliente-telefono').value = '';
-  document.getElementById('venta-cliente-direccion').value = '';
-  document.getElementById('venta-cliente-nuevo-form').style.display = 'none';
+  ventaNombreAutollenado_ = '';
   document.getElementById('venta-nota').value = '';
   document.getElementById('venta-nombre-pedido').value = '';
   document.getElementById('venta-descuento').value = '';
@@ -4903,7 +4904,7 @@ function openSaleModal() {
   document.getElementById('venta-fecha').value = todayLocalISO();
   document.getElementById('venta-fecha').max = todayLocalISO(); // I3: no se puede elegir una fecha futura
   reiniciarComprobante_('venta-comprobante-label', 'venta-comprobante-input');
-  document.getElementById('clientes-datalist').innerHTML = state.clientes.map(c => `<option value="${esc(c.nombre)}">`).join('');
+  onVentaTelefonoInput();
   renderVentaMetodoPago();
   renderDraftAdiciones();
   renderCartLines();
@@ -4911,18 +4912,72 @@ function openSaleModal() {
   openModal('modal-venta');
 }
 function closeSaleModal() { closeModal('modal-venta'); }
-function onVentaClienteInput() {
-  const val = document.getElementById('venta-cliente-nombre').value.trim();
-  // Mismo criterio que findOrCreateCliente (nombre sin tildes/mayúsculas,
-  // o teléfono si lo escrito es un número) — si ya existe, no se pide
-  // de nuevo teléfono/dirección.
-  const match = val && CrumblyCore.buscarCliente(state, val, '');
-  document.getElementById('venta-cliente-nuevo-form').style.display = (val.length > 1 && !match) ? 'flex' : 'none';
-  renderVentaMasResumen();
+// ─── C1: cliente por teléfono en la venta ───
+// Un teléfono con menos de VENTA_TEL_MIN_DIGITOS dígitos (normalizado) se
+// ignora del todo: ni busca ni crea cliente, y no muestra error. Así un
+// número a medio escribir no asocia a nadie por accidente y nunca frena
+// el cobro. Decisión conservadora: el mismo umbral para buscar y para
+// crear, para que lo que se ve en la caja sea lo que se guarda.
+const VENTA_TEL_MIN_DIGITOS = 7;
+// Nombre que el teléfono puso solo en "Nombre para llamar" (para poder
+// sacarlo si después cambian el número y ya no coincide).
+let ventaNombreAutollenado_ = '';
+// Lo que registrarVenta le pasa a findOrCreateCliente, o null si no hay
+// teléfono usable (la venta queda sin cliente, como siempre).
+function ventaClienteDatos_() {
+  const telefono = document.getElementById('venta-cliente-telefono').value.trim();
+  if (CrumblyCore.normalizarTelefono(telefono).length < VENTA_TEL_MIN_DIGITOS) return null;
+  const campoNombre = document.getElementById('venta-cliente-nombre');
+  const nombreCliente = campoNombre.style.display !== 'none' ? campoNombre.value.trim() : '';
+  return { telefono, nombre: nombreCliente || document.getElementById('venta-nombre-pedido').value.trim() };
+}
+function ventaClienteCoincidente_() {
+  const telefono = document.getElementById('venta-cliente-telefono').value;
+  if (CrumblyCore.normalizarTelefono(telefono).length < VENTA_TEL_MIN_DIGITOS) return null;
+  return CrumblyCore.buscarCliente(state, '', telefono);
+}
+function clienteTieneNombre_(c) {
+  return !!(c && String(c.nombre || '').trim() && c.nombre !== '(sin nombre)');
+}
+function onVentaTelefonoInput() {
+  const digitos = CrumblyCore.normalizarTelefono(document.getElementById('venta-cliente-telefono').value).length;
+  const match = ventaClienteCoincidente_();
+  const pedido = document.getElementById('venta-nombre-pedido');
+  const campoNombre = document.getElementById('venta-cliente-nombre');
+  const linea = document.getElementById('venta-cliente-match');
+  // Si el número cambió y el nombre que se había puesto solo sigue igual,
+  // se saca: era de otro cliente. Lo que escribió el cajero no se toca.
+  if (ventaNombreAutollenado_ && pedido.value === ventaNombreAutollenado_ && !(match && match.nombre === ventaNombreAutollenado_)) pedido.value = '';
+  if (pedido.value !== ventaNombreAutollenado_) ventaNombreAutollenado_ = '';
+  if (match && clienteTieneNombre_(match)) {
+    linea.textContent = 'Cliente: ' + match.nombre + ' ✓';
+    linea.style.display = 'block';
+    campoNombre.style.display = 'none';
+    if (!pedido.value.trim()) { pedido.value = match.nombre; ventaNombreAutollenado_ = match.nombre; }
+  } else if (match || digitos >= VENTA_TEL_MIN_DIGITOS) {
+    // Número nuevo (o un cliente guardado sin nombre): se pide el nombre.
+    linea.textContent = match ? 'Cliente sin nombre ✓' : '';
+    linea.style.display = match ? 'block' : 'none';
+    if (campoNombre.style.display === 'none') {
+      campoNombre.style.display = 'block';
+      if (!campoNombre.value.trim()) campoNombre.value = pedido.value.trim();
+    }
+  } else {
+    linea.textContent = '';
+    linea.style.display = 'none';
+    campoNombre.style.display = 'none';
+  }
+  renderVentaClienteAyuda_();
+}
+// El texto de para qué se pide el teléfono (Ley 1581) sale solo cuando el
+// campo tiene el foco o algo escrito: el resto del tiempo no ocupa lugar.
+function renderVentaClienteAyuda_() {
+  const tel = document.getElementById('venta-cliente-telefono');
+  const visible = document.activeElement === tel || tel.value.trim() !== '';
+  document.getElementById('venta-cliente-proposito').style.display = visible ? 'block' : 'none';
 }
 // "Más opciones" está cerrado casi siempre: el resumen al lado del
-// título avisa si adentro hay algo distinto de lo normal (otra fecha, o
-// un cliente nuevo al que se le pueden poner teléfono/dirección).
+// título avisa si adentro hay algo distinto de lo normal (otra fecha).
 function renderVentaMasResumen() {
   const partes = [];
   const fecha = document.getElementById('venta-fecha').value;
@@ -4930,7 +4985,6 @@ function renderVentaMasResumen() {
     const [y, m, d] = fecha.split('-');
     partes.push('fecha ' + d + '/' + m + '/' + y);
   }
-  if (document.getElementById('venta-cliente-nuevo-form').style.display !== 'none') partes.push('datos del cliente nuevo');
   document.getElementById('venta-mas-resumen').textContent = partes.length ? '· ' + partes.join(' · ') : '';
 }
 // Efectivo / Transferencia / Dividido (parte y parte, igual que en
@@ -5371,12 +5425,11 @@ function registrarVenta() {
     if (!seguirPerdida) return;
   }
 
-  const clienteId = CrumblyCore.findOrCreateCliente(
-    state,
-    document.getElementById('venta-cliente-nombre').value,
-    document.getElementById('venta-cliente-telefono').value,
-    document.getElementById('venta-cliente-direccion').value
-  );
+  // C1: cliente solo si hay un teléfono usable (7+ dígitos). Sin teléfono
+  // la venta queda sin cliente, exactamente como antes; nunca se frena el
+  // cobro por un dato de contacto. La dirección no se pide en la caja.
+  const datosCliente = ventaClienteDatos_();
+  const clienteId = datosCliente ? CrumblyCore.findOrCreateCliente(state, datosCliente.nombre, datosCliente.telefono, '') : null;
   const fechaInput = document.getElementById('venta-fecha').value;
   const opts = { stockInsuficiente, clienteId, metodoPago: ventaMetodoPago, comprobante: conComprobante ? ventaComprobante : '', montoEfectivo, montoTransferencia, descuento: ventaDescuento_() };
   if (fechaInput && fechaInput !== todayLocalISO()) {
@@ -5397,7 +5450,8 @@ function registrarVenta() {
   // quien prepara. Una venta cargada con fecha pasada no es un pedido.
   if (!opts.fecha) {
     venta.estado = 'pendiente';
-    venta.nombrePedido = document.getElementById('venta-nombre-pedido').value.trim() || document.getElementById('venta-cliente-nombre').value.trim();
+    const cliente = clienteId && state.clientes.find(c => c.id === clienteId);
+    venta.nombrePedido = document.getElementById('venta-nombre-pedido').value.trim() || (clienteTieneNombre_(cliente) ? cliente.nombre : '');
     const nota = document.getElementById('venta-nota').value.trim();
     if (nota) venta.nota = nota;
   }
@@ -7288,15 +7342,35 @@ function renderClientes() {
       </div>
     </div>`).join('');
 }
+// "Ana, Beto y Carla"
+function listaNombres_(nombres) {
+  return nombres.length < 2 ? nombres.join('') : nombres.slice(0, -1).join(', ') + ' y ' + nombres[nombres.length - 1];
+}
 // Aviso con los clientes repetidos (de antes del arreglo) y botón para unirlos.
+// C1: también avisa los que comparten teléfono (normalizado), pero esos
+// SOLO se informan: "Unir repetidos" sigue uniendo por nombre, y un mismo
+// número con dos nombres lo resuelve el dueño a mano (editar o eliminar).
+// No se repiten los que ya están todos en un mismo grupo por nombre: esos
+// los arregla "Unir repetidos".
 function renderClientesDuplicados_() {
   const box = document.getElementById('clientes-duplicados');
   const grupos = CrumblyCore.gruposClientesDuplicados(state);
-  if (!grupos.length) { box.style.display = 'none'; return; }
+  const grupoPorNombre = new Map();
+  grupos.forEach((g, i) => g.forEach(c => grupoPorNombre.set(c, i)));
+  const mismoTel = CrumblyCore.gruposClientesMismoTelefono(state)
+    .filter(g => !g.every(c => grupoPorNombre.has(c) && grupoPorNombre.get(c) === grupoPorNombre.get(g[0])));
+  if (!grupos.length && !mismoTel.length) { box.style.display = 'none'; return; }
   const sobran = grupos.reduce((a, g) => a + g.length - 1, 0);
+  const lineaNombre = grupos.length
+    ? `<span class="item-sub" style="flex:1;min-width:200px">Hay ${sobran} ${sobran === 1 ? 'cliente repetido' : 'clientes repetidos'}: ${grupos.map(g => esc(g[0].nombre)).join(', ')}.</span>
+    <button class="btn" onclick="unirClientesRepetidos_()">Unir repetidos</button>`
+    : '';
+  const lineaTel = mismoTel.length
+    ? `<div style="flex-basis:100%;display:flex;align-items:center;gap:4px;min-width:0"><span class="item-sub" style="flex:1;min-width:0">${mismoTel.map(g => 'Mismo teléfono: ' + esc(listaNombres_(g.map(c => c.nombre || '(sin nombre)'))) + '.').join(' ')}</span>
+      <details class="info"><summary aria-label="Más información"><i class="ph ph-info"></i></summary><p>Estos clientes tienen el mismo número escrito de otra forma. No se unen solos: puede ser un error de tipeo o dos personas de la misma casa. Revisalos y editá o eliminá el que sobra.</p></details></div>`
+    : '';
   box.style.display = 'flex';
-  box.innerHTML = `<span class="item-sub" style="flex:1;min-width:200px">Hay ${sobran} ${sobran === 1 ? 'cliente repetido' : 'clientes repetidos'}: ${grupos.map(g => esc(g[0].nombre)).join(', ')}.</span>
-    <button class="btn" onclick="unirClientesRepetidos_()">Unir repetidos</button>`;
+  box.innerHTML = lineaNombre + lineaTel;
 }
 function unirClientesRepetidos_() {
   if (!confirm('Se deja un solo cliente por nombre y sus ventas pasan a ese. ¿Unir?')) return;
@@ -7333,11 +7407,24 @@ function saveCliente() {
   const telefono = document.getElementById('cli-telefono').value.trim();
   const direccion = document.getElementById('cli-direccion').value.trim();
   const editId = document.getElementById('cli-edit-id').value;
+  // C1: nunca dos clientes con el mismo teléfono normalizado. Al editar, solo
+  // se frena si el número CAMBIÓ: un repetido que ya existía (lo reporta el
+  // aviso de arriba) se tiene que poder editar para arreglarlo.
+  const telefonoNorm = CrumblyCore.normalizarTelefono(telefono);
+  const anterior = editId ? state.clientes.find(x => x.id === editId) : null;
+  const telAnterior = anterior ? (CrumblyCore.normalizarTelefono(anterior.telefono) || anterior.telefonoNorm || '') : '';
+  if (telefonoNorm && telefonoNorm !== telAnterior) {
+    const otro = state.clientes.find(x => x.id !== editId && (CrumblyCore.normalizarTelefono(x.telefono) || x.telefonoNorm || '') === telefonoNorm);
+    if (otro) { showToast('Ese teléfono ya es de ' + (otro.nombre || 'otro cliente') + '. No se guardó.', 4000); return; }
+  }
   if (editId) {
     const idx = state.clientes.findIndex(x => x.id === editId);
-    state.clientes[idx] = { ...state.clientes[idx], nombre, telefono, direccion };
+    state.clientes[idx] = { ...state.clientes[idx], nombre, telefono, direccion, telefonoNorm };
+    if (!telefonoNorm) delete state.clientes[idx].telefonoNorm;
   } else {
-    state.clientes.push({ id: uid(), nombre, telefono, direccion });
+    const nuevo = { id: uid(), nombre, telefono, direccion };
+    if (telefonoNorm) nuevo.telefonoNorm = telefonoNorm;
+    state.clientes.push(nuevo);
   }
   saveState(); closeModal('modal-cliente'); renderClientes();
   showToast('Cliente guardado ✓');
@@ -7442,6 +7529,12 @@ CrumblyAlmacen.onError(err => {
 CrumblyAlmacen.init().then(() => {
 baseEnMemoria = undefined; // por si algo la leyó antes de init: se vuelve a leer ya cargada
 loadState();
+// C1: teléfonos de clientes normalizados (idempotente: después de la primera
+// vez no cambia nada y no guarda). Los que comparten número NO se unen: se
+// avisan en Clientes (renderClientesDuplicados_).
+try {
+  if (CrumblyCore.normalizarTelefonosClientes(state).actualizados > 0) saveState();
+} catch (e) { console.error('No se pudieron normalizar los teléfonos de clientes', e); }
 if (location.hash.length > 1) navTo(location.hash.slice(1));
 auth.restoreSession();
 if (auth.isAuthenticated()) {
