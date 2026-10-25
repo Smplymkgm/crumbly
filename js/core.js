@@ -2353,6 +2353,20 @@
   // input: { fecha, tipo, categoria, descripcion, monto, proveedor,
   //          insumoTipo, insumoId, cantidad,      // solo tipo 'inventario'
   //          vidaUtilMeses }                       // solo tipo 'capex'
+  // La nota es el ÚNICO campo editable de una venta ya registrada (para
+  // quien prepara: "sin maní", "helado aparte"). Total, ítems, cliente y
+  // costo congelado no se tocan: el costo por venta es la base del costeo.
+  // Queda rastro de quién y cuándo. Vacía = se quita la nota.
+  function editarNotaVenta(state, ventaId, nota, usuario, ahora) {
+    var v = (state.ventas || []).find(function (x) { return x.id === ventaId; });
+    if (!v) throw new Error('Venta no encontrada');
+    var texto = String(nota || '').trim().slice(0, 500);
+    if (texto) v.nota = texto; else delete v.nota;
+    v.notaEditadaPor = usuario || '';
+    v.notaEditadaEn = ahora || new Date().toISOString();
+    return v;
+  }
+
   function registrarGasto(state, input) {
     var monto = Number(input.monto) || 0;
     if (monto <= 0) throw new Error('El monto del gasto debe ser mayor a 0');
@@ -4120,6 +4134,7 @@
     getMovimientos: getMovimientos,
     findInsumoConTipo: findInsumoConTipo,
     findOrCreateCliente: findOrCreateCliente,
+    editarNotaVenta: editarNotaVenta,
     buscarCliente: buscarCliente,
     gruposClientesDuplicados: gruposClientesDuplicados,
     gruposClientesMismoTelefono: gruposClientesMismoTelefono,

@@ -984,6 +984,25 @@ test('getCMPonderado descuenta el descuento de la venta del margen y de los ingr
   assert.deepStrictEqual([cm.cmTotalPesos, cm.ingresosTotal], [10000, 18000]);
 });
 
+test('editarNotaVenta: cambia solo la nota (y quién/cuándo); total, ganancia, ítems y costeo quedan iguales', () => {
+  const s = C.emptyState();
+  s.productos = [{ id: 'p1', nombre: 'Waffle', precio: 20000, componentes: [], empaquesUsados: [] }];
+  const ayer = new Date(Date.now() - 86400000).toISOString();
+  const v = C.applyVenta(s, [{ productoId: 'p1', qty: 2, adiciones: [] }], [], { fecha: ayer, descuento: 2000 });
+  const antes = JSON.stringify({ total: v.total, ganancia: v.ganancia, subtotal: v.subtotal, descuento: v.descuento, items: v.items, consumo: v.consumoReal });
+  const cascAntes = JSON.stringify(C.getCascadaUtilidadRango(s, ayer.slice(0, 10), new Date().toISOString().slice(0, 10)));
+  const r = C.editarNotaVenta(s, v.id, '  sin maní  ', 'ana@x.com', '2026-10-25T10:00:00.000Z');
+  assert.strictEqual(r.nota, 'sin maní');
+  assert.strictEqual(r.notaEditadaPor, 'ana@x.com');
+  assert.strictEqual(r.notaEditadaEn, '2026-10-25T10:00:00.000Z');
+  assert.strictEqual(JSON.stringify({ total: v.total, ganancia: v.ganancia, subtotal: v.subtotal, descuento: v.descuento, items: v.items, consumo: v.consumoReal }), antes);
+  assert.strictEqual(JSON.stringify(C.getCascadaUtilidadRango(s, ayer.slice(0, 10), new Date().toISOString().slice(0, 10))), cascAntes);
+  assert.strictEqual(s.ventas.length, 1);
+  C.editarNotaVenta(s, v.id, '', 'ana@x.com', '2026-10-25T11:00:00.000Z');
+  assert.strictEqual(s.ventas[0].nota, undefined); // vacía = se quita
+  assert.throws(() => C.editarNotaVenta(s, 'no-existe', 'x', 'a', 'b'), /no encontrada/);
+});
+
 test('unirClientesDuplicados: junta mismo nombre (sin tildes/mayúsculas), mueve las ventas y respeta teléfonos distintos', () => {
   const s = { clientes: [
     { id: 'a1', nombre: 'Ángie', telefono: '' },

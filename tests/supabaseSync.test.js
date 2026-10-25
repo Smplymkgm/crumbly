@@ -229,6 +229,19 @@ test('CRITERIO: solo se sube el registro que cambió respecto de la base', async
   assert.strictEqual(m[0].data.costo, 6);
 });
 
+test('CRITERIO: editar la nota de una venta viaja como UPDATE de esa fila (mismo id), sin duplicarla ni borrar nada', async () => {
+  const c = fakeClient();
+  const state = copia(BASE);
+  state.ventas[1].nota = 'sin maní';
+  const r = await Sync.push(c, state, undefined, BASE);
+  assert.strictEqual(r.ok, true);
+  const v = upserteadas(c, 'ventas');
+  assert.deepStrictEqual(v.map(f => f.id), ['v2']); // una sola fila, la misma venta
+  assert.strictEqual(v[0].data.nota, 'sin maní');
+  assert.strictEqual(v[0].data.total, 200);
+  assert.ok(!c.calls.some(x => x.op === 'update' && x.tabla === 'ventas')); // ningún soft-delete
+});
+
 test('CRITERIO: un registro que no toqué NO viaja — un dispositivo con copia vieja no pisa lo que editó otro', async () => {
   // En Supabase, otro dispositivo ya cambió m2 a costo 4; este dispositivo
   // todavía tiene la versión de la base (costo 3) y solo editó m1.
