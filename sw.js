@@ -10,7 +10,7 @@
  * Al cambiar este archivo, subir CACHE (crumbly-v2, …): activate borra las
  * cachés crumbly-* anteriores.
  */
-const CACHE = 'crumbly-v2';
+const CACHE = 'crumbly-v3';
 const TIMEOUT_MS = 4000;
 const SCOPE = self.registration.scope; // p. ej. https://smplymkgm.github.io/crumbly/
 
@@ -27,7 +27,7 @@ const CDN_FIJOS = [
 // Se guardan al instalar para que el primer arranque sin red ya funcione
 // (la primera visita carga todo antes de que el SW exista).
 const PRECACHE_PROPIOS = [
-  './', 'js/core.js', 'js/rowsync.js', 'js/sync.js', 'js/supabaseSync.js', 'js/auth.js', 'js/almacen.js',
+  './', 'js/core.js', 'js/rowsync.js', 'js/sync.js', 'js/supabaseSync.js', 'js/auth.js', 'js/almacen.js', 'js/imagenes.js',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
 ];
 const PRECACHE_CDN = [
