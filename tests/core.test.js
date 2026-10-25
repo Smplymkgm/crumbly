@@ -1003,6 +1003,24 @@ test('editarNotaVenta: cambia solo la nota (y quién/cuándo); total, ganancia, 
   assert.throws(() => C.editarNotaVenta(s, 'no-existe', 'x', 'a', 'b'), /no encontrada/);
 });
 
+test('rangoHistorialPedidos: hoy, ayer, 7 días, este mes y personalizado (fechas locales, inclusivo)', () => {
+  const ref = new Date(2026, 9, 25, 15, 0, 0); // 25 oct 2026, hora local
+  assert.deepStrictEqual(C.rangoHistorialPedidos('hoy', ref), { inicio: '2026-10-25', fin: '2026-10-25' });
+  assert.deepStrictEqual(C.rangoHistorialPedidos('ayer', ref), { inicio: '2026-10-24', fin: '2026-10-24' });
+  assert.deepStrictEqual(C.rangoHistorialPedidos('7dias', ref), { inicio: '2026-10-19', fin: '2026-10-25' });
+  assert.deepStrictEqual(C.rangoHistorialPedidos('mes', ref), { inicio: '2026-10-01', fin: '2026-10-25' });
+  assert.deepStrictEqual(C.rangoHistorialPedidos('personalizado', ref, '2026-10-10', '2026-10-03'), { inicio: '2026-10-03', fin: '2026-10-10' });
+  assert.strictEqual(C.rangoHistorialPedidos('personalizado', ref, '', ''), null);
+  // con getVentasByRange (la función de rango que ya existe): ayer entra completo, hoy no
+  const ventas = [
+    { id: 'a', fecha: new Date(2026, 9, 24, 0, 5).toISOString(), total: 1 },
+    { id: 'b', fecha: new Date(2026, 9, 24, 23, 55).toISOString(), total: 2 },
+    { id: 'c', fecha: new Date(2026, 9, 25, 9, 0).toISOString(), total: 3 }
+  ];
+  const r = C.rangoHistorialPedidos('ayer', ref);
+  assert.deepStrictEqual(C.getVentasByRange(ventas, r.inicio, r.fin).map(v => v.id), ['a', 'b']);
+});
+
 test('unirClientesDuplicados: junta mismo nombre (sin tildes/mayúsculas), mueve las ventas y respeta teléfonos distintos', () => {
   const s = { clientes: [
     { id: 'a1', nombre: 'Ángie', telefono: '' },

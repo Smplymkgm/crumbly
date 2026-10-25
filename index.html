@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- La pone .githooks/pre-commit en cada commit; ver revisarVersionNueva_() -->
-<meta name="app-version" content="20261025113722">
+<meta name="app-version" content="20261025114153">
 <title>Crumbly</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -242,6 +242,12 @@ button, input, select, textarea { font-family:'Helvetica Neue',Helvetica,Arial,s
 .pedido-turno{font-size:var(--fs-sm);font-weight:var(--fw-medium);color:var(--muted);white-space:nowrap}
 .pedido-adicion{padding-left:22px;color:var(--text)}
 .pedido-espera .btn-icon{vertical-align:middle;margin-left:4px}
+.pedidos-aviso{display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--ink);color:var(--white);border-radius:12px;padding:10px 14px;margin-bottom:12px;font-size:var(--fs-sm)}
+.pedidos-aviso button{background:var(--white);color:var(--ink);border:none;border-radius:999px;padding:6px 12px;cursor:pointer;font-family:inherit;font-size:var(--fs-sm)}
+.hist-dia{display:flex;justify-content:space-between;gap:10px;font-size:var(--fs-sm);color:var(--muted);padding:12px 0 6px;border-bottom:1px solid var(--line)}
+.hist-pedido{padding:10px 0;border-bottom:1px solid var(--line)}
+.hist-pedido:last-child{border-bottom:none}
+.hist-pedido .pedido-items{margin:6px 0}
 .pedido-nota{display:flex;align-items:center;gap:6px;background:var(--bg);border-radius:10px;padding:8px 10px;font-size:var(--fs-sm);font-weight:var(--fw-bold);color:var(--ink)}
 .card-title{font-weight:var(--fw-bold);font-size:var(--fs-h2);line-height:var(--lh-tight);color:var(--ink)}
 .page-title{font-weight:var(--fw-bold);font-size:var(--fs-h1);line-height:var(--lh-tight);color:var(--ink)}
@@ -852,7 +858,30 @@ textarea.field{height:auto}
             <button class="btn btn-outline" id="pedidos-sonido-btn" onclick="activarSonido_()"><i class="ph ph-speaker-high"></i> Activar sonido</button>
           </div>
         </div>
+        <div class="pill-row" role="tablist" aria-label="Vista de pedidos">
+          <button class="pill-btn active" id="pedidos-tab-curso" onclick="setPedidosVista('curso')">En curso</button>
+          <button class="pill-btn" id="pedidos-tab-historial" onclick="setPedidosVista('historial')">Historial</button>
+        </div>
         <div id="pedidos-list"></div>
+        <div id="pedidos-historial-vista" style="display:none">
+          <div id="pedidos-nuevos-aviso" class="pedidos-aviso" style="display:none"></div>
+          <div class="card">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px">
+              <div class="card-title" id="pedidos-hist-titulo">Hoy</div>
+              <button class="btn btn-outline" style="padding:6px 10px" onclick="togglePedidosHistFiltros()"><i class="ph ph-funnel"></i> <span id="pedidos-hist-filtros-activos"></span></button>
+            </div>
+            <div id="pedidos-hist-panel" style="display:none;flex-direction:column;gap:10px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:14px">
+              <div style="display:flex;gap:6px;flex-wrap:wrap" id="pedidos-hist-presets"></div>
+              <div id="pedidos-hist-personalizado" style="display:none;align-items:center;gap:8px;flex-wrap:wrap">
+                <input type="date" id="pedidos-hist-desde" class="field field-sm" style="width:auto" onchange="renderHistorialPedidos_()" aria-label="Desde">
+                <span class="item-sub">hasta</span>
+                <input type="date" id="pedidos-hist-hasta" class="field field-sm" style="width:auto" onchange="renderHistorialPedidos_()" aria-label="Hasta">
+              </div>
+              <button style="align-self:flex-start;background:transparent;border:none;color:var(--muted);font-size:var(--fs-sm);cursor:pointer;padding:4px 0" onclick="setPedidosHistPreset('hoy')">Limpiar</button>
+            </div>
+            <div id="pedidos-historial-lista"></div>
+          </div>
+        </div>
       </div>
 
       <!-- CLIENTES -->
@@ -1631,16 +1660,16 @@ textarea.field{height:auto}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" integrity="sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3" crossorigin="anonymous"></script>
 <script src="https://accounts.google.com/gsi/client" async defer onload="if (typeof initGoogleSignIn === 'function') initGoogleSignIn()"></script>
-<script src="js/core.js?v=20261025113722"></script>
-<script src="js/rowsync.js?v=20261025113722"></script>
-<script src="js/sync.js?v=20261025113722"></script>
+<script src="js/core.js?v=20261025114153"></script>
+<script src="js/rowsync.js?v=20261025114153"></script>
+<script src="js/sync.js?v=20261025114153"></script>
 <!-- Versión fija + SRI. Es dist/umd/supabase.js (ya viene minificado): el
      .min.js de jsdelivr se genera al vuelo y no sirve con SRI. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js" integrity="sha384-Rj26LVGvoeRVR6+mwQmFfcR3QOBEwT+ZmuCWpuiqeTzJpCs0ER4ITAWGb4Hiy3Ok" crossorigin="anonymous"></script>
-<script src="js/supabaseSync.js?v=20261025113722"></script>
-<script src="js/auth.js?v=20261025113722"></script>
-<script src="js/almacen.js?v=20261025113722"></script>
-<script src="js/imagenes.js?v=20261025113722"></script>
+<script src="js/supabaseSync.js?v=20261025114153"></script>
+<script src="js/auth.js?v=20261025114153"></script>
+<script src="js/almacen.js?v=20261025114153"></script>
+<script src="js/imagenes.js?v=20261025114153"></script>
 <script>
 let state = CrumblyCore.emptyState();
 let reportPeriod = 'dia';
@@ -2240,6 +2269,9 @@ function renderPedidos() {
   const listos = deHoy.filter(v => v.estado === 'listo');
   const badge = document.getElementById('pedidos-badge');
   if (badge) badge.textContent = pendientes.length ? '(' + pendientes.length + ')' : '';
+  // Viendo el historial, la cola no se redibuja (un pedido nuevo no empuja
+  // la lista que se está revisando): solo se avisa que hay trabajo en curso.
+  if (pedidosVista === 'historial') { renderAvisoPedidosEnCurso_(deHoy.length); return; }
   const el = document.getElementById('pedidos-list');
   if (!el) return;
   const turnos = CrumblyCore.getTurnosPedidos(state.ventas);
@@ -2315,6 +2347,87 @@ function renderPedidos() {
 // una venta, ver CrumblyCore.editarNotaVenta). Viaja en el push por
 // diferencias como UPDATE de la misma fila y llega por realtime a los
 // otros dispositivos.
+// ─── Pedidos: vista Historial ───────────────────────────────────────
+// "En curso" (la cola en vivo, con sonido) es la vista por defecto y la que
+// se muestra al entrar. "Historial" lista pedidos de un rango, sin realtime
+// visible ni sonido. Los datos: la sincronización baja SIEMPRE las
+// colecciones completas (pull completo la primera vez; el incremental solo
+// agrega), así que un dispositivo que sincronizó alguna vez tiene todas las
+// ventas. Sin ninguna sincronización (lastSync vacío) los datos "no están
+// cargados", que es distinto de "no hubo pedidos".
+let pedidosVista = 'curso';
+let pedidosHistPreset = 'hoy';
+const PEDIDOS_HIST_PRESETS = [['hoy', 'Hoy'], ['ayer', 'Ayer'], ['7dias', 'Últimos 7 días'], ['mes', 'Este mes'], ['personalizado', 'Personalizado']];
+function setPedidosVista(v) {
+  pedidosVista = v;
+  document.getElementById('pedidos-tab-curso').classList.toggle('active', v === 'curso');
+  document.getElementById('pedidos-tab-historial').classList.toggle('active', v === 'historial');
+  document.getElementById('pedidos-list').style.display = v === 'curso' ? '' : 'none';
+  document.getElementById('pedidos-historial-vista').style.display = v === 'historial' ? '' : 'none';
+  document.getElementById('pedidos-en-vivo').style.display = v === 'curso' ? '' : 'none';
+  document.getElementById('pedidos-sonido-btn').style.visibility = v === 'curso' ? '' : 'hidden';
+  renderPedidos();
+  if (v === 'historial') renderHistorialPedidos_();
+}
+function togglePedidosHistFiltros() {
+  const p = document.getElementById('pedidos-hist-panel');
+  p.style.display = p.style.display === 'none' ? 'flex' : 'none';
+}
+function setPedidosHistPreset(p) {
+  pedidosHistPreset = p;
+  renderHistorialPedidos_();
+}
+function renderAvisoPedidosEnCurso_(n) {
+  const aviso = document.getElementById('pedidos-nuevos-aviso');
+  aviso.style.display = n ? 'flex' : 'none';
+  aviso.innerHTML = n ? `<span>${n} ${n === 1 ? 'pedido en curso' : 'pedidos en curso'}</span><button type="button" onclick="setPedidosVista('curso')">Ver la cola</button>` : '';
+}
+function renderHistorialPedidos_() {
+  document.getElementById('pedidos-hist-presets').innerHTML = PEDIDOS_HIST_PRESETS
+    .map(([id, label]) => `<button class="chip ${pedidosHistPreset === id ? 'active' : ''}" onclick="setPedidosHistPreset('${id}')">${label}</button>`).join('');
+  document.getElementById('pedidos-hist-personalizado').style.display = pedidosHistPreset === 'personalizado' ? 'flex' : 'none';
+  // Mismo contador que Movimientos: cuántos filtros se alejan del default (Hoy).
+  document.getElementById('pedidos-hist-filtros-activos').textContent = pedidosHistPreset !== 'hoy' ? '1' : '';
+  const r = CrumblyCore.rangoHistorialPedidos(pedidosHistPreset, new Date(),
+    document.getElementById('pedidos-hist-desde').value, document.getElementById('pedidos-hist-hasta').value);
+  const fmtDia = iso => new Date(iso + 'T12:00:00').toLocaleDateString('es-CO', { day: 'numeric', month: 'short' });
+  const titulo = document.getElementById('pedidos-hist-titulo');
+  const el = document.getElementById('pedidos-historial-lista');
+  if (!r) { titulo.textContent = 'Personalizado'; el.innerHTML = '<p class="empty">Elegí las dos fechas del rango.</p>'; return; }
+  titulo.textContent = PEDIDOS_HIST_PRESETS.find(p => p[0] === pedidosHistPreset)[1] + (r.inicio === r.fin ? ' · ' + fmtDia(r.inicio) : ' · ' + fmtDia(r.inicio) + ' a ' + fmtDia(r.fin));
+  const ventas = CrumblyCore.getVentasByRange(state.ventas, r.inicio, r.fin)
+    .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+  if (!ventas.length) {
+    el.innerHTML = state.config.lastSync
+      ? '<p class="empty">No hubo pedidos en este período.</p>'
+      : '<p class="empty" style="color:var(--danger)">Este dispositivo todavía no bajó los datos del servidor, así que no se puede saber si hubo pedidos. Conectate y esperá a que diga "Sincronizado".</p>';
+    return;
+  }
+  const turnos = CrumblyCore.getTurnosPedidos(state.ventas);
+  const hora = iso => new Date(iso).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' });
+  const ESTADO = { pendiente: 'por preparar', listo: 'listo', entregado: 'entregado' };
+  const porDia = {};
+  ventas.forEach(v => { const d = CrumblyCore.fechaLocalISO(v.fecha); (porDia[d] = porDia[d] || []).push(v); });
+  const total = ventas.reduce((a, v) => a + (Number(v.total) || 0), 0);
+  el.innerHTML = `<div class="item-sub" style="margin-bottom:4px">${ventas.length} ${ventas.length === 1 ? 'pedido' : 'pedidos'} · ${fmt(total)}</div>` +
+    Object.keys(porDia).sort().reverse().map(d => {
+      const lista = porDia[d];
+      const totalDia = lista.reduce((a, v) => a + (Number(v.total) || 0), 0);
+      const diaTxt = new Date(d + 'T12:00:00').toLocaleDateString('es-CO', { weekday: 'long', day: 'numeric', month: 'short' });
+      return `<div class="hist-dia"><span>${diaTxt.charAt(0).toUpperCase() + diaTxt.slice(1)}</span><span>${lista.length} · ${fmt(totalDia)}</span></div>` +
+        lista.map(v => `<div class="hist-pedido">
+          <div style="display:flex;justify-content:space-between;gap:10px">
+            <span>${nombrePedidoHtml_(v, turnos)}</span><span>${fmt(v.total)}</span>
+          </div>
+          <div class="item-sub">${hora(v.fecha)}${v.estado ? ' · ' + (ESTADO[v.estado] || esc(v.estado)) : ''}${v.descuento ? ' · descuento ' + fmt(v.descuento) : ''}</div>
+          <ul class="pedido-items">${itemsPedidoHtml_(v)}</ul>
+          ${v.nota
+            ? `<div class="pedido-nota"><i class="ph ph-note-pencil"></i> <span style="flex:1;min-width:0">${esc(v.nota)}</span><button type="button" class="btn-icon" onclick="editarNotaPedido('${v.id}')" title="Editar nota" aria-label="Editar nota"><i class="ph ph-pencil-simple"></i></button></div>`
+            : `<button type="button" class="vf-desc-btn" onclick="editarNotaPedido('${v.id}')">+ Nota</button>`}
+        </div>`).join('');
+    }).join('');
+}
+
 function editarNotaPedido(id) {
   const v = state.ventas.find(x => x.id === id);
   if (!v) return;
@@ -2324,6 +2437,7 @@ function editarNotaPedido(id) {
   CrumblyCore.editarNotaVenta(state, id, txt, (u && (u.email || u.nombre)) || '', new Date().toISOString());
   saveState();
   renderPedidos();
+  if (pedidosVista === 'historial') renderHistorialPedidos_();
   showToast(txt.trim() ? 'Nota guardada' : 'Nota quitada');
 }
 const PEDIDOS_PAUSA_MS = 700;
@@ -2427,6 +2541,9 @@ function activarSonido_() {
   setTimeout(renderBotonSonido_, 50);
 }
 function avisarPedidoNuevo_() {
+  // Revisando el historial no suena ni salta un toast: el aviso fijo de
+  // "pedidos en curso" (renderAvisoPedidosEnCurso_) ya lo muestra.
+  if (pedidosVista === 'historial' && document.getElementById('page-pedidos').classList.contains('active')) return;
   showToast('Pedido nuevo');
   sonar_();
 }
@@ -3562,7 +3679,7 @@ function navTo(page, el) {
   closeMobileMenu();
   if (page === 'dashboard') renderReportes();
   if (page === 'caja') renderCaja();
-  if (page === 'pedidos') { renderPedidos(); renderEstadoEnVivo_(); renderBotonSonido_(); }
+  if (page === 'pedidos') { setPedidosVista('curso'); renderEstadoEnVivo_(); renderBotonSonido_(); } // entrar = la cola en vivo, nunca el historial
   if (page === 'inventario') { renderInventario(); renderMermas(); }
   if (page === 'productos') renderProductos();
   if (page === 'clientes') renderClientes();

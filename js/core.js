@@ -3047,6 +3047,23 @@
     var b = rangeBounds(startISO, endISO);
     return (ventas || []).filter(function (v) { var f = new Date(v.fecha); return f >= b.start && f <= b.end; });
   }
+  // Rango (fechas locales YYYY-MM-DD, inclusivo) del historial de Pedidos.
+  // Se filtra después con getVentasByRange, la misma función de rango del
+  // resto de la app (cota superior incluida). null = rango incompleto.
+  function rangoHistorialPedidos(preset, ref, desde, hasta) {
+    var hoy = ref ? new Date(ref) : new Date();
+    var dia = function (n) { var d = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + n); return fechaLocalISO(d); };
+    if (preset === 'hoy') return { inicio: dia(0), fin: dia(0) };
+    if (preset === 'ayer') return { inicio: dia(-1), fin: dia(-1) };
+    if (preset === '7dias') return { inicio: dia(-6), fin: dia(0) };
+    if (preset === 'mes') return { inicio: fechaLocalISO(new Date(hoy.getFullYear(), hoy.getMonth(), 1)), fin: dia(0) };
+    if (preset === 'personalizado') {
+      if (!desde || !hasta) return null;
+      return desde <= hasta ? { inicio: desde, fin: hasta } : { inicio: hasta, fin: desde };
+    }
+    return null;
+  }
+
   function getGastosByRange(gastos, startISO, endISO) {
     var b = rangeBounds(startISO, endISO);
     return (gastos || []).filter(function (g) { var f = new Date(g.fecha); return f >= b.start && f <= b.end; });
@@ -4135,6 +4152,7 @@
     findInsumoConTipo: findInsumoConTipo,
     findOrCreateCliente: findOrCreateCliente,
     editarNotaVenta: editarNotaVenta,
+    rangoHistorialPedidos: rangoHistorialPedidos,
     buscarCliente: buscarCliente,
     gruposClientesDuplicados: gruposClientesDuplicados,
     gruposClientesMismoTelefono: gruposClientesMismoTelefono,
