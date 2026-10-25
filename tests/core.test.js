@@ -1419,12 +1419,14 @@ test('findOrCreateCliente reutiliza por teléfono en vez de duplicar', () => {
   assert.strictEqual(s.clientes.length, 1);
 });
 
-test('findOrCreateCliente actualiza el nombre si vino distinto para el mismo teléfono', () => {
+// C1: antes pisaba "Ana" con "Ana María" en silencio. Ahora el nombre ya
+// guardado se respeta (lo cambia quien edite el cliente en Clientes).
+test('findOrCreateCliente NO pisa un nombre distinto ya guardado para el mismo teléfono', () => {
   const s = C.emptyState();
   C.findOrCreateCliente(s, 'Ana', '3001234567');
   C.findOrCreateCliente(s, 'Ana María', '3001234567');
   assert.strictEqual(s.clientes.length, 1);
-  assert.strictEqual(s.clientes[0].nombre, 'Ana María');
+  assert.strictEqual(s.clientes[0].nombre, 'Ana');
 });
 
 test('findOrCreateCliente sin nombre ni teléfono no crea nada', () => {
@@ -4400,6 +4402,122 @@ test('registrarGastosAgrupados: pago dividido solo con una compra', () => {
   const [g] = C.registrarGastosAgrupados(s, { tipo: 'operativo', metodoPago: 'dividido', montoEfectivo: 3000, montoTransferencia: 7000 }, [{ categoria: 'Aseo', monto: 10000 }]);
   assert.strictEqual(g.montoEfectivo, 3000);
   assert.strictEqual(g.montoTransferencia, 7000);
+});
+
+console.log('\n== C1: teléfono normalizado como llave del cliente ==');
+
+test('normalizarTelefono: el mismo celular colombiano en cualquier formato da 3001234567', () => {
+  ['3001234567', '300 123 4567', '+57 300 123 4567', '(300) 123-4567', '57 3001234567', '057 300 123 4567', '+57-300-123-4567']
+    .forEach(t => assert.strictEqual(C.normalizarTelefono(t), '3001234567', t));
+});
+
+test('normalizarTelefono: un número extranjero conserva su indicativo; sin dígitos da vacío', () => {
+  assert.strictEqual(C.normalizarTelefono('+1 305 555 0100'), '13055550100');
+  assert.strictEqual(C.normalizarTelefono('6012345678'), '6012345678'); // fijo de Bogotá: 10 dígitos, queda igual
+  assert.strictEqual(C.normalizarTelefono('5712345'), '5712345'); // corto que empieza por 57: no es indicativo
+  assert.strictEqual(C.normalizarTelefono(''), '');
+  assert.strictEqual(C.normalizarTelefono(null), '');
+  assert.strictEqual(C.normalizarTelefono(undefined), '');
+  assert.strictEqual(C.normalizarTelefono('sin número'), '');
+});
+
+test('findOrCreateCliente: tres formatos del mismo número resuelven al mismo cliente, sin duplicar', () => {
+  const s = C.emptyState();
+  const id1 = C.findOrCreateCliente(s, 'Ana', '3001234567', '');
+  const id2 = C.findOrCreateCliente(s, 'Ana', '300 123 4567', '');
+  const id3 = C.findOrCreateCliente(s, '', '+57 300 123 4567', '');
+  assert.strictEqual(id2, id1);
+  assert.strictEqual(id3, id1);
+  assert.strictEqual(s.clientes.length, 1);
+  assert.strictEqual(C.buscarCliente(s, '', '(300) 123-4567'), s.clientes[0]);
+});
+
+test('findOrCreateCliente guarda el teléfono tal cual (para mostrar) y el normalizado (para buscar)', () => {
+  const s = C.emptyState();
+  const id = C.findOrCreateCliente(s, 'Beto', '+57 310 999 8877', '');
+  const c = s.clientes.find(x => x.id === id);
+  assert.strictEqual(c.telefono, '+57 310 999 8877');
+  assert.strictEqual(c.telefonoNorm, '3109998877');
+});
+
+test('findOrCreateCliente encuentra por teléfono a un cliente viejo guardado sin telefonoNorm', () => {
+  const s = C.emptyState();
+  s.clientes.push({ id: 'viejo', nombre: 'Carla', telefono: '+57 (311) 222-3344', direccion: '' });
+  assert.strictEqual(C.findOrCreateCliente(s, 'Carla', '3112223344', ''), 'viejo');
+  assert.strictEqual(s.clientes.length, 1);
+});
+
+test('findOrCreateCliente pone el nombre a un cliente "(sin nombre)" o sin nombre que coincide por teléfono', () => {
+  const s = C.emptyState();
+  const id = C.findOrCreateCliente(s, '', '3001234567', '');
+  assert.strictEqual(s.clientes[0].nombre, '(sin nombre)');
+  assert.strictEqual(C.findOrCreateCliente(s, 'Ana', '+57 300 123 4567', ''), id);
+  assert.strictEqual(s.clientes[0].nombre, 'Ana');
+  s.clientes.push({ id: 'x', nombre: '', telefono: '3110000000' });
+  assert.strictEqual(C.findOrCreateCliente(s, 'Luis', '311 000 0000', ''), 'x');
+  assert.strictEqual(s.clientes[1].nombre, 'Luis');
+  assert.strictEqual(s.clientes.length, 2);
+});
+
+test('no-regresión: una venta sin datos de cliente no crea cliente y queda con clienteId null', () => {
+  const s = stateMargen();
+  const antes = s.clientes.length;
+  const clienteId = C.findOrCreateCliente(s, '', '', '');
+  assert.strictEqual(clienteId, null);
+  const venta = C.applyVenta(s, [{ productoId: 'p1', qty: 1, adiciones: [] }], [], { clienteId });
+  assert.strictEqual(venta.clienteId, null);
+  assert.strictEqual(s.clientes.length, antes);
+});
+
+test('normalizarTelefonosClientes llena telefonoNorm y reporta los que comparten teléfono, sin unir ni borrar', () => {
+  const s = { clientes: [
+    { id: 'a', nombre: 'Ana', telefono: '3001234567' },
+    { id: 'b', nombre: 'Ana María', telefono: '+57 300 123 4567' },
+    { id: 'c', nombre: 'Beto', telefono: '310 999 8877', telefonoNorm: '3109998877' },
+    { id: 'd', nombre: 'Sin tel', telefono: '' },
+    { id: 'e', nombre: 'Viejo', telefono: '(300) 123-4567', telefonoNorm: 'basura' }
+  ], ventas: [{ id: 'v1', clienteId: 'a' }, { id: 'v2', clienteId: 'b' }] };
+  const r = C.normalizarTelefonosClientes(s);
+  assert.strictEqual(r.actualizados, 3); // a, b (faltaba) y e (distinto); c ya estaba bien
+  assert.deepStrictEqual(s.clientes.map(c => c.id), ['a', 'b', 'c', 'd', 'e'], 'no se borra ni se une nadie');
+  assert.deepStrictEqual(s.clientes.map(c => c.telefonoNorm), ['3001234567', '3001234567', '3109998877', undefined, '3001234567']);
+  assert.deepStrictEqual(s.clientes.map(c => c.telefono), ['3001234567', '+57 300 123 4567', '310 999 8877', '', '(300) 123-4567'], 'el original queda para mostrar');
+  assert.strictEqual(r.duplicados.length, 1);
+  assert.deepStrictEqual(r.duplicados[0].map(c => c.id), ['a', 'b', 'e']);
+  assert.deepStrictEqual(s.ventas.map(v => v.clienteId), ['a', 'b'], 'las ventas no se tocan');
+});
+
+test('normalizarTelefonosClientes es idempotente', () => {
+  const s = { clientes: [
+    { id: 'a', nombre: 'Ana', telefono: '3001234567' },
+    { id: 'b', nombre: 'Ana María', telefono: '+57 300 123 4567' }
+  ] };
+  C.normalizarTelefonosClientes(s);
+  const foto = JSON.stringify(s);
+  const r2 = C.normalizarTelefonosClientes(s);
+  assert.strictEqual(r2.actualizados, 0);
+  assert.strictEqual(r2.duplicados.length, 1);
+  assert.strictEqual(JSON.stringify(s), foto);
+  assert.deepStrictEqual(C.normalizarTelefonosClientes({}), { actualizados: 0, duplicados: [] });
+});
+
+test('gruposClientesMismoTelefono no toca el state y gruposClientesDuplicados (por nombre) no suma los de mismo teléfono', () => {
+  const s = { clientes: [
+    { id: 'a', nombre: 'Ana', telefono: '3001234567' },
+    { id: 'b', nombre: 'Ana María', telefono: '+57 300 123 4567' }
+  ] };
+  const foto = JSON.stringify(s);
+  assert.deepStrictEqual(C.gruposClientesMismoTelefono(s).map(g => g.map(c => c.id)), [['a', 'b']]);
+  assert.strictEqual(JSON.stringify(s), foto);
+  assert.strictEqual(C.gruposClientesDuplicados(s).length, 0, 'unir sigue siendo solo por nombre');
+});
+
+test('gruposClientesDuplicados: el mismo teléfono en dos formatos no cuenta como teléfonos distintos', () => {
+  const s = { clientes: [
+    { id: 'a', nombre: 'Ana', telefono: '3001234567' },
+    { id: 'b', nombre: 'ana', telefono: '+57 300 123 4567' }
+  ] };
+  assert.strictEqual(C.gruposClientesDuplicados(s).length, 1);
 });
 
 console.log('\n== Resumen ==');

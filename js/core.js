@@ -1641,10 +1641,26 @@
   function soloDigitos_(texto) {
     return String(texto || '').replace(/\D/g, '');
   }
-  // Cliente existente para lo que se escribió en "Nombre o teléfono" (+ el
-  // teléfono aparte, si vino). Compartido con la UI (onVentaClienteInput)
-  // para que el formulario de "cliente nuevo" y el guardado usen el mismo
-  // criterio de coincidencia.
+  // C1: el teléfono es la llave natural del cliente. Se compara y se guarda
+  // normalizado: solo dígitos, y sin el indicativo de Colombia.
+  // Decisión del indicativo: solo se quita cuando queda claro que es +57
+  // delante de un número colombiano de 10 dígitos (celular 3xx o fijo
+  // 60x): 12 dígitos que empiezan por 57, o 13 que empiezan por 057. Así
+  // "+57 300 123 4567", "57 3001234567" y "3001234567" son el mismo.
+  // Cualquier otro largo queda tal cual: un número extranjero trae su
+  // propio indicativo ("+1 305 555 0100" -> "13055550100") y no se toca.
+  function normalizarTelefono(t) {
+    var d = soloDigitos_(t);
+    if (d.length === 12 && d.slice(0, 2) === '57') return d.slice(2);
+    if (d.length === 13 && d.slice(0, 3) === '057') return d.slice(3);
+    return d;
+  }
+  // Teléfono normalizado de un cliente guardado: manda el texto de
+  // `telefono` (lo que se edita en Clientes); `telefonoNorm` es solo la
+  // copia para buscar y sirve si el texto vino vacío.
+  function telefonoNormCliente_(c) {
+    return normalizarTelefono(c && c.telefono) || (c && c.telefonoNorm) || '';
+  }
   // Clientes repetidos (de antes del arreglo de buscarCliente): mismo
   // nombre ignorando mayúsculas, tildes y espacios, y teléfonos que no
   // chocan (iguales, o al menos uno vacío). Dos "Ana" con teléfonos
@@ -1660,10 +1676,36 @@
       var lista = porNombre[k];
       if (lista.length < 2) return;
       var tels = {};
-      lista.forEach(function (c) { var t = soloDigitos_(c.telefono); if (t) tels[t] = true; });
+      lista.forEach(function (c) { var t = telefonoNormCliente_(c); if (t) tels[t] = true; });
       if (Object.keys(tels).length <= 1) grupos.push(lista);
     });
     return grupos;
+  }
+  // C1: clientes que comparten el teléfono normalizado. Solo se REPORTAN
+  // (aviso en Clientes): nunca se unen ni se borran por código, porque el
+  // mismo número con dos nombres puede ser un error de tipeo o dos personas
+  // de la misma casa, y eso lo decide el dueño. No toca el state.
+  function gruposClientesMismoTelefono(state) {
+    var porTel = {};
+    var orden = [];
+    (state.clientes || []).forEach(function (c) {
+      var t = telefonoNormCliente_(c);
+      if (!t) return;
+      if (!porTel[t]) { porTel[t] = []; orden.push(t); }
+      porTel[t].push(c);
+    });
+    return orden.map(function (t) { return porTel[t]; }).filter(function (l) { return l.length > 1; });
+  }
+  // Migración (corre al arrancar): llena `telefonoNorm` donde falta o quedó
+  // distinto, y devuelve los grupos con el mismo teléfono para avisar.
+  // NUNCA une ni borra. Idempotente: la segunda vez no cambia nada.
+  function normalizarTelefonosClientes(state) {
+    var actualizados = 0;
+    (state.clientes || []).forEach(function (c) {
+      var t = normalizarTelefono(c.telefono);
+      if (t && c.telefonoNorm !== t) { c.telefonoNorm = t; actualizados++; }
+    });
+    return { actualizados: actualizados, duplicados: gruposClientesMismoTelefono(state) };
   }
   // Une cada grupo en el cliente con más ventas: sus ventas pasan a él,
   // hereda teléfono/dirección si le faltaban, y los demás se borran.
@@ -1686,6 +1728,9 @@
     return { grupos: grupos.length, eliminados: Object.keys(borrar).length };
   }
 
+  // Cliente existente por teléfono normalizado (si vino) o, sin teléfono,
+  // por nombre. Compartido con la UI (onVentaTelefonoInput) para que lo que
+  // se muestra en la caja y lo que se guarda usen el mismo criterio.
   function buscarCliente(state, nombre, telefono) {
     nombre = (nombre || '').trim();
     telefono = (telefono || '').trim();
@@ -1695,8 +1740,9 @@
     }
     var clientes = state.clientes || [];
     if (telefono) {
-      var tel = soloDigitos_(telefono);
-      return clientes.find(function (c) { return c.telefono && soloDigitos_(c.telefono) === tel; }) || null;
+      var tel = normalizarTelefono(telefono);
+      if (!tel) return null;
+      return clientes.find(function (c) { return telefonoNormCliente_(c) === tel; }) || null;
     }
     if (!nombre) return null;
     var clave = normalizarNombreInsumo_(nombre);
@@ -1712,13 +1758,20 @@
     if (!nombre && !telefono) return null;
     var existente = buscarCliente(state, nombre, telefono);
     if (existente) {
-      // Solo si coincidió por teléfono: una coincidencia por nombre ya es
-      // el mismo nombre (no se pisa "Ana" con un "ana" escrito a mano).
-      if (nombre && telefono) existente.nombre = nombre;
+      // Coincidió por teléfono y el cliente no tenía nombre: se le pone.
+      // Si ya tenía OTRO nombre, se deja el guardado (C1, decisión
+      // conservadora): antes se pisaba en silencio, y un "Ana María"
+      // escrito en la caja borraba la "Ana" que el dueño había cargado.
+      // Para cambiarlo está el editor de Clientes. Una coincidencia por
+      // nombre ya es el mismo nombre (no se pisa "Ana" con "ana").
+      var sinNombre = !String(existente.nombre || '').trim() || existente.nombre === '(sin nombre)';
+      if (nombre && telefono && sinNombre) existente.nombre = nombre;
       if (direccion) existente.direccion = direccion;
       return existente.id;
     }
     var nuevo = { id: genId(), nombre: nombre || '(sin nombre)', telefono: telefono, direccion: direccion || '' };
+    var telNorm = normalizarTelefono(telefono);
+    if (telNorm) nuevo.telefonoNorm = telNorm;
     state.clientes.push(nuevo);
     return nuevo.id;
   }
@@ -4069,6 +4122,9 @@
     findOrCreateCliente: findOrCreateCliente,
     buscarCliente: buscarCliente,
     gruposClientesDuplicados: gruposClientesDuplicados,
+    gruposClientesMismoTelefono: gruposClientesMismoTelefono,
+    normalizarTelefono: normalizarTelefono,
+    normalizarTelefonosClientes: normalizarTelefonosClientes,
     unirClientesDuplicados: unirClientesDuplicados,
     getTicketPromedio: getTicketPromedio,
     contarUnidades: contarUnidades,
