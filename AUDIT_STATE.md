@@ -4,7 +4,7 @@ Status: PRODUCTION_READY
 
 Current audit cycle: 5 (final)
 
-Last updated: 2026-10-24
+Last updated: 2026-10-25
 
 ---
 
@@ -17,7 +17,7 @@ LOW: 6
 INFO: varios
 
 Build: N/A (HTML estático sin build) · `node --check` PASS
-Tests: PASS (519: core 363, sync 48, supabaseSync 44, rowsync 39, auth 22, handlers 3)
+Tests: PASS (563 medidos 2026-10-25: core 377, sync 48, supabaseSync 44, rowsync 39, auth 22, imagenes 17, almacen 13, handlers 3)
 Lint: N/A (no hay linter) · smoke test de handlers PASS
 Typecheck: N/A (JS sin tipos)
 Security: ACEPTABLE (0004/0005 aplicadas, Email apagado, Apps Script v6)
@@ -27,8 +27,10 @@ Production configuration: VERIFIED (celular sincroniza, respaldo diario en Drive
 
 # CURRENT OBJECTIVE
 
-Que el dueño aplique las 3 acciones pendientes, verificar con los asesores
-de Supabase y correr el ciclo final independiente.
+Producción estable. Rama `feat/clientes-imagenes` (sin merge a main) con
+dos hallazgos de funcionalidad del primer día real de operación: captura
+de clientes en la venta (C1) y compresión de comprobantes (C2). Revisar y
+mergear cuando el dueño lo apruebe.
 
 ---
 
@@ -115,7 +117,7 @@ ni service worker (MEDIUM). HTTPS OK.
 ---
 
 # TESTING STATUS
-Unit tests: PASS (519)
+Unit tests: PASS (563)
 Integration tests: N/A
 E2E tests: manual en navegador (venta → stock → Pedidos → cierre; categoría
 con apóstrofo; recuperación de sync) PASS

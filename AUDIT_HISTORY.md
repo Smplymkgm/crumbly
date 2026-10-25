@@ -275,3 +275,53 @@ Confirmado por el dueño en el celular: "Sincronizado ✓", ventas visibles,
 PRODUCTION_READY. Quedan como revisión humana (no bloquean): comprobantes
 con link público, repo público, proyectos de Apps Script "sin título"
 sueltos en crumbly2026.
+
+---
+
+# CYCLE 6 — HALLAZGOS DE FUNCIONALIDAD (primer día real de operación)
+
+Date: 2026-10-25 · Status: COMPLETE en rama `feat/clientes-imagenes` (sin merge)
+
+Cinco ciclos de auditoría revisaron la maquinaria (sync, seguridad, datos)
+pero no recorrieron los flujos del negocio. El dueño operó un día y
+encontró dos cosas que ningún ciclo vio:
+
+## C1 · No se capturaban clientes (73e759e)
+El teléfono de un cliente nuevo estaba escondido en "Más opciones": en un
+día completo no se registró ni un contacto. Ahora: campo Teléfono visible
+en Pedido; si existe, "Cliente: X ✓" y se asocia; si no, aparece "Nombre
+del cliente" (prellenado con el nombre para llamar). Opcional, nunca
+bloquea la venta. Texto de propósito (Ley 1581) al enfocar el campo y en
+el (i).
+- `normalizarTelefono`: solo dígitos; se quita `57` si quedan 12 dígitos
+  (o `057` con 13) → `3001234567`, `300 123 4567`, `+57 300 123 4567` son el
+  mismo cliente (test). Otros largos se guardan con su indicativo.
+- Nunca dos clientes con el mismo teléfono normalizado (venta y pantalla
+  Clientes). Se guarda `telefono` (como se escribió) y `telefonoNorm`.
+- Migración `normalizarTelefonosClientes` al arrancar: completa
+  `telefonoNorm` y REPORTA grupos con el mismo teléfono en el aviso de
+  Clientes; no fusiona nada. En los datos reales solo 1 cliente tiene
+  teléfono ("consumidor final"): 0 duplicados.
+- No-regresión: venta sin teléfono → `clienteId` null (test).
+
+## C2 · Comprobantes sin comprimir (f57afd2)
+`js/imagenes.js`: perfil único de comprobante (lado mayor ≤ 2000 px, JPEG
+0,85; con transparencia WebP/PNG), orientación EXIF con
+`createImageBitmap(..., {imageOrientation:'from-image'})`, HEIC u otro no
+decodificable → se sube el original, nunca más grande que el original
+(test). Indicador "Comprimiendo…". `Code.gs` sin cambios (sigue siendo la
+defensa). Perfil de foto de producto no construido: las fotos de producto
+se quitaron de la app.
+Verificado: foto vertical EXIF 6 de 4,07 MB → 339 KB, 1500×2000, derecha,
+monto/referencia/fecha/letra chica legibles; HEIC falso → original; PNG
+chico → original; PNG transparente 2,84 MB → WebP 924 KB.
+
+## TESTS
+563 PASS (core 377, sync 48, supabaseSync 44, rowsync 39, auth 22,
+imagenes 17, almacen 13, handlers 3). node --check OK. Navegador a 375 px:
+cliente existente con otro formato → asociado sin duplicar; nuevo con
+teléfono y nombre → creado y asociado sin perder el carrito; sin teléfono →
+venta igual que antes; sin errores de consola.
+
+## CYCLE RESULT
+IMPROVED — pendiente merge a main (decisión del dueño).
