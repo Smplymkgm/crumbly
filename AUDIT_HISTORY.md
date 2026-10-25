@@ -325,3 +325,40 @@ venta igual que antes; sin errores de consola.
 
 ## CYCLE RESULT
 IMPROVED — pendiente merge a main (decisión del dueño).
+
+---
+
+# CYCLE 7 — NOTA EDITABLE + LIMPIEZA DEL ESTADO
+
+Date: 2026-10-25 · Status: COMPLETE en `feat/clientes-imagenes` (sin merge)
+
+## Nota de pedido editable (ae971f9)
+`CrumblyCore.editarNotaVenta`: único campo editable de una venta; guarda
+`notaEditadaPor`/`notaEditadaEn`. Lápiz o "+ Nota" en Pedidos (tarjetas,
+historial de hoy, días anteriores).
+- Test: editar la nota de una venta de AYER no cambia total, ganancia,
+  ítems, consumo ni la cascada de costeo del período.
+- Test de sync: viaja como upsert de la MISMA fila (UPDATE), sin duplicar
+  ni soft-delete.
+- Navegador: sobrevive al reload; una edición remota aplicada como fila de
+  realtime (`{id, data, deleted_at}`) se ve sin recargar; la venta no se
+  duplica. (Ojo al simular: `aplicarFila_` espera la fila de Supabase, no la
+  venta suelta; pasarla suelta la toma como borrada. No es un bug de la app.)
+
+## Limpieza del estado (pedido del dueño tras revisar el ciclo 6)
+AUDIT_STATE.md reescrito: ciclo 7, HIGH sin bloqueadores (las acciones del
+dueño pasan a RESUELTOS), MEDIUM 4 reales, LAST ACTIONS / FILES / DATABASE /
+PRODUCTION CONFIGURATION / BLOCKERS / NEXT ACTION al día.
+
+## Cambio de criterio de auditoría
+`PRE_LAUNCH_AUDIT.md` § Recorrido de flujos de negocio: obligatorio desde
+el ciclo 6 (vender, cobrar, pedidos, gastos, cerrar caja, contar
+inventario, reabrir), en celular real o a 375 px, y es condición del
+criterio de producción.
+
+## TESTS
+565 PASS (core 378, sync 48, supabaseSync 45, rowsync 39, auth 22,
+imagenes 17, almacen 13, handlers 3).
+
+## CYCLE RESULT
+IMPROVED — rama lista para el recorrido de flujos y el merge.

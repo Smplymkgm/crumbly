@@ -1,8 +1,8 @@
 # AUDIT STATE
 
-Status: PRODUCTION_READY
+Status: PRODUCTION_READY  (main en producción; rama `feat/clientes-imagenes` pendiente de merge)
 
-Current audit cycle: 5 (final)
+Current audit cycle: 7
 
 Last updated: 2026-10-25
 
@@ -11,26 +11,31 @@ Last updated: 2026-10-25
 # PRODUCTION READINESS
 
 CRITICAL: 0
-HIGH: 0 (acciones del dueño hechas y verificadas)
-MEDIUM: 5
+HIGH: 0
+MEDIUM: 4 (ver ACTIVE ISSUES; ninguno bloquea)
 LOW: 6
 INFO: varios
 
-Build: N/A (HTML estático sin build) · `node --check` PASS
-Tests: PASS (563 medidos 2026-10-25: core 377, sync 48, supabaseSync 44, rowsync 39, auth 22, imagenes 17, almacen 13, handlers 3)
+Build: N/A (HTML estático sin build) · `node --check` PASS (script inline, js/*.js, sw.js)
+Tests: PASS — 565 medidos 2026-10-25 en `feat/clientes-imagenes`:
+core 378, sync 48, supabaseSync 45, rowsync 39, auth 22, imagenes 17,
+almacen 13, handlers 3. (main: 535)
 Lint: N/A (no hay linter) · smoke test de handlers PASS
 Typecheck: N/A (JS sin tipos)
-Security: ACEPTABLE (0004/0005 aplicadas, Email apagado, Apps Script v6)
-Production configuration: VERIFIED (celular sincroniza, respaldo diario en Drive, 0 errores registrados)
+Security: ACEPTABLE (RLS 0004/0005 aplicadas y verificadas, proveedor Email
+apagado, Apps Script v6, SRI en CDN)
+Production configuration: VERIFIED (celular sincroniza, respaldo diario en
+Drive desde 2026-10-24, tabla `errores` vacía)
 
 ---
 
 # CURRENT OBJECTIVE
 
-Producción estable. Rama `feat/clientes-imagenes` (sin merge a main) con
-dos hallazgos de funcionalidad del primer día real de operación: captura
-de clientes en la venta (C1) y compresión de comprobantes (C2). Revisar y
-mergear cuando el dueño lo apruebe.
+Main está en producción y verificado. La rama `feat/clientes-imagenes` tiene
+tres cambios de funcionalidad pedidos tras operar (C1 captura de cliente por
+teléfono, C2 compresión de comprobantes, nota editable en Pedidos): esperan
+que el dueño apruebe el merge. Desde el ciclo 6, toda auditoría incluye el
+recorrido de flujos de negocio (ver `PRE_LAUNCH_AUDIT.md` § Recorrido).
 
 ---
 
@@ -40,32 +45,17 @@ mergear cuando el dueño lo apruebe.
 Ninguno.
 
 ## HIGH
-Ninguno en código. Acciones del dueño (bloquean PRODUCTION_READY):
-1. ~~Correr 0004 + 0005~~ → aplicadas 2026-10-24 y verificadas (pg_policies;
-   asesor de rendimiento sin avisos de initplan).
-2. ~~Desactivar proveedor Email~~ → hecho 2026-10-24 (verificado en
-   /auth/v1/settings: email=false, google=true). Registro con Google sigue
-   abierto a propósito (empleados nuevos); sin estar en `usuarios` no ven datos.
-3. ~~Redesplegar Apps Script~~ → hecho 2026-10-24: "Crumbly Backend",
-   implementación "Autenticación con Google" (la URL que usa la app) pasó de
-   la versión 3 (29 ago) a la 6. Hallazgo: los redespliegues anteriores
-   habían ido a proyectos nuevos sin título, así que el respaldo diario y las
-   carpetas por mes nunca habían funcionado. Corrió sin pedir permisos nuevos.
+Ninguno.
 
 ## MEDIUM
 - Comprobantes con link público (cualquiera con la URL los ve). Hacerlos
-  privados requiere un proxy autenticado — HUMAN_REVIEW_REQUIRED.
-- ~~Tope de localStorage~~ → resuelto (ed90cd5): state y base en IndexedDB
-  (`js/almacen.js`), escritos juntos en una transacción; migración automática
-  desde localStorage; probado con ~35 MB / 26.000 ventas.
-- ~~Sin PWA~~ → resuelto (f314ee3): manifest, íconos y `sw.js` network-first
-  (no esconde versiones nuevas; arranque offline desde caché).
-- ~~Sin monitoreo~~ → resuelto en código (7d69e6d): errores a la tabla
-  `errores`; falta correr `0005_errores.sql` (dueño).
-- Total del carrito calculado en UI y en core por separado (riesgo de
-  redondeo en pago dividido) — HUMAN_REVIEW_REQUIRED (lógica de negocio).
-- `index.html` gigante con handlers por string (mitigado por el smoke test).
-- Repo público en GitHub (docs con correos personales).
+  privados requiere un proxy autenticado. HUMAN_REVIEW_REQUIRED.
+- Total del carrito calculado en UI y en core por separado. Mitigado en el
+  ciclo 5 (core redondea el total a pesos) pero sigue duplicado.
+  HUMAN_REVIEW_REQUIRED (lógica de negocio).
+- `index.html` gigante con handlers por string (mitigado por
+  `tests/handlers.test.js`).
+- Repo público en GitHub (docs con correos personales). Decisión del dueño.
 
 ## LOW
 - Ids generados sin escapar dentro de onclick (solo los puede poner un
@@ -73,20 +63,31 @@ Ninguno en código. Acciones del dueño (bloquean PRODUCTION_READY):
 - Token de sesión en la URL en los GET del camino Sheets (fallback).
 - Hook de versión: `git add index.html` agrega cambios sin preparar del
   mismo archivo; los merges chocan en la marca de versión (trivial).
-- Índice `(deleted_at) where deleted_at is null` casi inútil; `(updated_at, id)`
-  sería mejor a futuro.
+- Índices `*_live_idx` sin uso (asesor INFO); `(updated_at, id)` sería mejor.
 - Edge function `asistente`: dependencias sin versión fija, sin límite por
   usuario (no desplegada).
-- Respaldo: cualquier sesión puede reemplazar el del día.
+- Dos proyectos "Proyecto sin título" sueltos en el Apps Script de
+  crumbly2026 (copias del 3 oct que nadie usa). El dueño puede borrarlos.
+
+## RESUELTOS (para no repetir trabajo)
+- Acciones del dueño del ciclo 4, hechas y verificadas el 2026-10-24:
+  0004+0005 aplicadas (pg_policies, asesor sin initplan), proveedor Email
+  apagado (`/auth/v1/settings`: email=false, google=true), Apps Script
+  "Crumbly Backend" implementación "Autenticación con Google" en v6.
+- Tope de localStorage → IndexedDB (`js/almacen.js`), ciclo 4.
+- PWA (manifest, íconos, `sw.js` network-first), ciclo 3.
+- Monitoreo de errores (tabla `errores`, 0005 aplicada), ciclos 3–5.
 
 ## INFO
-Secretos: ninguno en el repo ni en el historial. RLS en las 14 tablas;
-anon no ve nada. Sin bucles O(n²). Sin console.log ni localhost.
+Secretos: ninguno en el repo ni en el historial. RLS en las 15 tablas
+(incl. `errores`); anon no ve nada. Sin bucles O(n²). Sin console.log ni
+localhost.
 
 ---
 
 # CONFIRMED DEAD CODE
-Eliminado en el ciclo 1 (ver historial). Ninguno pendiente.
+Ninguno pendiente (eliminado en el ciclo 1; el ciclo 6 quitó el formulario
+escondido de cliente nuevo de "Más opciones").
 
 # POTENTIALLY UNUSED CODE
 `migrarASupabase()` (consola), camino Sheets (`crumbly-backend='sheets'`,
@@ -94,73 +95,83 @@ Eliminado en el ciclo 1 (ver historial). Ninguno pendiente.
 tests. Se conservan hasta retirar Sheets.
 
 # SECURITY FINDINGS
-Ver ACTIVE ISSUES. Arreglados: XSS por categorías, sesiones tras
-desactivar, `iss`, validación de subidas, carpetas por ID, SRI + versión fija.
+Sin abiertos fuera de ACTIVE ISSUES. Arreglados: XSS por categorías
+(`jsArg`), sesiones tras desactivar, `iss`, validación de subidas, carpetas
+por ID, SRI + versión fija, `usuarios` solo la fila propia, `errores` con
+email atado al JWT.
 
 # PERFORMANCE FINDINGS
-RLS initplan (arreglado en 0004, falta aplicarla). Diff de push ~35 ms con
-1000 ventas: aceptable.
+RLS initplan resuelto (0004 aplicada). Diff de push ~35 ms con 1000 ventas.
+Registrar venta ~12 ms con 600 ventas del día. IndexedDB probado con ~35 MB.
 
 # ARCHITECTURE FINDINGS
 `sync.js` sigue siendo necesario con Supabase (cola de borrados, subidas,
 respaldo): no borrar. Archivo único grande: mitigado con smoke test.
 
 # FUNCTIONALITY FINDINGS
-Arreglados: escritura estado/base, BORRADO_MASIVO sin salida, errores de
-sync invisibles, realtime sin ponerse al día, respaldo que fallaba en
-silencio, restauración (`restaurarDesdeRespaldo` en consola).
+Ciclo 6 (flujos reales): captura de cliente escondida (C1) y comprobantes
+sin comprimir (C2), resueltos en la rama. Ciclo 7: nota de pedido editable.
 
 # PRODUCTION CONFIGURATION FINDINGS
-GitHub Pages `max-age=600` cubierto por la autoactualización. Sin manifest
-ni service worker (MEDIUM). HTTPS OK.
+GitHub Pages `max-age=600` cubierto por la autoactualización y el service
+worker network-first. Manifest e íconos presentes. HTTPS OK. Respaldo
+diario activo.
 
 ---
 
 # TESTING STATUS
-Unit tests: PASS (563)
+Unit tests: PASS (565 en la rama; 535 en main)
 Integration tests: N/A
-E2E tests: manual en navegador (venta → stock → Pedidos → cierre; categoría
-con apóstrofo; recuperación de sync) PASS
+E2E: manual en navegador a 375 px (venta con descuento → stock → Pedidos →
+cierre; cliente nuevo / existente / sin teléfono; nota editada + reload +
+realtime simulado; compresión de foto vertical EXIF 6) PASS
+Recorrido de flujos en celular real: PENDIENTE para la rama (ver NEXT ACTION)
 Lint / Typecheck / Build: N/A
 
 ---
 
 # LAST ACTIONS
-Ciclo 2: verificación independiente sin CRITICAL/HIGH nuevos; arreglados 3
-MEDIUM (descarte local seguro en dos pasos, aviso que no se tapa, MIME de
-comprobantes por extensión). Publicado `7551c7f`.
+Ciclo 6–7 (2026-10-25), en `feat/clientes-imagenes`: C1 captura de cliente
+por teléfono normalizado (73e759e), C2 compresión de comprobantes
+(f57afd2), nota editable en Pedidos (ae971f9), estado y especificación al
+día.
 
-# FILES MODIFIED
-index.html, js/core.js, backend/Code.gs, tests/handlers.test.js (nuevo),
-supabase/migrations/0004_rls_initplan.sql (nuevo), PRE_LAUNCH_AUDIT.md,
-AUDIT_STATE.md, AUDIT_HISTORY.md.
+# FILES MODIFIED (ciclos 6–7)
+index.html, js/core.js, js/imagenes.js (nuevo), sw.js, tests/core.test.js,
+tests/supabaseSync.test.js, tests/imagenes.test.js (nuevo),
+PRE_LAUNCH_AUDIT.md, AUDIT_STATE.md, AUDIT_HISTORY.md.
 
 # FILES DELETED
-Ninguno (solo código muerto dentro de archivos).
+Ninguno.
 
 # DEPENDENCIES REMOVED / ADDED
-Ninguna. supabase-js fijada a 2.117.2 (antes `@2` flotante).
+Ninguna (supabase-js fijada a 2.117.2 desde el ciclo 1).
 
 # DATABASE CHANGES
-0004 escrita, sin aplicar (la corre el dueño).
+0004 y 0005 aplicadas y verificadas (2026-10-24/25). Ninguna pendiente.
 
 # API CHANGES
-Apps Script: acción `uploadComprobante` ahora rechaza tipos no
-imagen/PDF y > 10 MB (el cliente ya limitaba a 10 MB).
+Apps Script v6: `uploadComprobante` solo imágenes/PDF ≤ 10 MB; acción
+`respaldo` activa. Sin cambios en los ciclos 6–7 (`Code.gs` intacto).
 
 # SECURITY CHANGES
 Ver SECURITY FINDINGS.
 
 # HUMAN REVIEW REQUIRED
-Las 3 acciones del dueño (HIGH) y los MEDIUM marcados arriba.
+Los MEDIUM marcados arriba y aprobar el merge de `feat/clientes-imagenes`.
 
 # BLOCKERS
-Acciones del dueño 1–3.
+Ninguno.
 
 # NEXT ACTION
-1. Leer PRE_LAUNCH_AUDIT.md, este archivo y AUDIT_HISTORY.md.
-2. Confirmar con `pg_policies` que 0004 está aplicada y re-correr los
-   asesores de Supabase (seguridad y rendimiento).
-3. Confirmar que el proveedor Email está desactivado (`/auth/v1/settings`).
-4. Ciclo final independiente (no asumir que los arreglos están bien).
-5. Si no aparece nada CRITICAL/HIGH → PRODUCTION_READY.
+1. Leer `PRE_LAUNCH_AUDIT.md`, este archivo y `AUDIT_HISTORY.md`.
+2. Antes de mergear `feat/clientes-imagenes`: hacer el RECORRIDO DE FLUJOS
+   (`PRE_LAUNCH_AUDIT.md` § Recorrido) en un celular real o a 375 px:
+   vender a un cliente nuevo y a uno que vuelve, cobrar con descuento y pago
+   dividido, editar la nota en Pedidos, registrar un gasto con foto
+   vertical, cerrar caja, contar inventario.
+3. Si el dueño aprueba: merge a main, publicar, confirmar en producción
+   (versión servida, "Sincronizado", respaldo del día, tabla `errores`).
+4. Próximo ciclo de auditoría: además de código, el recorrido de flujos
+   completo. Un hallazgo como el campo escondido en "Más opciones" solo
+   aparece usando la app.

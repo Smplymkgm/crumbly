@@ -33,5 +33,29 @@ No hay build, lint ni typecheck. Es HTML estático con JS sin bundler. En su lug
 - Prueba manual en el navegador, en la copia local (launch config `crumbly-static`, puerto 8814).
 - Asesores de Supabase (seguridad y rendimiento) por MCP. El MCP es de solo lectura: el SQL lo corre el dueño.
 
+## Recorrido de flujos de negocio (obligatorio desde el ciclo 6)
+
+Revisar código y correr tests no alcanza. En el ciclo 6 un campo que existía
+pero estaba escondido en "Más opciones" hizo que un día entero de operación
+no capturara ni un cliente, y cinco ciclos de auditoría no lo vieron.
+
+Cada ciclo recorre de punta a punta, en un celular real o en el navegador a
+375 px y con datos parecidos a los reales:
+
+1. **Vender**: producto con adiciones, cliente nuevo (teléfono y nombre),
+   cliente que vuelve (otro formato de teléfono) y venta sin cliente.
+2. **Cobrar**: efectivo, transferencia con comprobante (foto vertical) y
+   pago dividido, con y sin descuento.
+3. **Pedidos**: llega al otro dispositivo, Listo, Entregado, deshacer y
+   editar la nota.
+4. **Gastos**: compra de inventario con varias líneas y comprobantes.
+5. **Cerrar caja**: cuadra efectivo y transferencias y muestra descuentos.
+6. **Contar inventario**: conteo físico completo hasta cerrarlo.
+7. **Reabrir la app**: sigue "Sincronizado", los datos están y hay respaldo
+   del día.
+
+Por cada paso hay que preguntarse: ¿una persona con fila en la caja lo
+encuentra y lo hace en segundos? Lo que no se encuentra cuenta como roto.
+
 ## Criterio de producción
-CRITICAL = 0, HIGH = 0, pruebas OK, sintaxis OK, seguridad aceptable y configuración verificada. Además, un ciclo final independiente sin hallazgos nuevos CRITICAL o HIGH.
+CRITICAL = 0, HIGH = 0, pruebas OK, sintaxis OK, seguridad aceptable, configuración verificada y **recorrido de flujos sin fallas**. Además, un ciclo final independiente sin hallazgos nuevos CRITICAL o HIGH.
