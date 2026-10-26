@@ -399,3 +399,39 @@ el aviso; rango vacío vs no cargado con mensajes distintos; sin errores.
 
 ## CYCLE RESULT
 IMPROVED — rama lista para el recorrido de flujos y el merge.
+
+---
+
+# CYCLE 9 — RECORRIDO DE FLUJOS (pre-merge) + MERGE
+
+Date: 2026-10-26 · Status: COMPLETE
+
+Recorrido de `PRE_LAUNCH_AUDIT.md` § Recorrido, en navegador a 375 px, con
+datos tipo reales (productos con receta, adiciones, insumos, un cliente),
+sesión y subidas simuladas (sin tocar Supabase ni Drive):
+
+1. Vender: Waffle + Nutella + Fresas = $31.600 a cliente NUEVO (Laura,
+   `telefonoNorm` 3115556677); "+57 (300) 123-4567" reconoce a Ana sin
+   duplicar; venta sin cliente con `clienteId` null; stock descontado
+   exacto según recetas. PASS
+2. Cobrar: 10% de descuento ($24.000 → $21.600) con pago dividido
+   10.000 / 11.600; transferencia con foto vertical EXIF 6 de 4,07 MB →
+   subió 339 KB, 1500×2000, derecha; estados "Comprimiendo… / Subiendo… /
+   ✓". PASS
+3. Pedidos: Listo → Entregado → deshacer; nota editada sin tocar el total;
+   en Historial un pedido nuevo no suena ni mueve la lista y aparece "6
+   pedidos en curso"; "Ver la cola" vuelve y ahí sí suena; total del día
+   $113.200 correcto. PASS
+4. Gastos: compra Makro de 2 líneas + 2 comprobantes → 2 gastos con el
+   mismo grupo y ambos comprobantes, archivos
+   `2026-10-26_makro_58000_{1,2}.jpg` de 339 KB, stock sumado. PASS
+5. Cierre de caja: ingresos $133.200, gastos −$58.000, efectivo $43.600,
+   transferencias $31.600, descuentos −$2.400 = cálculo a mano. PASS
+6. Conteo: con una diferencia sin motivo NO cierra ("1 sin motivo",
+   correcto); con motivo cierra, stock = contado, 1 snapshot, 3 ajustes,
+   sin conteo pendiente. PASS
+7. Reabrir: tras reload, mismos datos (ventas, gastos, clientes, stock,
+   nota) desde IndexedDB y misma página; sin errores de consola. PASS
+
+Tests: 566 PASS. Resultado: recorrido sin fallas → merge de
+`feat/clientes-imagenes` a main aprobado por el dueño ("haz lo que debas").

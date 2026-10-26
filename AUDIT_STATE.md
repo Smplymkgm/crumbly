@@ -1,8 +1,8 @@
 # AUDIT STATE
 
-Status: PRODUCTION_READY  (main en producción; rama `feat/clientes-imagenes` pendiente de merge)
+Status: PRODUCTION_READY
 
-Current audit cycle: 8
+Current audit cycle: 9
 
 Last updated: 2026-10-26
 
@@ -128,7 +128,7 @@ cierre; cliente nuevo / existente / sin teléfono; nota editada + reload +
 realtime simulado; compresión de foto vertical EXIF 6; historial de Pedidos:
 entrar = cola con sonido, 7 días con totales, sin sonido ni salto de lista,
 rango vacío vs datos no cargados) PASS
-Recorrido de flujos en celular real: PENDIENTE para la rama (ver NEXT ACTION)
+Recorrido de flujos: PASS 2026-10-26 a 375 px (7 pasos, ver ciclo 9); falta repetirlo en un celular real con la versión publicada
 Lint / Typecheck / Build: N/A
 
 ---
