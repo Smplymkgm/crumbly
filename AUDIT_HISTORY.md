@@ -362,3 +362,40 @@ imagenes 17, almacen 13, handlers 3).
 
 ## CYCLE RESULT
 IMPROVED — rama lista para el recorrido de flujos y el merge.
+
+---
+
+# CYCLE 8 — HISTORIAL DE PEDIDOS + SELECTOR DE MES
+
+Date: 2026-10-26 · Status: COMPLETE
+
+## Selector de mes del gráfico (main, cf6c4d0, en producción)
+El "Octubre" del gráfico de ingresos era una etiqueta con forma de botón:
+el dueño lo tocó y no pasaba nada. Ahora ‹ mes › mueve el gráfico y el
+calendario juntos (comparten `calMes`). Mes pasado: completo vs el anterior
+completo; mes actual: hasta hoy. Otro hallazgo de uso, no de código.
+
+## Historial de Pedidos (rama, 00fa7a1)
+Pestañas "En curso" (por defecto y al entrar, con realtime y sonido) e
+"Historial" (filtro con contador: hoy, ayer, 7 días, este mes,
+personalizado). Filtra con `getVentasByRange`; el rango sale de
+`CrumblyCore.rangoHistorialPedidos` (test). Agrupa por día con cantidad y
+total, nota editable.
+- En Historial no suena y la lista no se redibuja con pedidos nuevos; aviso
+  fijo "N pedidos en curso · Ver la cola".
+- Datos: el sync baja colecciones completas (pull completo inicial,
+  incremental solo agrega), así que todo dispositivo sincronizado tiene
+  todas las ventas. Sin `lastSync` el mensaje es "este dispositivo todavía
+  no bajó los datos", distinto de "no hubo pedidos en este período".
+- Movimientos usa embudo + panel + contador + Limpiar con una sola fecha;
+  el historial usa el mismo patrón con presets de rango.
+
+## TESTS
+566 PASS (core 379, sync 48, supabaseSync 45, rowsync 39, auth 22,
+imagenes 17, almacen 13, handlers 3). Navegador a 375 px: entrar = cola con
+sonido; 7 días = 3 pedidos con totales correctos (excluye uno de hace 10
+días); pedido nuevo en Historial no suena ni cambia la lista y sí muestra
+el aviso; rango vacío vs no cargado con mensajes distintos; sin errores.
+
+## CYCLE RESULT
+IMPROVED — rama lista para el recorrido de flujos y el merge.

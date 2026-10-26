@@ -2,9 +2,9 @@
 
 Status: PRODUCTION_READY  (main en producción; rama `feat/clientes-imagenes` pendiente de merge)
 
-Current audit cycle: 7
+Current audit cycle: 8
 
-Last updated: 2026-10-25
+Last updated: 2026-10-26
 
 ---
 
@@ -17,8 +17,8 @@ LOW: 6
 INFO: varios
 
 Build: N/A (HTML estático sin build) · `node --check` PASS (script inline, js/*.js, sw.js)
-Tests: PASS — 565 medidos 2026-10-25 en `feat/clientes-imagenes`:
-core 378, sync 48, supabaseSync 45, rowsync 39, auth 22, imagenes 17,
+Tests: PASS — 566 medidos 2026-10-26 en `feat/clientes-imagenes`:
+core 379, sync 48, supabaseSync 45, rowsync 39, auth 22, imagenes 17,
 almacen 13, handlers 3. (main: 535)
 Lint: N/A (no hay linter) · smoke test de handlers PASS
 Typecheck: N/A (JS sin tipos)
@@ -31,10 +31,11 @@ Drive desde 2026-10-24, tabla `errores` vacía)
 
 # CURRENT OBJECTIVE
 
-Main está en producción y verificado. La rama `feat/clientes-imagenes` tiene
-tres cambios de funcionalidad pedidos tras operar (C1 captura de cliente por
-teléfono, C2 compresión de comprobantes, nota editable en Pedidos): esperan
-que el dueño apruebe el merge. Desde el ciclo 6, toda auditoría incluye el
+Main está en producción y verificado (incluye el arreglo del selector de mes
+del gráfico, cf6c4d0). La rama `feat/clientes-imagenes` tiene cuatro cambios
+de funcionalidad pedidos tras operar (C1 captura de cliente por teléfono, C2
+compresión de comprobantes, nota editable en Pedidos, historial de Pedidos):
+esperan el recorrido de flujos y que el dueño apruebe el merge. Desde el ciclo 6, toda auditoría incluye el
 recorrido de flujos de negocio (ver `PRE_LAUNCH_AUDIT.md` § Recorrido).
 
 ---
@@ -120,21 +121,23 @@ diario activo.
 ---
 
 # TESTING STATUS
-Unit tests: PASS (565 en la rama; 535 en main)
+Unit tests: PASS (566 en la rama; 535 en main)
 Integration tests: N/A
 E2E: manual en navegador a 375 px (venta con descuento → stock → Pedidos →
 cierre; cliente nuevo / existente / sin teléfono; nota editada + reload +
-realtime simulado; compresión de foto vertical EXIF 6) PASS
+realtime simulado; compresión de foto vertical EXIF 6; historial de Pedidos:
+entrar = cola con sonido, 7 días con totales, sin sonido ni salto de lista,
+rango vacío vs datos no cargados) PASS
 Recorrido de flujos en celular real: PENDIENTE para la rama (ver NEXT ACTION)
 Lint / Typecheck / Build: N/A
 
 ---
 
 # LAST ACTIONS
-Ciclo 6–7 (2026-10-25), en `feat/clientes-imagenes`: C1 captura de cliente
-por teléfono normalizado (73e759e), C2 compresión de comprobantes
-(f57afd2), nota editable en Pedidos (ae971f9), estado y especificación al
-día.
+Ciclos 6–8 (2026-10-25/26), en `feat/clientes-imagenes`: C1 captura de
+cliente por teléfono normalizado (73e759e), C2 compresión de comprobantes
+(f57afd2), nota editable en Pedidos (ae971f9), historial de Pedidos
+(00fa7a1). En main: selector de mes del gráfico (cf6c4d0).
 
 # FILES MODIFIED (ciclos 6–7)
 index.html, js/core.js, js/imagenes.js (nuevo), sw.js, tests/core.test.js,
@@ -169,7 +172,8 @@ Ninguno.
    (`PRE_LAUNCH_AUDIT.md` § Recorrido) en un celular real o a 375 px:
    vender a un cliente nuevo y a uno que vuelve, cobrar con descuento y pago
    dividido, editar la nota en Pedidos, registrar un gasto con foto
-   vertical, cerrar caja, contar inventario.
+   vertical, revisar el historial de Pedidos con un pedido entrando, cerrar
+   caja, contar inventario.
 3. Si el dueño aprueba: merge a main, publicar, confirmar en producción
    (versión servida, "Sincronizado", respaldo del día, tabla `errores`).
 4. Próximo ciclo de auditoría: además de código, el recorrido de flujos
